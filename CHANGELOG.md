@@ -11,3 +11,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tools/probe/probe.mjs`, a script that probes a live Forge instance and records its API behaviour; missing option keys are reported as `null`.
 - String catalog and typed message lookup (`t()`), shared domain types, and a test that rejects user-visible string literals in renderer components.
 - Design tokens, base styles, and the first UI primitives: `Button`, `IconButton`, `ParamRow`, `Select`, `Tooltip`.
+- SQLite storage layer: a migrated database and repositories for servers, jobs, images and settings.
