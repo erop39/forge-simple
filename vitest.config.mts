@@ -2,9 +2,9 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 const alias = {
-  '@shared': resolve(__dirname, 'src/shared'),
-  '@main': resolve(__dirname, 'src/main'),
-  '@renderer': resolve(__dirname, 'src/renderer'),
+  '@shared': resolve(import.meta.dirname, 'src/shared'),
+  '@main': resolve(import.meta.dirname, 'src/main'),
+  '@renderer': resolve(import.meta.dirname, 'src/renderer'),
 }
 
 export default defineConfig({
