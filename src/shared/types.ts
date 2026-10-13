@@ -44,3 +44,9 @@ export interface OplogEntry {
   id: number; time: number; level: OplogLevel; category: OplogCategory;
   messageKey: string; durationMs: number | null; jobId: number | null; details: Record<string, unknown>;
 }
+
+export interface CheckpointInfo { title: string; name: string; filename: string; family: Family }
+export interface ModuleInfo { name: string; filename: string }
+export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: { name: string; path: string }[];
+  samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number }
+export interface PartStatus { role: 'model' | 'module'; value: string; found: boolean }
