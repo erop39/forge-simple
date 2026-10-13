@@ -1,0 +1,70 @@
+/* Fixed at the bottom centre. The shift for the open panel is a transform. */
+.bar {
+  position: fixed;
+  z-index: var(--z-bar);
+  bottom: var(--sp-4);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(760px, calc(100% - var(--sp-8)));
+  padding: var(--sp-3);
+  border-radius: var(--r-panel);
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  transform: translateX(-50%);
+  transition: transform var(--dur-panel-out) ease-in;
+}
+
+/* The panel overlays the right edge; the bar slides left to stay clear of it. */
+.shifted {
+  transform: translateX(calc(-50% - var(--panel-w) / 2));
+  transition: transform var(--dur-panel-in) ease-out;
+}
+
+.field {
+  display: block;
+  width: 100%;
+  min-height: 22px;
+  max-height: calc(6 * 22px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 22px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.field::placeholder {
+  color: var(--text-3);
+}
+
+.negativeField {
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-bar);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.generate {
+  height: var(--h-bar);
+  min-width: var(--h-bar);
+}
+
+.generate[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}

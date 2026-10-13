@@ -1,0 +1,38 @@
+.input {
+  width: 72px;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  text-align: right;
+}
+
+.input:hover {
+  border-color: var(--line-strong);
+}
+
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-control);
+  padding-left: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+
+.inline:hover {
+  border-color: var(--line-strong);
+}
+
+.label {
+  color: var(--text-2);
+}
+
+.inline .input {
+  width: 48px;
+  border: 0;
+  background: transparent;
+}

@@ -1,0 +1,112 @@
+/* Overlays the right edge of the canvas below the top bar; the canvas stays scrollable behind it. */
+.panel {
+  position: fixed;
+  z-index: var(--z-panel);
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  border-left: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.opening {
+  animation: panel-in var(--dur-panel-in) ease-out;
+}
+
+.closing {
+  animation: panel-out var(--dur-panel-out) ease-in forwards;
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  overflow-y: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.heading {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.seed {
+  width: 96px;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  text-align: right;
+}
+
+.seed:hover {
+  border-color: var(--line-strong);
+}
+
+.by {
+  padding: 0 var(--sp-1);
+  color: var(--text-3);
+}
+
+.module {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: var(--h-control);
+}
+
+.moduleName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

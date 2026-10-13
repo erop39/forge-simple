@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Api, ConnectionCheck } from '@shared/ipc'
-import type { Catalog, GenerationParams } from '@shared/types'
+import { defaultParams } from '@shared/profiles'
+import type { Catalog } from '@shared/types'
 import { App } from './App'
 import { en } from './locales/en'
 import { createAppStore } from './state/store'
@@ -20,7 +21,7 @@ function setup(serverUrl: string | null, setServerUrl?: () => Promise<Connection
     },
     catalog: {
       get: vi.fn(async () => catalog),
-      defaults: vi.fn(async () => ({ checkpoint: 'a.safetensors', prompt: '', negativePrompt: '' }) as GenerationParams),
+      defaults: vi.fn(async () => defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })),
       parts: vi.fn(async () => []),
     },
     jobs: { enqueue: vi.fn(), cancel: vi.fn(), retry: vi.fn(), listActive: vi.fn(async () => []) },

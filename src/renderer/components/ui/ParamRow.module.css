@@ -15,5 +15,6 @@
 .value {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-1);
   color: var(--text);
 }

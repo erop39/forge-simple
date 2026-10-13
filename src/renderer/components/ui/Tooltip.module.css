@@ -1,5 +1,6 @@
 .content {
   composes: fadeIn from '../../styles/motion.module.css';
+  z-index: var(--z-tooltip);
   padding: var(--sp-1) var(--sp-2);
   border-radius: var(--r-control);
   background: var(--surface-3);

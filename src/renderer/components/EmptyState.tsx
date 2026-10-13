@@ -11,3 +11,14 @@ export function EmptyState({ onConnect }: { onConnect: () => void }) {
     </section>
   )
 }
+
+/** The server answered but offers no checkpoint. */
+export function NoModelsState({ onRefresh }: { onRefresh: () => void }) {
+  return (
+    <section className={styles.empty}>
+      <h1 className={styles.title}>{t('empty.noModels.title')}</h1>
+      <p className={styles.body}>{t('empty.noModels.body')}</p>
+      <Button onClick={onRefresh}>{t('catalog.refresh')}</Button>
+    </section>
+  )
+}

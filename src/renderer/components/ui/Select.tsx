@@ -7,14 +7,16 @@ type SelectProps = {
   options: { value: string; label: string }[]
   onChange(value: string): void
   label: string
+  /** False keeps the label for assistive tech only, for a row that already shows it. */
+  showLabel?: boolean
 }
 
-export function Select({ value, options, onChange, label }: SelectProps) {
+export function Select({ value, options, onChange, label, showLabel = true }: SelectProps) {
   const current = options.find((option) => option.value === value)
   return (
     <Menu.Root>
       <Menu.Trigger className={styles.trigger}>
-        <span className={styles.label}>{label}</span>
+        <span className={showLabel ? styles.label : 'sr-only'}>{label}</span>
         <span className={styles.value}>{current?.label ?? value}</span>
         <CaretDown size={16} aria-hidden />
       </Menu.Trigger>
