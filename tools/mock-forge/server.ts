@@ -5,7 +5,7 @@ import { deflateSync } from 'node:zlib'
 
 export interface MockForge {
   url: string
-  requests: { method: string; path: string; body: unknown }[]
+  requests: { method: string; path: string; query: string; body: unknown }[]
   respond(
     path: string,
     r: { status?: number; json?: unknown; text?: string; delayMs?: number; hang?: boolean },
@@ -256,7 +256,7 @@ export function startMockForge(opts: { port?: number; stepMs?: number } = {}): P
     }
     const url = new URL(req.url ?? '/', 'http://mock')
     const method = req.method ?? 'GET'
-    requests.push({ method, path: url.pathname, body })
+    requests.push({ method, path: url.pathname, query: url.search.slice(1), body })
 
     const override = overrides.get(url.pathname)
     if (override) {

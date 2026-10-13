@@ -76,12 +76,12 @@ test('a second txt2img waits for the first', async () => {
   expect(doneB).toBeGreaterThanOrEqual(doneA + 150)
 })
 
-test('respond() overrides are recorded and cleared on close', async () => {
+test('respond() overrides the answer and the request is still recorded', async () => {
   mock = await startMockForge()
   mock.respond('/sdapi/v1/samplers', { status: 503, json: { detail: 'busy' } })
   const res = await fetch(`${mock.url}/sdapi/v1/samplers`)
   expect(res.status).toBe(503)
-  expect(mock.requests).toEqual([{ method: 'GET', path: '/sdapi/v1/samplers', body: undefined }])
+  expect(mock.requests).toEqual([{ method: 'GET', path: '/sdapi/v1/samplers', query: '', body: undefined }])
 })
 
 test('close() terminates a hanging request', async () => {

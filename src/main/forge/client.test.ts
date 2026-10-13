@@ -118,10 +118,15 @@ describe('list calls', () => {
     expect(await createForgeClient(mock.url).samplers()).toEqual(['Euler', 'Euler a'])
   })
 
-  test('schedulers() and upscalers() return plain names', async () => {
+  test('schedulers() returns labels and upscalers() plain names', async () => {
     const client = createForgeClient(mock.url)
-    expect(await client.schedulers()).toEqual(['automatic', 'simple'])
+    expect(await client.schedulers()).toEqual(['Automatic', 'Simple'])
     expect(await client.upscalers()).toEqual(['Latent', 'R-ESRGAN 4x+'])
+  })
+
+  test('schedulers() falls back to the name when the label is missing', async () => {
+    mock.respond('/sdapi/v1/schedulers', { json: [{ name: 'karras' }, { name: 'beta', label: '' }] })
+    expect(await createForgeClient(mock.url).schedulers()).toEqual(['karras', 'beta'])
   })
 
   test('options() returns the options object', async () => {
@@ -208,10 +213,15 @@ describe('timeouts', () => {
     await expectForgeError(client.ping(), { kind: 'timeout' })
   })
 
+test('ping rejects a 200 JSON object that is not a Forge progress', async () => {
+    mock.respond('/sdapi/v1/progress', { json: {} })
+    await expectForgeError(createForgeClient(mock.url).ping(), { kind: 'invalid' })
+  })
+
   test('ping resolves with a latency in ms and skips the preview image', async () => {
     const ms = await createForgeClient(mock.url).ping()
     expect(ms).toBeGreaterThanOrEqual(0)
-    expect(mock.requests.at(-1)?.path).toBe('/sdapi/v1/progress')
+    expect(mock.requests.at(-1)).toMatchObject({ path: '/sdapi/v1/progress', query: 'skip_current_image=true' })
   })
 })
 

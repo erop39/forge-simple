@@ -92,6 +92,7 @@ export interface ForgeClient {
   modules(): Promise<SdModule[]>
   loras(): Promise<LoraItem[]>
   samplers(): Promise<string[]>
+  /** Scheduler labels (e.g. "Automatic"), falling back to the internal name. */
   schedulers(): Promise<string[]>
   upscalers(): Promise<string[]>
   options(): Promise<Record<string, unknown>>
@@ -145,6 +146,23 @@ function errorDetail(text: string): string {
     // not JSON: fall through to the raw text
   }
   return text.slice(0, 200)
+}
+
+function parseProgress(value: unknown): ProgressResponse {
+  const json = asObj(value, 'progress')
+  const state = asObj(json.state, 'progress.state')
+  const image = json.current_image
+  return {
+    progress: num(json, 'progress', 'progress'),
+    eta_relative: typeof json.eta_relative === 'number' ? json.eta_relative : 0,
+    current_image: typeof image === 'string' && image !== '' ? image : null,
+    state: {
+      sampling_step: num(state, 'sampling_step', 'state'),
+      sampling_steps: num(state, 'sampling_steps', 'state'),
+      job_no: typeof state.job_no === 'number' ? state.job_no : 0,
+      job_count: typeof state.job_count === 'number' ? state.job_count : 0,
+    },
+  }
 }
 
 export function createForgeClient(
@@ -205,9 +223,8 @@ export function createForgeClient(
   return {
     async ping() {
       const started = performance.now()
-      asObj(
+      parseProgress(
         await request('GET', `${API}/progress?skip_current_image=true`, { timeoutMs: pingTimeoutMs }),
-        'progress',
       )
       return Math.round(performance.now() - started)
     },
@@ -223,20 +240,7 @@ export function createForgeClient(
     },
 
     async progress() {
-      const json = asObj(await request('GET', `${API}/progress`, { timeoutMs: listTimeoutMs }), 'progress')
-      const state = asObj(json.state, 'progress.state')
-      const image = json.current_image
-      return {
-        progress: num(json, 'progress', 'progress'),
-        eta_relative: typeof json.eta_relative === 'number' ? json.eta_relative : 0,
-        current_image: typeof image === 'string' && image !== '' ? image : null,
-        state: {
-          sampling_step: num(state, 'sampling_step', 'state'),
-          sampling_steps: num(state, 'sampling_steps', 'state'),
-          job_no: typeof state.job_no === 'number' ? state.job_no : 0,
-          job_count: typeof state.job_count === 'number' ? state.job_count : 0,
-        },
-      }
+      return parseProgress(await request('GET', `${API}/progress`, { timeoutMs: listTimeoutMs }))
     },
 
     async interrupt() {
@@ -279,7 +283,10 @@ export function createForgeClient(
     },
 
     async schedulers() {
-      return names(await list('schedulers'), 'schedulers item')
+      return (await list('schedulers')).map((item) => {
+        const o = asObj(item, 'schedulers item')
+        return typeof o.label === 'string' && o.label !== '' ? o.label : str(o, 'name', 'schedulers item')
+      })
     },
 
     async upscalers() {
