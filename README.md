@@ -21,7 +21,7 @@ The `postinstall` step rebuilds `better-sqlite3` for Electron's ABI.
 - `pnpm build` - build main, preload and renderer into `out/`.
 - `pnpm test` - run the test suite.
 - `pnpm typecheck` - run the TypeScript checks.
-- `pnpm mock-forge` - run a mock Forge server on port 7861 (added in a later task).
+- `pnpm mock-forge` - run a mock Forge server on port 7861 (override with `PORT`); it answers the `/sdapi/v1` endpoints the client uses and fakes generation progress.
 
 ## Probe
 
