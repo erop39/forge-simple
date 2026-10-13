@@ -23,12 +23,12 @@
 }
 
 .content {
+  composes: fadeIn from '../../styles/motion.module.css';
   min-width: 160px;
   padding: var(--sp-1);
   border-radius: var(--r-control);
   background: var(--surface-3);
   box-shadow: var(--shadow-float);
-  animation: :global(fade-in) var(--dur-menu) ease-out;
 }
 
 .item {

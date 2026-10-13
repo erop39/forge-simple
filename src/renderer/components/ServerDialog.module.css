@@ -1,0 +1,110 @@
+.overlay {
+  composes: fadeIn from '../styles/motion.module.css';
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+}
+
+.content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(440px, calc(100vw - var(--sp-8)));
+  transform: translate(-50%, -50%);
+  padding: var(--sp-6);
+  border-radius: var(--r-panel);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-float);
+  animation: dialog-in var(--dur-menu) ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--h-control);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.label {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.input {
+  height: var(--h-bar);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--blocked);
+}
+
+.error {
+  margin: 0;
+  color: var(--blocked);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--sp-2);
+}
+
+/* Both labels share one grid cell so the button keeps the width of the longer one. */
+.stack {
+  display: inline-grid;
+}
+
+.stack > * {
+  grid-area: 1 / 1;
+}
+
+.hidden {
+  visibility: hidden;
+}

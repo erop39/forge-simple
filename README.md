@@ -33,3 +33,8 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 - `forge-neo-client.db` - SQLite database with servers, jobs, image records, settings and the operation log (entries older than 90 days are purged at start-up).
 - `images/` - generated PNGs in month folders (`images/2026-10/`) and JPEG thumbnails in `images/thumbs/`.
+
+## Screens
+
+- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button; both open the server dialog.
+- **Server dialog** - the address of the PC that runs Forge Neo (started with `--api --listen`). It opens by itself until an address is set and cannot be dismissed before then. A wrong address shows what to check under the field.

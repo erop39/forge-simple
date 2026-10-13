@@ -1,0 +1,13 @@
+/* Shared motion. Components compose these classes so the keyframes keep one hashed name per bundle. */
+.fadeIn {
+  animation: fade-in var(--dur-menu) ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

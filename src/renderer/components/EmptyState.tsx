@@ -1,0 +1,13 @@
+import { t } from '../i18n/t'
+import { Button } from './ui/Button'
+import styles from './EmptyState.module.css'
+
+export function EmptyState({ onConnect }: { onConnect: () => void }) {
+  return (
+    <section className={styles.empty}>
+      <h1 className={styles.title}>{t('empty.noServer.title')}</h1>
+      <p className={styles.body}>{t('empty.noServer.body')}</p>
+      <Button onClick={onConnect}>{t('server.connect')}</Button>
+    </section>
+  )
+}

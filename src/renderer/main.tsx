@@ -5,9 +5,15 @@ import './styles/base.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { createAppStore } from './state/store'
+import { StoreProvider } from './state/StoreProvider'
+
+const store = createAppStore(window.api)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <StoreProvider store={store}>
+      <App />
+    </StoreProvider>
   </StrictMode>,
 )
