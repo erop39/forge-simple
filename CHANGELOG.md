@@ -17,3 +17,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Model family profiles (`src/shared/profiles.ts`): per-family field flags and defaults, checkpoint family detection by file name, aspect-ratio dimensions and default parameters that adapt to the sampler and scheduler lists a server offers.
 - txt2img request builder (`src/main/generation/payload.ts`): a pure function from generation parameters to the Forge request body, applying family profiles, LoRA tags, model modules, clip skip and shift.
 - Model catalog (`src/main/forge/catalog.ts`): checkpoints, modules, LoRAs, samplers, schedulers and upscalers loaded in parallel and cached, with a check that flags a checkpoint or module a job needs but the server no longer lists.
+- Image file store (`src/main/storage/image-store.ts`) writing PNGs and thumbnails under month folders, and safe `fnc-img://` image URLs (`image-protocol.ts`) that cannot resolve outside the images folder.
