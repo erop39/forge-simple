@@ -14,3 +14,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SQLite storage layer: a migrated database and repositories for servers, jobs, images and settings.
 - Operation log: persisted, filterable entries that never contain prompts, with retention purge; a failed write never interrupts the operation.
 - Forge HTTP client (`src/main/forge/client.ts`) with typed calls, address normalisation and one error type, plus a mock Forge server (`pnpm mock-forge`) for tests and manual runs.
+- Model family profiles (`src/shared/profiles.ts`): per-family field flags and defaults, checkpoint family detection by file name, aspect-ratio dimensions and default parameters that adapt to the sampler and scheduler lists a server offers.
