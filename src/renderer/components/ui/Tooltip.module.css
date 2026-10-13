@@ -1,0 +1,19 @@
+.content {
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-control);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 16px;
+  box-shadow: var(--shadow-float);
+  animation: fade-in var(--dur-menu) ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,19 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  height: var(--h-control);
+}
+
+.label {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.value {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+}

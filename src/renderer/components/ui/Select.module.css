@@ -1,0 +1,61 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-control);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color var(--dur-hover) ease-out;
+}
+
+.trigger:hover {
+  border-color: var(--line-strong);
+}
+
+.label {
+  color: var(--text-2);
+}
+
+.value {
+  color: var(--text);
+}
+
+.content {
+  min-width: 160px;
+  padding: var(--sp-1);
+  border-radius: var(--r-control);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-float);
+  animation: fade-in var(--dur-menu) ease-out;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  height: var(--h-control);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-tag);
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+
+.item[data-highlighted] {
+  background: var(--surface-2);
+}
+
+.item[data-state='checked'] {
+  color: var(--signal);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

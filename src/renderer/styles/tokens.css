@@ -1,0 +1,42 @@
+:root {
+  --canvas: #0b0b0a;
+  --surface-1: #141413;
+  --surface-2: #1c1c1a;
+  --surface-3: #262624;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --text: #eceae4;
+  --text-2: #a8a59c;
+  --text-3: #8a877e;
+  --paper: #f4f1ea;
+  --on-paper: #11110f;
+  --signal: #f2a33a;
+  --ok: #6fcf97;
+  --blocked: #f0625a;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --r-tile: 6px;
+  --r-control: 8px;
+  --r-panel: 12px;
+  --r-tag: 4px;
+
+  --h-control: 28px;
+  --h-bar: 32px;
+
+  --dur-hover: 120ms;
+  --dur-menu: 160ms;
+  --dur-panel-in: 220ms;
+  --dur-panel-out: 160ms;
+  --dur-reveal: 260ms;
+
+  --font-ui: 'Onest Variable', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
+}

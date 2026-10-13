@@ -1,0 +1,24 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-control);
+  height: var(--h-control);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color var(--dur-hover) ease-out, color var(--dur-hover) ease-out;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.button:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
