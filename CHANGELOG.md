@@ -18,3 +18,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - txt2img request builder (`src/main/generation/payload.ts`): a pure function from generation parameters to the Forge request body, applying family profiles, LoRA tags, model modules, clip skip and shift.
 - Model catalog (`src/main/forge/catalog.ts`): checkpoints, modules, LoRAs, samplers, schedulers and upscalers loaded in parallel and cached, with a check that flags a checkpoint or module a job needs but the server no longer lists.
 - Image file store (`src/main/storage/image-store.ts`) writing PNGs and thumbnails under month folders, and safe `fnc-img://` image URLs (`image-protocol.ts`) that cannot resolve outside the images folder.
+- Generation queue (`src/main/queue/runner.ts`): one job at a time with per-second progress and previews, cancel, retry, restart recovery, a pause while Forge is unreachable, and a failed job for a missing checkpoint or module; plus a steps-per-second helper.
+- Connection status (`src/main/forge/connection.ts`): a pure state machine (connected, slow, reconnecting, offline) and a monitor that logs loss and recovery of the connection once each.
