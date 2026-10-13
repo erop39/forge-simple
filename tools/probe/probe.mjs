@@ -27,7 +27,7 @@ async function get(path) {
   }
 }
 
-const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj?.[k]]))
+const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj?.[k] ?? null]))
 const names = (r) => (Array.isArray(r.body) ? r.body.map((x) => x?.name ?? x) : undefined)
 
 const report = { base, startedAt: new Date().toISOString(), requests: {} }
