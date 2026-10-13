@@ -1,8 +1,45 @@
-import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { promises as fs } from 'node:fs'
+import { extname, join } from 'node:path'
+import { app, BrowserWindow, ipcMain, nativeImage, protocol } from 'electron'
+import type { AppEvents } from '@shared/ipc'
+import { createActiveForge } from './forge/active-forge'
+import { createForgeClient } from './forge/client'
+import { createConnectionMonitor } from './forge/connection'
+import { FINDINGS } from './forge/findings'
+import { forwardEvents, registerIpc } from './ipc/register'
+import { createOplog } from './oplog/oplog'
+import { createRunner } from './queue/runner'
+import { openDb } from './storage/db'
+import { resolveImageRequest } from './storage/image-protocol'
+import { createImageStore, type MakeThumb } from './storage/image-store'
+import { createRepos } from './storage/repos'
 
-function createWindow(): void {
-  const win = new BrowserWindow({
+const THUMB_WIDTH = 480
+const MONITOR_INTERVAL_MS = 2000
+const LOG_RETENTION_DAYS = 90
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }
+
+// Must run before `ready`.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'fnc-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
+
+const makeThumb: MakeThumb = (png) => {
+  const image = nativeImage.createFromBuffer(png)
+  const { width, height } = image.getSize()
+  const small = width > THUMB_WIDTH ? image.resize({ width: THUMB_WIDTH, quality: 'good' }) : image
+  return { thumb: small.toJPEG(80), width, height }
+}
+
+let win: BrowserWindow | null = null
+
+function send<K extends keyof AppEvents>(event: K, payload: AppEvents[K]): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(`event:${event}`, payload)
+}
+
+function createWindow(onVisibilityChange: () => void): void {
+  const created = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1100,
@@ -18,22 +55,125 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+  win = created
 
-  win.once('ready-to-show', () => win.show())
+  created.once('ready-to-show', () => created.show())
+  created.on('show', onVisibilityChange)
+  created.on('hide', onVisibilityChange)
+  created.on('minimize', onVisibilityChange)
+  created.on('restore', onVisibilityChange)
+  created.on('closed', () => {
+    if (win === created) win = null
+  })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void created.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void created.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
-void app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+async function boot(): Promise<void> {
+  const userData = app.getPath('userData')
+  const db = openDb(join(userData, 'forge-neo-client.db'))
+  const now = (): number => Date.now()
+  const repos = createRepos(db, now)
+  const oplog = createOplog(db, now)
+  const imagesDir = (): string => repos.settings.get('imagesDir') ?? join(userData, 'images')
+
+  oplog.purgeOlderThan(LOG_RETENTION_DAYS)
+  oplog.write({
+    level: 'info', category: 'app', messageKey: 'log.app.started',
+    details: { version: app.getVersion(), platform: process.platform },
   })
-})
+
+  const forge = createActiveForge({
+    activeUrl: () => repos.servers.active()?.url ?? null,
+    familyOverride: () => null,
+    oplog,
+    now,
+  })
+  const images = createImageStore(imagesDir, makeThumb)
+  const events = forwardEvents(imagesDir, send)
+  const runner = createRunner({
+    client: forge.client,
+    catalog: () => forge.catalog().get(),
+    findings: FINDINGS,
+    repos,
+    images,
+    oplog,
+    events: events.runner,
+    now,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  })
+  const monitor = createConnectionMonitor({
+    ping: () => forge.client().ping(),
+    emit: events.connection,
+    now,
+    oplog,
+    address: forge.address,
+  })
+
+  // The monitor runs only while the window is shown and a server is configured.
+  const syncMonitor = (): void => {
+    const visible = win !== null && !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+    if (visible && repos.servers.active()) monitor.start(MONITOR_INTERVAL_MS)
+    else monitor.stop()
+  }
+
+  registerIpc(ipcMain, {
+    repos,
+    catalog: forge.catalog,
+    runner,
+    monitor,
+    images,
+    oplog,
+    imagesDir,
+    createClient: (url) => createForgeClient(url),
+    onServerChanged: syncMonitor,
+  }, send)
+
+  protocol.handle('fnc-img', async (request) => {
+    const file = resolveImageRequest(request.url, imagesDir())
+    const type = file ? IMAGE_TYPES[extname(file).toLowerCase()] : undefined
+    if (!file || !type) return new Response(null, { status: 403 })
+    try {
+      return new Response(new Uint8Array(await fs.readFile(file)), { headers: { 'Content-Type': type } })
+    } catch (err) {
+      const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
+      return new Response(null, { status: missing ? 404 : 500 })
+    }
+  })
+
+  runner.recover()
+  runner.start()
+
+  let closing = false
+  app.on('before-quit', (event) => {
+    if (closing) return
+    closing = true
+    event.preventDefault()
+    monitor.stop()
+    void (async () => {
+      try {
+        await runner.stop()
+        oplog.write({ level: 'info', category: 'app', messageKey: 'log.app.closed' })
+        db.close()
+      } catch (err) {
+        console.error('shutdown failed', err)
+      } finally {
+        app.quit()
+      }
+    })()
+  })
+
+  createWindow(syncMonitor)
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(syncMonitor)
+  })
+}
+
+void app.whenReady().then(boot)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
