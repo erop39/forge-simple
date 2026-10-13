@@ -27,7 +27,9 @@ const toServer = (r: ServerSql): Server => ({
 /** A corrupt params column must not make the row unreadable; the runner fails such a job (see isGenerationParams). */
 function parseParams(text: string): GenerationParams {
   try {
-    return JSON.parse(text) as GenerationParams
+    const v: unknown = JSON.parse(text)
+    // Anything but a plain object (null, numbers, strings, arrays) reads back as an empty object.
+    return (typeof v === 'object' && v !== null && !Array.isArray(v) ? v : {}) as GenerationParams
   } catch {
     return {} as GenerationParams
   }
@@ -138,8 +140,8 @@ export function createRepos(db: Db, now: () => number) {
       return rows.map(toJob)
     },
     markRunningInterrupted(): number {
-      return db.prepare("UPDATE jobs SET status = 'interrupted', finished_at = ? WHERE status = 'running'")
-        .run(now()).changes
+      return db.prepare("UPDATE jobs SET status = 'interrupted', finished_at = ?, error = ? WHERE status = 'running'")
+        .run(now(), JSON.stringify({ code: 'stopped' } satisfies JobError)).changes
     },
   }
 

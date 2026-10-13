@@ -174,3 +174,21 @@ test('a job row with unparsable params can still be read', () => {
   expect(() => repos.jobs.nextQueued(s.id)).not.toThrow()
   expect(() => repos.jobs.listActive()).not.toThrow()
 })
+
+test.each(['null', '5', '"text"', '[1]'])('params %s reads back as an empty object', (text) => {
+  const { db, repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  db.prepare('UPDATE jobs SET params = ? WHERE id = ?').run(text, j.id)
+  expect(repos.jobs.get(j.id)?.params).toEqual({})
+  expect(repos.jobs.nextQueued(s.id)?.params).toEqual({})
+})
+
+test('markRunningInterrupted stores the stopped error code', () => {
+  const { repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  repos.jobs.setStatus(j.id, 'running')
+  expect(repos.jobs.markRunningInterrupted()).toBe(1)
+  expect(repos.jobs.get(j.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
+})

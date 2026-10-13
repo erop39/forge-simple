@@ -448,12 +448,12 @@ test('retry works for failed and interrupted jobs and throws otherwise', () => {
   expect(() => h.runner.retry(q.id)).toThrow()
 })
 
-test('recover marks running jobs interrupted', () => {
+test('recover marks running jobs interrupted with code stopped', () => {
   const h = setup()
   const [a, b] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
   h.repos.jobs.setStatus(a.id, 'running')
   h.runner.recover()
-  expect(h.repos.jobs.get(a.id)?.status).toBe('interrupted')
+  expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
   expect(h.repos.jobs.get(b.id)?.status).toBe('queued')
 })
 
@@ -747,27 +747,50 @@ describe('review fixes', () => {
     expect(h.repos.jobs.get(job.id)?.status).toBe('done')
   })
 
-  test('forge error text containing the prompt is kept out of the log but stays in job.error', async () => {
-    const h = setup()
-    const [job] = h.runner.enqueue(params()) as [Job]
-    const t = h.runner.tick()
-    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
-    h.gens[0]!.reject(new ForgeError('http', 'x', { status: 422, detail: `bad prompt: ${SECRET} here` }))
-    await t
-    expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 422, detail: `bad prompt: ${SECRET} here` })
-    const entry = h.oplog.list({ category: 'error' })[0]!
-    expect(entry.details).toMatchObject({ kind: 'http', status: 422, detailOmitted: true })
-    expect(entry.details).not.toHaveProperty('detail')
+  test('forge error detail never reaches the log; job.error keeps it', async () => {
+    const prompt = Array.from({ length: 40 }, (_, i) => `word"${i}" a\b
+line`).join(' ')
+    const variants = [
+      `bad prompt: ${prompt}`,
+      JSON.stringify(prompt),
+      prompt.slice(0, 200),
+      'e'.repeat(500),
+    ]
+    for (const detail of variants) {
+      const h = setup()
+      const [job] = h.runner.enqueue(params({ prompt, negativePrompt: 'neg-' + prompt })) as [Job]
+      const t = h.runner.tick()
+      await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+      h.gens[0]!.reject(new ForgeError('http', 'x', { status: 422, detail }))
+      await t
+      expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 422, detail })
+      const entries = h.oplog.list({ limit: 5000 })
+      const entry = entries.find((e) => e.category === 'error')!
+      expect(entry.details).toEqual({ kind: 'http', status: 422 })
+      const logged = JSON.stringify(entries)
+      for (let i = 0; i + 12 <= prompt.length; i += 7) expect(logged).not.toContain(prompt.slice(i, i + 12))
+      db.close()
+    }
   })
 
-  test('forge error text is logged truncated to 300 characters', async () => {
+  test('a network failure entry carries only kind', async () => {
     const h = setup()
     h.runner.enqueue(params())
     const t = h.runner.tick()
     await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
-    h.gens[0]!.reject(new ForgeError('http', 'x', { status: 500, detail: 'e'.repeat(500) }))
+    h.gens[0]!.reject(new ForgeError('network', 'x', { detail: 'secret echo' }))
     await t
-    expect(h.oplog.list({ category: 'error' })[0]!.details.detail).toBe('e'.repeat(300))
+    expect(h.oplog.list({ category: 'error' })[0]!.details).toEqual({ kind: 'network', status: null })
+  })
+
+  test('ping ok but catalog failing: one paused entry, no resumed, across cycles', async () => {
+    const h = setup()
+    h.runner.enqueue(params())
+    h.state.catalog = new ForgeError('network', 'down')
+    for (let i = 0; i < 3; i++) expect(await h.runner.tick()).toBe('paused')
+    const keys = logKeys(h)
+    expect(keys.filter((k) => k === 'log.queue.paused')).toHaveLength(1)
+    expect(keys).not.toContain('log.queue.resumed')
   })
 
   test('cancel interrupts through the client that runs the job', async () => {

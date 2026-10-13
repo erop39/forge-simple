@@ -33,7 +33,6 @@ export const PAUSE_INTERVAL_MS = 5000
 /** Consecutive failed progress polls after which a silent link drop ends the job. */
 export const PROGRESS_FAILURE_LIMIT = 15
 export const MAX_COUNT = 8
-const LOG_DETAIL_MAX = 300
 
 interface ActiveJob {
   jobId: number
@@ -52,16 +51,6 @@ function sameModules(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false
   const sb = [...b].sort()
   return [...a].sort().every((m, i) => m === sb[i])
-}
-
-const mentionsPrompt = (params: Partial<GenerationParams>, text: string): boolean =>
-  [params.prompt, params.negativePrompt].some((p) => typeof p === 'string' && p !== '' && text.includes(p))
-
-/** Server or system text for the log: truncated, and left out when it echoes the job's prompt. */
-function logText(params: Partial<GenerationParams>, text: string | undefined): Record<string, unknown> {
-  if (text === undefined) return {}
-  if (mentionsPrompt(params, text)) return { detailOmitted: true }
-  return { detail: text.slice(0, LOG_DETAIL_MAX) }
 }
 
 /** Any problem with the server's info text yields no seeds and no infotexts. */
@@ -233,13 +222,13 @@ export function createRunner(deps: RunnerDeps): {
       } catch {
         return markPaused()
       }
-      resumeIfPaused()
       let catalog: Catalog
       try {
         catalog = await deps.catalog()
       } catch {
         return markPaused()
       }
+      resumeIfPaused() // both ping and catalog succeeded
       if (epoch !== stopEpoch) return 'idle'
 
       // The job may have been cancelled while we were waiting for the network.
@@ -258,13 +247,12 @@ export function createRunner(deps: RunnerDeps): {
     } catch (err) {
       console.error('runner: tick failed', err)
       const message = messageOf(err)
-      const params: Partial<GenerationParams> = current?.params ?? {}
       const stack = err instanceof Error ? err.stack : undefined
       log({
         level: 'error', category: 'error', messageKey: 'log.error.runner', jobId: current?.id,
         details: {
-          ...logText(params, message),
-          ...(stack !== undefined && !mentionsPrompt(params, stack) ? { stack } : {}),
+          detail: message,
+          ...(stack !== undefined ? { stack } : {}),
         },
       })
       if (current) {
@@ -372,7 +360,7 @@ export function createRunner(deps: RunnerDeps): {
   function failForgeError(job: Job, err: ForgeError, code: 'forgeHttp' | 'forgeInvalid'): TickResult {
     const error: JobError = { code, ...(err.status !== undefined ? { status: err.status } : {}), ...(err.detail !== undefined ? { detail: err.detail } : {}) }
     setStatus(job.id, 'failed', { error })
-    logError(job, 'log.error.generation', { kind: err.kind, status: err.status ?? null, ...logText(job.params, err.detail) })
+    logError(job, 'log.error.generation', { kind: err.kind, status: err.status ?? null })
     return 'ran'
   }
 
@@ -404,12 +392,12 @@ export function createRunner(deps: RunnerDeps): {
       if (err instanceof ForgeError && err.kind === 'invalid') return failForgeError(job, err, 'forgeInvalid')
       if (err instanceof ForgeError) {
         interrupted(job, { code: 'network', ...(err.detail !== undefined ? { detail: err.detail } : {}) }, 'log.error.connectionLost',
-          { kind: err.kind, ...logText(params, err.detail) })
+          { kind: err.kind, status: err.status ?? null })
         return markPaused()
       }
       const message = messageOf(err)
       setStatus(job.id, 'failed', { error: { code: 'unexpected', detail: message } })
-      logError(job, 'log.error.generation', logText(params, message))
+      logError(job, 'log.error.generation', { detail: message })
       return 'ran'
     }
 
@@ -463,7 +451,7 @@ export function createRunner(deps: RunnerDeps): {
       }
       const message = messageOf(err)
       setStatus(job.id, 'failed', { error: { code: 'storage', detail: message } })
-      logError(job, 'log.error.storage', { ...logText(params, message), ...(failingPath !== undefined ? { path: failingPath } : {}) })
+      logError(job, 'log.error.storage', { detail: message, ...(failingPath !== undefined ? { path: failingPath } : {}) })
       return 'ran'
     }
 
