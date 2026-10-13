@@ -43,7 +43,7 @@ const progressAt = (step: number, image: string | null = null): ProgressResponse
 let db: Db
 afterEach(() => { if (db?.open) db.close() })
 
-function setup(opts: { catalog?: Catalog; autoComplete?: boolean } = {}) {
+function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean } = {}) {
   db = openDb(':memory:')
   let clock = 0
   const now = () => clock
@@ -58,7 +58,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean } = {}) {
 
   const gens: Deferred<GenerationResponse>[] = []
   const signals: AbortSignal[] = []
-  const state = { pingOk: true, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
+  const state = { clientOverride: null as unknown, pingOk: true, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
   const client = {
     ping: vi.fn(async () => {
       if (!state.pingOk) throw new ForgeError('network', 'down')
@@ -69,7 +69,10 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean } = {}) {
       gens.push(d)
       if (signal) {
         signals.push(signal)
-        signal.addEventListener('abort', () => d.reject(new ForgeError('network', 'aborted')))
+        signal.addEventListener('abort', () => {
+          if (opts.abortResolves) d.resolve(response())
+          else d.reject(new ForgeError('network', 'aborted'))
+        })
       }
       if (opts.autoComplete) d.resolve(response())
       return d.promise
@@ -90,7 +93,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean } = {}) {
   }
 
   const runner = createRunner({
-    client: () => client as unknown as ForgeClient,
+    client: () => (state.clientOverride ?? client) as ForgeClient,
     catalog: async () => {
       if (state.catalog instanceof Error) throw state.catalog
       return state.catalog
@@ -262,7 +265,7 @@ test('response with no images → failed', async () => {
   await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
   h.gens[0]!.resolve({ images: [], info: '{}' })
   expect(await t).toBe('ran')
-  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: expect.stringMatching(/no images/i) })
+  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: { code: 'noImages' } })
 })
 
 test('ForgeError http → failed with detail; next tick runs the next job', async () => {
@@ -272,7 +275,7 @@ test('ForgeError http → failed with detail; next tick runs the next job', asyn
   await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(1))
   h.gens[0]!.reject(new ForgeError('http', 'HTTP 500', { status: 500, detail: 'CUDA out of memory' }))
   expect(await t).toBe('ran')
-  expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: 'CUDA out of memory' })
+  expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: { code: 'forgeHttp', status: 500, detail: 'CUDA out of memory' } })
   const err = h.oplog.list({ category: 'error' })
   expect(err).toHaveLength(1)
   expect(err[0]).toMatchObject({ level: 'error', jobId: a.id })
@@ -291,7 +294,7 @@ test('ForgeError without detail falls back to kind and status', async () => {
   await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
   h.gens[0]!.reject(new ForgeError('http', 'HTTP 503', { status: 503 }))
   await t
-  expect(h.repos.jobs.get(job.id)?.error).toBe('Forge error: http 503')
+  expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 503 })
 })
 
 test('ForgeError network during generation → interrupted and tick returns paused', async () => {
@@ -313,10 +316,10 @@ test('image store failure → failed, error entry logged with the path, queue co
   await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(1))
   h.gens[0]!.resolve(response())
   expect(await t).toBe('ran')
-  expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: 'ENOSPC: no space left' })
+  expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: { code: 'storage', detail: 'ENOSPC: no space left' } })
   const err = h.oplog.list({ category: 'error' })
   expect(err).toHaveLength(1)
-  expect(err[0]!.details).toMatchObject({ path: '/img/a.png', message: 'ENOSPC: no space left' })
+  expect(err[0]!.details).toMatchObject({ path: '/img/a.png', detail: 'ENOSPC: no space left' })
   expect(h.repos.images.list({ limit: 10 })).toHaveLength(0)
 
   const t2 = h.runner.tick()
@@ -335,7 +338,7 @@ test('database failure while inserting an image row → failed, the stored file 
   h.gens[0]!.resolve(response())
   expect(await t).toBe('ran')
   spy.mockRestore()
-  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: 'db locked' })
+  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: { code: 'storage', detail: 'db locked' } })
   expect(h.images.remove).toHaveBeenCalledWith(`/img/${job.id}-111.png`, `/img/t/${job.id}-111.jpg`)
   expect(h.oplog.list({ category: 'error' })[0]!.details).toMatchObject({ path: `/img/${job.id}-111.png` })
 })
@@ -347,7 +350,7 @@ test('missing checkpoint → failed before any request, error names the file', a
   expect(h.client.txt2img).not.toHaveBeenCalled()
   const j = h.repos.jobs.get(job.id) as Job
   expect(j.status).toBe('failed')
-  expect(j.error).toContain(CKPT)
+  expect(j.error).toEqual({ code: 'missingParts', missing: [CKPT] })
   expect(h.oplog.list({ category: 'error' })).toHaveLength(1)
 })
 
@@ -355,9 +358,7 @@ test('missing module and checkpoint are all named', async () => {
   const h = setup({ catalog: catalogWith([CKPT2]) })
   const [job] = h.runner.enqueue(params({ modules: ['/m/vae.safetensors'] })) as [Job]
   await h.runner.tick()
-  const error = h.repos.jobs.get(job.id)?.error ?? ''
-  expect(error).toContain(CKPT)
-  expect(error).toContain('/m/vae.safetensors')
+  expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'missingParts', missing: [CKPT, '/m/vae.safetensors'] })
 })
 
 test('cancel on a queued job → cancelled without calling interrupt', async () => {
@@ -439,7 +440,7 @@ test('retry works for failed and interrupted jobs and throws otherwise', () => {
   const [q] = h.runner.enqueue(params()) as [Job]
   expect(() => h.runner.retry(q.id)).toThrow()
   expect(() => h.runner.retry(9999)).toThrow()
-  h.repos.jobs.setStatus(q.id, 'failed', { error: 'x' })
+  h.repos.jobs.setStatus(q.id, 'failed', { error: { code: 'unexpected' } })
   expect(h.runner.retry(q.id).status).toBe('queued')
   h.repos.jobs.setStatus(q.id, 'interrupted')
   expect(h.runner.retry(q.id).status).toBe('queued')
@@ -467,12 +468,12 @@ test('logs generation start and finish with duration; logs checkpoint change onl
 
   const keys = logKeys(h).filter((k) => !k.startsWith('log.queue'))
   expect(keys).toEqual([
-    'log.checkpoint.changed', 'log.generation.started', 'log.generation.finished',
+    'log.generation.started', 'log.generation.finished',
     'log.generation.started', 'log.generation.finished',
     'log.checkpoint.changed', 'log.generation.started', 'log.generation.finished',
   ])
   const changes = h.oplog.list({ category: 'checkpoint' }).reverse()
-  expect(changes.map((e) => e.details)).toEqual([{ from: null, to: CKPT }, { from: CKPT, to: CKPT2 }])
+  expect(changes.map((e) => e.details)).toEqual([{ from: CKPT, to: CKPT2, modulesFrom: [], modulesTo: [] }])
   const finished = h.oplog.list({ category: 'generation' }).filter((e) => e.messageKey === 'log.generation.finished')
   expect(finished).toHaveLength(3)
   expect(finished.every((e) => e.durationMs === 0)).toBe(true)
@@ -487,7 +488,9 @@ test('a changed module set counts as a checkpoint change', async () => {
   h.runner.enqueue(params({ modules: ['/m/vae.safetensors'] }))
   await h.runner.tick()
   await h.runner.tick()
-  expect(h.oplog.list({ category: 'checkpoint' })).toHaveLength(2)
+  const [change] = h.oplog.list({ category: 'checkpoint' })
+  expect(h.oplog.list({ category: 'checkpoint' })).toHaveLength(1)
+  expect(change!.details).toEqual({ from: CKPT, to: CKPT, modulesFrom: [], modulesTo: ['/m/vae.safetensors'] })
 })
 
 test('no log entry contains the prompt', async () => {
@@ -515,7 +518,7 @@ test('an unexpected exception in a tick is logged and tick returns paused; a thr
   const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   h.client.txt2img.mockImplementationOnce(() => { throw new Error('sync boom') })
   expect(await h.runner.tick()).toBe('ran')
-  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: 'sync boom' })
+  expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: { code: 'unexpected', detail: 'sync boom' } })
 
   h.runner.enqueue(params())
   vi.spyOn(h.repos.jobs, 'nextQueued').mockImplementationOnce(() => { throw new Error('db boom') })
@@ -619,5 +622,181 @@ describe('loop', () => {
     const [job] = h.runner.enqueue(params()) as [Job]
     await vi.waitFor(() => expect(h.repos.jobs.get(job.id)?.status).toBe('done'))
     h.runner.stop()
+  })
+})
+
+describe('review fixes', () => {
+  const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
+
+  async function failProgressPolls(h: ReturnType<typeof setup>, n: number) {
+    h.state.progress = new Error('link down')
+    for (let i = 0; i < n; i++) {
+      const before = h.client.progress.mock.calls.length
+      await vi.waitFor(() => expect(h.sleeps.some((s) => s.ms === 1000 && !s.used)).toBe(true))
+      const s = h.sleeps.find((x) => x.ms === 1000 && !x.used)!
+      s.used = true
+      s.d.resolve()
+      await vi.waitFor(() => expect(h.client.progress.mock.calls.length).toBe(before + 1))
+    }
+  }
+
+  test('stop(); start() in the same turn leaves a live loop', async () => {
+    const h = setup({ autoComplete: true })
+    h.runner.start()
+    await flush()
+    void h.runner.stop()
+    h.runner.start()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    await vi.waitFor(() => expect(h.repos.jobs.get(job.id)?.status).toBe('done'))
+    await h.runner.stop()
+  })
+
+  test('start() while the old tick is still in flight → new loop takes over after it', async () => {
+    const h = setup()
+    const [a, b] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
+    h.runner.start()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(1))
+    const stopping = h.runner.stop()
+    h.runner.start()
+    await vi.waitFor(() => expect(h.repos.jobs.get(a.id)?.status).toBe('interrupted'))
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(2))
+    expect(h.repos.jobs.get(b.id)?.status).toBe('running')
+    await stopping
+    await h.runner.stop()
+    expect(h.repos.jobs.get(b.id)?.status).toBe('interrupted')
+  })
+
+  test('stop() resolves once the loop and the tick are gone; running job gets code stopped', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    h.runner.start()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    await h.runner.stop()
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
+  })
+
+  test('stop(): if Forge answered before the abort took effect the result is kept', async () => {
+    const h = setup({ abortResolves: true })
+    const [job] = h.runner.enqueue(params()) as [Job]
+    h.runner.start()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    await h.runner.stop()
+    expect(h.repos.jobs.get(job.id)?.status).toBe('done')
+    expect(h.repos.images.list({ limit: 5 })).toHaveLength(1)
+  })
+
+  test('tick() after stop() without start() is a normal single pass', async () => {
+    const h = setup({ autoComplete: true })
+    const [job] = h.runner.enqueue(params()) as [Job]
+    await h.runner.stop()
+    expect(await h.runner.tick()).toBe('ran')
+    expect(h.repos.jobs.get(job.id)?.status).toBe('done')
+  })
+
+  test.each([
+    ['unparsable params', 'not json {'],
+    ['params lacking required fields', '{"prompt":"x"}'],
+  ])('a stored job with %s fails as corruptJob and the queue moves on', async (_n, text) => {
+    const h = setup({ autoComplete: true })
+    const [bad, good] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
+    db.prepare('UPDATE jobs SET params = ? WHERE id = ?').run(text, bad.id)
+    expect(await h.runner.tick()).toBe('ran')
+    expect(h.repos.jobs.get(bad.id)).toMatchObject({ status: 'failed', error: { code: 'corruptJob' } })
+    expect(h.updates.some((u) => u.id === bad.id && u.status === 'failed')).toBe(true)
+    expect(await h.runner.tick()).toBe('ran')
+    expect(h.repos.jobs.get(good.id)?.status).toBe('done')
+  })
+
+  test('a job that throws before running is failed, not retried forever', async () => {
+    const h = setup({ autoComplete: true })
+    const [bad, good] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    h.state.catalog = { get checkpoints(): never { throw new Error('catalog exploded') }, get modules(): never { throw new Error('catalog exploded') } } as unknown as Catalog
+    expect(await h.runner.tick()).toBe('paused')
+    expect(h.repos.jobs.get(bad.id)).toMatchObject({ status: 'failed', error: { code: 'unexpected', detail: 'catalog exploded' } })
+    h.state.catalog = catalogWith([CKPT])
+    expect(await h.runner.tick()).toBe('ran')
+    expect(h.repos.jobs.get(good.id)?.status).toBe('done')
+    const entry = h.oplog.list({ category: 'error' }).find((e) => e.messageKey === 'log.error.runner')
+    expect(typeof entry?.details.stack).toBe('string')
+    spy.mockRestore()
+  })
+
+  test('watchdog: 15 consecutive failed progress polls → interrupted (network), tick paused', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    await failProgressPolls(h, 15)
+    expect(await t).toBe('paused')
+    expect(h.signals[0]!.aborted).toBe(true)
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'network' } })
+  })
+
+  test('watchdog: 14 failures then a success keeps the job going', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    await failProgressPolls(h, 14)
+    await h.poll(3, 1000)
+    await failProgressPolls(h, 14)
+    expect(h.signals[0]!.aborted).toBe(false)
+    h.gens[0]!.resolve(response())
+    expect(await t).toBe('ran')
+    expect(h.repos.jobs.get(job.id)?.status).toBe('done')
+  })
+
+  test('forge error text containing the prompt is kept out of the log but stays in job.error', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    h.gens[0]!.reject(new ForgeError('http', 'x', { status: 422, detail: `bad prompt: ${SECRET} here` }))
+    await t
+    expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 422, detail: `bad prompt: ${SECRET} here` })
+    const entry = h.oplog.list({ category: 'error' })[0]!
+    expect(entry.details).toMatchObject({ kind: 'http', status: 422, detailOmitted: true })
+    expect(entry.details).not.toHaveProperty('detail')
+  })
+
+  test('forge error text is logged truncated to 300 characters', async () => {
+    const h = setup()
+    h.runner.enqueue(params())
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    h.gens[0]!.reject(new ForgeError('http', 'x', { status: 500, detail: 'e'.repeat(500) }))
+    await t
+    expect(h.oplog.list({ category: 'error' })[0]!.details.detail).toBe('e'.repeat(300))
+  })
+
+  test('cancel interrupts through the client that runs the job', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
+    const other = { interrupt: vi.fn(async () => undefined) }
+    h.state.clientOverride = other
+    await h.runner.cancel(job.id)
+    expect(h.client.interrupt).toHaveBeenCalledTimes(1)
+    expect(other.interrupt).not.toHaveBeenCalled()
+    await t
+  })
+
+  test.each([0, 9, 1.5, Number.NaN, -1])('enqueue with count %s throws RangeError', (count) => {
+    const h = setup()
+    expect(() => h.runner.enqueue(params({ count }))).toThrow(RangeError)
+    expect(statuses(h)).toEqual([])
+  })
+
+  test('the pause is cleared when a ping succeeds even if the queue is empty by then', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    h.state.pingOk = false
+    expect(await h.runner.tick()).toBe('paused')
+    await h.runner.cancel(job.id)
+    h.state.pingOk = true
+    expect(await h.runner.tick()).toBe('idle')
+    expect(logKeys(h)).toContain('log.queue.resumed')
   })
 })

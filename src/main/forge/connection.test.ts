@@ -141,4 +141,38 @@ describe('monitor', () => {
       vi.useRealTimers()
     }
   })
+
+  test('a sample in flight when stop() is called neither emits nor logs', async () => {
+    db = openDb(':memory:')
+    const oplog = createOplog(db, () => 1)
+    const emitted: unknown[] = []
+    let release: (n: number) => void = () => undefined
+    let calls = 0
+    const monitor = createConnectionMonitor({
+      ping: () => { calls++; return calls === 1 ? Promise.resolve(10) : new Promise<number>((r) => { release = r }) },
+      emit: (s) => emitted.push(s), now: () => 0, oplog,
+    })
+    await monitor.sampleOnce()
+    expect(emitted).toHaveLength(1)
+    const pending = monitor.sampleOnce()
+    monitor.stop()
+    release(20)
+    await pending
+    expect(emitted).toHaveLength(1)
+    expect(monitor.current().latencyMs).toBe(10)
+  })
+
+  test('lost and restored entries carry the server address when provided', async () => {
+    db = openDb(':memory:')
+    const oplog = createOplog(db, () => 1)
+    const results: (number | null)[] = [10, null, 10]
+    const monitor = createConnectionMonitor({
+      ping: async () => { const r = results.shift(); if (r == null) throw new Error('x'); return r },
+      emit: () => undefined, now: () => 0, oplog, address: () => 'http://forge.test',
+    })
+    await monitor.sampleOnce(); await monitor.sampleOnce(); await monitor.sampleOnce()
+    const entries = oplog.list({ category: 'connection' })
+    expect(entries).toHaveLength(2)
+    expect(entries.every((e) => e.details.address === 'http://forge.test')).toBe(true)
+  })
 })

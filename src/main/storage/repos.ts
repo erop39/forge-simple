@@ -1,4 +1,4 @@
-import type { GenerationParams, ImageRecord, Job, JobStatus, JobType } from '@shared/types'
+import type { GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType } from '@shared/types'
 import type { Db } from './db'
 
 export interface Server { id: number; name: string; url: string; active: boolean; lastConnectedAt: number | null }
@@ -24,9 +24,39 @@ const FINISHED: readonly JobStatus[] = ['done', 'failed', 'interrupted', 'cancel
 const toServer = (r: ServerSql): Server => ({
   id: r.id, name: r.name, url: r.url, active: r.active === 1, lastConnectedAt: r.last_connected_at,
 })
+/** A corrupt params column must not make the row unreadable; the runner fails such a job (see isGenerationParams). */
+function parseParams(text: string): GenerationParams {
+  try {
+    return JSON.parse(text) as GenerationParams
+  } catch {
+    return {} as GenerationParams
+  }
+}
+function parseError(text: string | null): JobError | null {
+  if (text === null) return null
+  try {
+    const v: unknown = JSON.parse(text)
+    if (typeof v === 'object' && v !== null && typeof (v as { code?: unknown }).code === 'string') return v as JobError
+  } catch {
+    // legacy plain-text value
+  }
+  return { code: 'unexpected', detail: text }
+}
+
+/** True when a stored params object has everything the request builder needs. */
+export function isGenerationParams(p: unknown): p is GenerationParams {
+  if (typeof p !== 'object' || p === null) return false
+  const o = p as Record<string, unknown>
+  const num = (k: string) => typeof o[k] === 'number' && Number.isFinite(o[k])
+  const str = (k: string) => typeof o[k] === 'string'
+  return str('family') && str('checkpoint') && Array.isArray(o.modules) && o.modules.every((m) => typeof m === 'string')
+    && str('prompt') && str('negativePrompt') && num('width') && num('height') && num('steps') && num('cfgScale')
+    && num('distilledCfg') && str('sampler') && str('scheduler') && num('seed') && Array.isArray(o.loras)
+}
+
 const toJob = (r: JobSql): Job => ({
   id: r.id, serverId: r.server_id, type: r.type, status: r.status,
-  params: JSON.parse(r.params) as GenerationParams, error: r.error,
+  params: parseParams(r.params), error: parseError(r.error),
   createdAt: r.created_at, finishedAt: r.finished_at, durationMs: r.duration_ms,
   stepsPerSec: r.steps_per_sec, peakVram: r.peak_vram,
 })
@@ -94,7 +124,7 @@ export function createRepos(db: Db, now: () => number) {
       for (const key of Object.keys(columns) as (keyof typeof columns)[]) {
         if (patch[key] !== undefined) {
           sets.push(`${columns[key]} = ?`)
-          values.push(patch[key])
+          values.push(key === 'error' ? (patch.error === null ? null : JSON.stringify(patch.error)) : (patch[key] as number | null))
         }
       }
       const res = db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values, id)

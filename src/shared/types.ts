@@ -19,9 +19,12 @@ export interface GenerationParams {
   count: number;               // сколько задач создать, 1..8
   loras: LoraRef[];
 }
+export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'unexpected';
+/** detail carries server or system text verbatim; missing carries the unavailable file values. */
+export interface JobError { code: JobErrorCode; status?: number; detail?: string; missing?: string[] }
 export interface Job {
   id: number; serverId: number; type: JobType; status: JobStatus;
-  params: GenerationParams; error: string | null;
+  params: GenerationParams; error: JobError | null;
   createdAt: number; finishedAt: number | null;
   durationMs: number | null; stepsPerSec: number | null; peakVram: number | null;
 }

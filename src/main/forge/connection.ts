@@ -44,6 +44,7 @@ export function createConnectionMonitor(deps: {
   emit(s: ConnectionStatus): void
   now(): number
   oplog: Oplog
+  address?: () => string
 }): {
   sampleOnce(): Promise<ConnectionStatus>
   start(intervalMs?: number): void
@@ -54,25 +55,29 @@ export function createConnectionMonitor(deps: {
   let lostAt: number | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   let inFlight: Promise<ConnectionStatus> | null = null
+  let epoch = 0 // bumped by stop(): a sample that began earlier is dropped
+  const where = (): Record<string, unknown> => (deps.address ? { address: deps.address() } : {})
 
   async function sample(): Promise<ConnectionStatus> {
+    const mine = epoch
     let latency: number | null = null
     try {
       latency = await deps.ping()
     } catch {
       latency = null
     }
+    if (mine !== epoch) return publicStatus(tracker)
     const t = deps.now()
     const prev = tracker
     tracker = nextConnection(prev, latency === null ? { ok: false, t } : { ok: true, latencyMs: latency, t })
 
     if (isHealthy(prev) && !isHealthy(tracker)) {
       lostAt = t
-      deps.oplog.write({ level: 'warn', category: 'connection', messageKey: 'log.connection.lost', details: { state: tracker.state } })
+      deps.oplog.write({ level: 'warn', category: 'connection', messageKey: 'log.connection.lost', details: { state: tracker.state, ...where() } })
     } else if (!isHealthy(prev) && isHealthy(tracker) && lostAt !== null) {
       deps.oplog.write({
         level: 'info', category: 'connection', messageKey: 'log.connection.restored',
-        details: { downtimeMs: t - lostAt },
+        details: { downtimeMs: t - lostAt, ...where() },
       })
       lostAt = null
     }
@@ -102,6 +107,7 @@ export function createConnectionMonitor(deps: {
       void sampleOnce()
     },
     stop() {
+      epoch++
       if (timer) clearInterval(timer)
       timer = null
     },

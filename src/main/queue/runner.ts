@@ -1,11 +1,11 @@
-import type { Catalog, GenerationParams, Job, JobProgress } from '@shared/types'
+import type { Catalog, GenerationParams, Job, JobError, JobProgress } from '@shared/types'
 import { ForgeError, type ForgeClient, type GenerationResponse } from '../forge/client'
 import { checkParts } from '../forge/catalog'
 import type { ProbeFindings } from '../forge/findings'
 import { buildTxt2ImgBody } from '../generation/payload'
 import type { Oplog, OplogWrite } from '../oplog/oplog'
 import type { createImageStore } from '../storage/image-store'
-import type { createRepos, ImageRow } from '../storage/repos'
+import { isGenerationParams, type createRepos, type ImageRow } from '../storage/repos'
 import { stepsPerSec } from './speed'
 
 export interface RunnerEvents {
@@ -30,12 +30,18 @@ export type TickResult = 'idle' | 'ran' | 'paused'
 
 export const PROGRESS_INTERVAL_MS = 1000
 export const PAUSE_INTERVAL_MS = 5000
+/** Consecutive failed progress polls after which a silent link drop ends the job. */
+export const PROGRESS_FAILURE_LIMIT = 15
+export const MAX_COUNT = 8
+const LOG_DETAIL_MAX = 300
 
 interface ActiveJob {
   jobId: number
+  client: ForgeClient
   controller: AbortController
   cancelling: boolean
   stopping: boolean
+  watchdog: boolean
 }
 
 type Outcome = { ok: true; value: GenerationResponse } | { ok: false; error: unknown }
@@ -46,6 +52,16 @@ function sameModules(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false
   const sb = [...b].sort()
   return [...a].sort().every((m, i) => m === sb[i])
+}
+
+const mentionsPrompt = (params: Partial<GenerationParams>, text: string): boolean =>
+  [params.prompt, params.negativePrompt].some((p) => typeof p === 'string' && p !== '' && text.includes(p))
+
+/** Server or system text for the log: truncated, and left out when it echoes the job's prompt. */
+function logText(params: Partial<GenerationParams>, text: string | undefined): Record<string, unknown> {
+  if (text === undefined) return {}
+  if (mentionsPrompt(params, text)) return { detailOmitted: true }
+  return { detail: text.slice(0, LOG_DETAIL_MAX) }
 }
 
 /** Any problem with the server's info text yields no seeds and no infotexts. */
@@ -70,18 +86,22 @@ export function createRunner(deps: RunnerDeps): {
   recover(): void
   tick(): Promise<TickResult>
   start(): void
-  stop(): void
+  stop(): Promise<void>
   kick(): void
 } {
   const { repos, oplog, events } = deps
 
   let active: ActiveJob | null = null
   let tickInFlight: Promise<TickResult> | null = null
+  let tickEpoch = 0
   let lastDone: { checkpoint: string; modules: string[] } | null = null
   let queuePaused = false
 
-  // `stopped` is true once stop() was called and until the next start().
-  let stopped = false
+  // Every stop() bumps `stopEpoch`: a tick that began earlier backs off, a tick that begins later
+  // is a normal pass. Every start()/stop() bumps `runGen`: only the newest loop keeps running.
+  let stopEpoch = 0
+  let running = false
+  let runGen = 0
   let loopPromise: Promise<void> | null = null
   let wake: (() => void) | null = null
   let pendingKick = false
@@ -104,18 +124,20 @@ export function createRunner(deps: RunnerDeps): {
 
   const log = (e: OplogWrite): void => oplog.write(e)
 
-  function logError(job: Job, messageKey: string, message: string, extra: Record<string, unknown> = {}): void {
-    log({ level: 'error', category: 'error', messageKey, jobId: job.id, details: { message, ...extra } })
+  function logError(job: Job, messageKey: string, details: Record<string, unknown> = {}): void {
+    log({ level: 'error', category: 'error', messageKey, jobId: job.id, details })
   }
 
   // ---- public operations -------------------------------------------------
 
   function enqueue(params: GenerationParams): Job[] {
+    if (!Number.isInteger(params.count) || params.count < 1 || params.count > MAX_COUNT) {
+      throw new RangeError(`count must be an integer from 1 to ${MAX_COUNT}`)
+    }
     const server = repos.servers.active()
     if (!server) throw new Error('No active server')
-    const count = Math.max(1, Math.trunc(params.count))
     const jobs: Job[] = []
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < params.count; i++) {
       const seed = params.seed === -1 ? -1 : params.seed + i
       const job = repos.jobs.insert(server.id, 'txt2img', { ...params, count: 1, seed })
       jobs.push(job)
@@ -138,7 +160,7 @@ export function createRunner(deps: RunnerDeps): {
       a.cancelling = true
       log({ level: 'info', category: 'queue', messageKey: 'log.queue.cancelled', jobId, details: { type: job.type, wasRunning: true } })
       try {
-        await deps.client().interrupt()
+        await a.client.interrupt() // the client that runs the job, not a fresh one
       } catch {
         // Forge may be gone; aborting the request below still ends the job.
       } finally {
@@ -166,21 +188,44 @@ export function createRunner(deps: RunnerDeps): {
 
   // ---- one pass ----------------------------------------------------------
 
+  // One tick at a time. A call made during a tick joins it, unless a stop() happened since that tick
+  // began: then it runs after it, so a restarted loop is never handed a tick that backed off.
   function tick(): Promise<TickResult> {
-    if (tickInFlight) return tickInFlight
-    const p = runTick().finally(() => { tickInFlight = null })
+    const prev = tickInFlight
+    if (prev && tickEpoch === stopEpoch) return prev
+    const p: Promise<TickResult> = (prev ? prev.catch(() => undefined).then(runTick) : runTick())
+      .finally(() => { if (tickInFlight === p) tickInFlight = null })
     tickInFlight = p
+    tickEpoch = stopEpoch
     return p
   }
 
+  async function idleCheck(): Promise<TickResult> {
+    if (!queuePaused) return 'idle'
+    try {
+      await deps.client().ping()
+    } catch {
+      return 'paused'
+    }
+    resumeIfPaused()
+    return 'idle'
+  }
+
   async function runTick(): Promise<TickResult> {
+    const epoch = stopEpoch
     let current: Job | null = null
     try {
       const server = repos.servers.active()
       if (!server) return 'idle'
       const queued = repos.jobs.nextQueued(server.id)
-      if (!queued) return 'idle'
+      if (!queued) return await idleCheck()
       current = queued
+
+      if (!isGenerationParams(queued.params)) {
+        setStatus(queued.id, 'failed', { error: { code: 'corruptJob' } })
+        logError(queued, 'log.error.corruptJob')
+        return 'ran'
+      }
 
       const client = deps.client()
       try {
@@ -188,25 +233,24 @@ export function createRunner(deps: RunnerDeps): {
       } catch {
         return markPaused()
       }
+      resumeIfPaused()
       let catalog: Catalog
       try {
         catalog = await deps.catalog()
       } catch {
         return markPaused()
       }
-      if (stopped) return 'idle'
+      if (epoch !== stopEpoch) return 'idle'
 
       // The job may have been cancelled while we were waiting for the network.
       const job = repos.jobs.get(queued.id)
       if (!job || job.status !== 'queued') return 'ran'
       current = job
-      resumeIfPaused()
 
       const missing = checkParts(job.params, catalog, deps.findings).filter((p) => !p.found).map((p) => p.value)
       if (missing.length > 0) {
-        const message = `Not available on the server: ${missing.join(', ')}`
-        setStatus(job.id, 'failed', { error: message })
-        logError(job, 'log.error.missingParts', message, { missing })
+        setStatus(job.id, 'failed', { error: { code: 'missingParts', missing } })
+        logError(job, 'log.error.missingParts', { missing })
         return 'ran'
       }
 
@@ -214,10 +258,19 @@ export function createRunner(deps: RunnerDeps): {
     } catch (err) {
       console.error('runner: tick failed', err)
       const message = messageOf(err)
-      log({ level: 'error', category: 'error', messageKey: 'log.error.runner', jobId: current?.id, details: { message } })
+      const params: Partial<GenerationParams> = current?.params ?? {}
+      const stack = err instanceof Error ? err.stack : undefined
+      log({
+        level: 'error', category: 'error', messageKey: 'log.error.runner', jobId: current?.id,
+        details: {
+          ...logText(params, message),
+          ...(stack !== undefined && !mentionsPrompt(params, stack) ? { stack } : {}),
+        },
+      })
       if (current) {
         try {
-          if (repos.jobs.get(current.id)?.status === 'running') setStatus(current.id, 'failed', { error: message })
+          const status = repos.jobs.get(current.id)?.status
+          if (status === 'queued' || status === 'running') setStatus(current.id, 'failed', { error: { code: 'unexpected', detail: message } })
         } catch (inner) {
           console.error('runner: could not fail the job', inner)
         }
@@ -246,14 +299,14 @@ export function createRunner(deps: RunnerDeps): {
     const params = job.params
     const body = buildTxt2ImgBody(params, deps.findings)
 
-    const a: ActiveJob = { jobId: job.id, controller: new AbortController(), cancelling: false, stopping: false }
+    const a: ActiveJob = { jobId: job.id, client, controller: new AbortController(), cancelling: false, stopping: false, watchdog: false }
     active = a
     setStatus(job.id, 'running')
 
-    if (!lastDone || lastDone.checkpoint !== params.checkpoint || !sameModules(lastDone.modules, params.modules)) {
+    if (lastDone && (lastDone.checkpoint !== params.checkpoint || !sameModules(lastDone.modules, params.modules))) {
       log({
         level: 'info', category: 'checkpoint', messageKey: 'log.checkpoint.changed', jobId: job.id,
-        details: { from: lastDone?.checkpoint ?? null, to: params.checkpoint },
+        details: { from: lastDone.checkpoint, to: params.checkpoint, modulesFrom: lastDone.modules, modulesTo: params.modules },
       })
     }
     log({
@@ -273,12 +326,14 @@ export function createRunner(deps: RunnerDeps): {
 
     // Polls /progress until the request settles. Never throws and is not awaited.
     void (async () => {
+      let failures = 0
       try {
         while (!settled) {
           await Promise.race([deps.sleep(PROGRESS_INTERVAL_MS), request])
           if (settled) return
           try {
             const prog = await client.progress()
+            failures = 0
             if (settled) return
             const now = deps.now()
             samples.push({ t: now, step: prog.state.sampling_step })
@@ -294,7 +349,13 @@ export function createRunner(deps: RunnerDeps): {
               preview: prog.current_image ? `data:image/png;base64,${prog.current_image}` : null,
             }))
           } catch {
-            // A failed progress poll never affects the job.
+            // One failed poll never affects the job, but a long run of them means the link is gone.
+            failures++
+            if (failures >= PROGRESS_FAILURE_LIMIT && !settled) {
+              a.watchdog = true
+              a.controller.abort()
+              return
+            }
           }
         }
       } catch (err) {
@@ -308,9 +369,22 @@ export function createRunner(deps: RunnerDeps): {
     return finish(job, outcome, a, durationMs, speed)
   }
 
+  function failForgeError(job: Job, err: ForgeError, code: 'forgeHttp' | 'forgeInvalid'): TickResult {
+    const error: JobError = { code, ...(err.status !== undefined ? { status: err.status } : {}), ...(err.detail !== undefined ? { detail: err.detail } : {}) }
+    setStatus(job.id, 'failed', { error })
+    logError(job, 'log.error.generation', { kind: err.kind, status: err.status ?? null, ...logText(job.params, err.detail) })
+    return 'ran'
+  }
+
+  function interrupted(job: Job, error: JobError, messageKey?: string, details: Record<string, unknown> = {}): void {
+    setStatus(job.id, 'interrupted', { error })
+    if (messageKey) logError(job, messageKey, details)
+  }
+
   async function finish(job: Job, outcome: Outcome, a: ActiveJob, durationMs: number, speed: number | null): Promise<TickResult> {
     const params = job.params
 
+    // A cancel wins over whatever the request returned.
     if (a.cancelling) {
       setStatus(job.id, 'cancelled')
       return 'ran'
@@ -318,33 +392,34 @@ export function createRunner(deps: RunnerDeps): {
 
     if (!outcome.ok) {
       const err = outcome.error
+      if (a.watchdog) {
+        interrupted(job, { code: 'network' }, 'log.error.connectionLost', { kind: 'watchdog' })
+        return markPaused()
+      }
       if (a.stopping) {
-        setStatus(job.id, 'interrupted', { error: 'Application stopped' })
+        interrupted(job, { code: 'stopped' })
         return 'paused'
       }
-      if (err instanceof ForgeError && (err.kind === 'http' || err.kind === 'invalid')) {
-        const message = err.detail ?? `Forge error: ${err.kind}${err.status !== undefined ? ` ${err.status}` : ''}`
-        setStatus(job.id, 'failed', { error: message })
-        logError(job, 'log.error.generation', message, { kind: err.kind, status: err.status ?? null })
-        return 'ran'
-      }
+      if (err instanceof ForgeError && err.kind === 'http') return failForgeError(job, err, 'forgeHttp')
+      if (err instanceof ForgeError && err.kind === 'invalid') return failForgeError(job, err, 'forgeInvalid')
       if (err instanceof ForgeError) {
-        const message = err.detail ?? err.message
-        setStatus(job.id, 'interrupted', { error: message })
-        logError(job, 'log.error.connectionLost', message, { kind: err.kind })
+        interrupted(job, { code: 'network', ...(err.detail !== undefined ? { detail: err.detail } : {}) }, 'log.error.connectionLost',
+          { kind: err.kind, ...logText(params, err.detail) })
         return markPaused()
       }
       const message = messageOf(err)
-      setStatus(job.id, 'failed', { error: message })
-      logError(job, 'log.error.generation', message)
+      setStatus(job.id, 'failed', { error: { code: 'unexpected', detail: message } })
+      logError(job, 'log.error.generation', logText(params, message))
       return 'ran'
     }
 
+    // Deterministic rule for stop() and the watchdog: when Forge's answer arrived before the abort
+    // took effect, the finished images are kept and the job completes normally; only a request that
+    // actually failed is interrupted.
     const response = outcome.value
     if (response.images.length === 0) {
-      const message = 'Forge returned no images'
-      setStatus(job.id, 'failed', { error: message })
-      logError(job, 'log.error.generation', message)
+      setStatus(job.id, 'failed', { error: { code: 'noImages' } })
+      logError(job, 'log.error.noImages')
       return 'ran'
     }
 
@@ -387,8 +462,8 @@ export function createRunner(deps: RunnerDeps): {
         }
       }
       const message = messageOf(err)
-      setStatus(job.id, 'failed', { error: message })
-      logError(job, 'log.error.storage', message, failingPath !== undefined ? { path: failingPath } : {})
+      setStatus(job.id, 'failed', { error: { code: 'storage', detail: message } })
+      logError(job, 'log.error.storage', { ...logText(params, message), ...(failingPath !== undefined ? { path: failingPath } : {}) })
       return 'ran'
     }
 
@@ -417,8 +492,8 @@ export function createRunner(deps: RunnerDeps): {
     }
   }
 
-  async function loop(): Promise<void> {
-    while (!stopped) {
+  async function loop(gen: number): Promise<void> {
+    while (gen === runGen) {
       let result: TickResult
       try {
         result = await tick()
@@ -426,7 +501,7 @@ export function createRunner(deps: RunnerDeps): {
         console.error('runner: loop tick failed', err)
         result = 'paused'
       }
-      if (stopped) return
+      if (gen !== runGen) return
       if (result === 'paused') {
         await Promise.race([deps.sleep(PAUSE_INTERVAL_MS), stopSignal])
       } else if (result === 'idle') {
@@ -437,21 +512,35 @@ export function createRunner(deps: RunnerDeps): {
   }
 
   function start(): void {
-    if (loopPromise) return
-    stopped = false
+    if (running) return
+    running = true
     pendingKick = false
+    const gen = ++runGen
     stopSignal = new Promise<void>((resolve) => { fireStop = resolve })
-    loopPromise = loop().finally(() => { loopPromise = null })
+    // A loop left over from before a stop() may still be unwinding; the new one waits for it.
+    const previous = loopPromise
+    const p: Promise<void> = (async () => {
+      if (previous) await previous
+      if (gen === runGen) await loop(gen)
+    })().finally(() => { if (loopPromise === p) loopPromise = null })
+    loopPromise = p
   }
 
-  function stop(): void {
-    stopped = true
+  /** Resolves when the loop has exited and no tick is in flight; the caller may then close the database. */
+  function stop(): Promise<void> {
+    running = false
+    runGen++
+    stopEpoch++
     if (active) {
       active.stopping = true
       active.controller.abort()
     }
     fireStop()
     kick()
+    const pending: Promise<unknown>[] = []
+    if (loopPromise) pending.push(loopPromise)
+    if (tickInFlight) pending.push(tickInFlight)
+    return Promise.allSettled(pending).then(() => undefined)
   }
 
   return { enqueue, cancel, retry, recover, tick, start, stop, kick }

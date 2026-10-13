@@ -20,3 +20,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Image file store (`src/main/storage/image-store.ts`) writing PNGs and thumbnails under month folders, and safe `fnc-img://` image URLs (`image-protocol.ts`) that cannot resolve outside the images folder.
 - Generation queue (`src/main/queue/runner.ts`): one job at a time with per-second progress and previews, cancel, retry, restart recovery, a pause while Forge is unreachable, and a failed job for a missing checkpoint or module; plus a steps-per-second helper.
 - Connection status (`src/main/forge/connection.ts`): a pure state machine (connected, slow, reconnecting, offline) and a monitor that logs loss and recovery of the connection once each.
+- Job errors are stored as structured codes (`JobError`) instead of sentences; the queue now fails jobs it cannot start, ends a job when 15 progress polls in a row fail, and restarts cleanly after stop.

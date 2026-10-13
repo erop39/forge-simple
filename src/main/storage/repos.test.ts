@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { GenerationParams } from '@shared/types'
+import type { GenerationParams, JobError } from '@shared/types'
 import { openDb } from './db'
 import { createRepos } from './repos'
 
@@ -145,4 +145,32 @@ test('openDb is idempotent on an existing file', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('job error round-trips as a structured value', () => {
+  const { repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  const err: JobError = { code: 'missingParts', missing: ['a.safetensors'] }
+  expect(repos.jobs.setStatus(j.id, 'failed', { error: err }).error).toEqual(err)
+  expect(repos.jobs.get(j.id)?.error).toEqual(err)
+  expect(repos.jobs.insert(s.id, 'txt2img', params()).error).toBeNull()
+})
+
+test('a legacy non-JSON error text reads back as an unexpected error', () => {
+  const { db, repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  db.prepare('UPDATE jobs SET error = ? WHERE id = ?').run('out of memory', j.id)
+  expect(repos.jobs.get(j.id)?.error).toEqual({ code: 'unexpected', detail: 'out of memory' })
+})
+
+test('a job row with unparsable params can still be read', () => {
+  const { db, repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  db.prepare('UPDATE jobs SET params = ? WHERE id = ?').run('not json {', j.id)
+  expect(() => repos.jobs.get(j.id)).not.toThrow()
+  expect(() => repos.jobs.nextQueued(s.id)).not.toThrow()
+  expect(() => repos.jobs.listActive()).not.toThrow()
 })
