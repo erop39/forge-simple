@@ -1,8 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { Api, AppEvents } from '../shared/ipc'
+import { eventChannel, extractErrorKey, isEventName, type Api, type AppEvents, type Channel } from '../shared/ipc'
 
-const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> =>
-  ipcRenderer.invoke(channel, ...args) as Promise<T>
+// Electron wraps a rejection as "Error invoking remote method ...: IpcError: error.x";
+// the renderer gets a plain Error whose message is the stable key.
+const invoke = async <T>(channel: Channel, ...args: unknown[]): Promise<T> => {
+  try {
+    return (await ipcRenderer.invoke(channel, ...args)) as T
+  } catch (err) {
+    throw new Error(extractErrorKey(err instanceof Error ? err.message : String(err)))
+  }
+}
 
 const api: Api = {
   settings: {
@@ -26,7 +33,8 @@ const api: Api = {
   },
   connection: { get: () => invoke('connection:get') },
   on<K extends keyof AppEvents>(event: K, cb: (payload: AppEvents[K]) => void): () => void {
-    const channel = `event:${event}`
+    if (!isEventName(event)) return () => undefined
+    const channel = eventChannel(event)
     // The renderer receives the payload only, never the IpcRendererEvent.
     const listener = (_e: IpcRendererEvent, payload: AppEvents[K]): void => cb(payload)
     ipcRenderer.on(channel, listener)

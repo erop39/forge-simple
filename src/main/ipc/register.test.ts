@@ -14,7 +14,7 @@ import { createRunner } from '../queue/runner'
 import { openDb, type Db } from '../storage/db'
 import { createImageStore } from '../storage/image-store'
 import { createRepos } from '../storage/repos'
-import { registerIpc } from './register'
+import { forwardEvents, registerIpc } from './register'
 
 const CKPT = 'sd_xl_base.safetensors [31e35c80fc]'
 const DEAD = 'http://127.0.0.1:1'
@@ -28,6 +28,12 @@ let repos: ReturnType<typeof createRepos>
 let oplog: ReturnType<typeof createOplog>
 let runner: ReturnType<typeof createRunner>
 let kicks: number
+let samples: number
+let serverChanges: number
+let removeFails: boolean
+let catalogThrows: boolean
+let imageStore: ReturnType<typeof createImageStore>
+let forgeRef: ReturnType<typeof createActiveForge>
 
 beforeEach(async () => {
   mock = await startMockForge({ stepMs: 5 })
@@ -39,7 +45,12 @@ beforeEach(async () => {
   const forge = createActiveForge({
     activeUrl: () => repos.servers.active()?.url ?? null, familyOverride: () => null, oplog, now,
   })
-  const images = createImageStore(() => dir, () => ({ thumb: Buffer.from('t'), width: 1, height: 1 }))
+  forgeRef = forge
+  const real0 = createImageStore(() => dir, () => ({ thumb: Buffer.from('t'), width: 1, height: 1 }))
+  removeFails = false
+  catalogThrows = false
+  imageStore = { ...real0, remove: (f, t) => (removeFails ? Promise.reject(new Error('EBUSY: locked')) : real0.remove(f, t)) }
+  const images = imageStore
   const real = createRunner({
     client: forge.client, catalog: () => forge.catalog().get(), findings: FINDINGS, repos, images, oplog,
     events: { jobUpdate: () => undefined, jobProgress: () => undefined, imageAdded: () => undefined },
@@ -47,16 +58,22 @@ beforeEach(async () => {
   })
   kicks = 0
   runner = { ...real, kick: () => { kicks++; real.kick() } }
-  const monitor = createConnectionMonitor({
+  samples = 0
+  serverChanges = 0
+  const realMonitor = createConnectionMonitor({
     ping: () => forge.client().ping(), emit: () => undefined, now, oplog, address: forge.address,
   })
+  const monitor = { ...realMonitor, sampleOnce: () => { samples++; return realMonitor.sampleOnce() } }
   handlers = new Map()
   sent = []
   const send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]): void => { sent.push({ e, p }) }
   registerIpc(
     { handle: (ch, fn) => { handlers.set(ch, fn as never) } },
     {
-      repos, catalog: forge.catalog, runner, monitor, images, oplog, imagesDir: () => dir,
+      repos,
+      catalog: () => (catalogThrows ? { get: () => Promise.reject(new TypeError('boom')) } : forge.catalog()),
+      onServerChanged: () => { serverChanges++ },
+      runner, monitor, images, oplog, imagesDir: () => dir,
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
     },
     send,
@@ -86,6 +103,8 @@ test('settings:setServerUrl normalizes, saves and returns ok with latency', asyn
   expect(repos.servers.active()?.url).toBe(mock.url)
   expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir })
   expect(kicks).toBe(1)
+  expect(serverChanges).toBe(1)
+  expect(samples).toBe(1)
 })
 
 test('settings:setServerUrl on a dead address returns ok:false with errorKey "error.network" and does not save', async () => {
@@ -182,4 +201,83 @@ test('images:delete removes the row and both files, emits image:removed, logs st
 
 test('connection:get returns the monitor status', async () => {
   expect(await call('connection:get')).toMatchObject({ state: 'reconnecting' })
+})
+
+test('images:delete still emits, logs and resolves when file removal fails', async () => {
+  const { row, filePath } = seedImage()
+  removeFails = true
+  await call('images:delete', row.id)
+  expect(repos.images.list({ limit: 10 })).toEqual([])
+  expect(sent).toContainEqual({ e: 'image:removed', p: { id: row.id } })
+  expect(logKeys()).toContain('log.storage.imageDeleted')
+  const warn = oplog.list({ level: 'warn', category: 'storage' })[0]!
+  expect(warn.details).toMatchObject({ filePath, error: 'EBUSY: locked' })
+})
+
+test('a non-Forge exception surfaces as error.unexpected and is console.error-ed', async () => {
+  await call('settings:setServerUrl', mock.url)
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  catalogThrows = true
+  await expect(call('catalog:get')).rejects.toThrow('error.unexpected')
+  expect(spy).toHaveBeenCalledOnce()
+  expect(String(spy.mock.calls[0]![0])).toContain('catalog:get')
+  expect(spy.mock.calls[0]![1]).toBeInstanceOf(TypeError)
+  spy.mockRestore()
+})
+
+test('a handler throwing a plain Error rejects with error.unexpected, original logged', async () => {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const boom = new Error('secret internal text')
+  const broken = { ...repos.jobs, listActive: () => { throw boom } }
+  const h = new Map<string, (...a: unknown[]) => Promise<unknown>>()
+  registerIpc({ handle: (c, f) => { h.set(c, f as never) } }, {
+    repos: { ...repos, jobs: broken }, catalog: () => forgeRef.catalog(), runner,
+    monitor: { sampleOnce: () => Promise.reject(new Error('x')), current: () => ({ state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }) },
+    images: imageStore, oplog, imagesDir: () => dir, createClient: () => { throw boom },
+  }, () => undefined)
+  const err = await h.get('jobs:listActive')!({}).catch((e: Error) => e)
+  expect((err as Error).message).toBe('error.unexpected')
+  expect(spy).toHaveBeenCalledWith('ipc: jobs:listActive failed', boom)
+  spy.mockRestore()
+})
+
+test('forwardEvents sends job events and converts ImageRow to ImageRecord without paths', () => {
+  const out: { e: string; p: Record<string, unknown> }[] = []
+  const ev = forwardEvents(() => dir, ((e: string, p: Record<string, unknown>) => { out.push({ e, p }) }) as never)
+  const { row } = seedImage()
+  ev.runner.imageAdded(row)
+  ev.runner.jobUpdate({ id: 1 } as never)
+  ev.runner.jobProgress({ jobId: 1 } as never)
+  ev.connection({ state: 'connected', latencyMs: 1, attempts: 0, lastOkAt: 1 })
+  expect(out.map((o) => o.e)).toEqual(['image:added', 'job:update', 'job:progress', 'connection'])
+  expect(out[0]!.p).toMatchObject({ id: row.id, url: 'fnc-img://local/2026-10/1-5.png', thumbUrl: 'fnc-img://local/thumbs/1-5.jpg' })
+  expect(out[0]!.p).not.toHaveProperty('filePath')
+  expect(out[0]!.p).not.toHaveProperty('thumbPath')
+})
+
+describe('jobs:enqueue boundary', () => {
+  const loras = (n: number) => Array.from({ length: n }, () => ({ name: 'l', weight: 1, enabled: true }))
+  const rejections: [string, Partial<GenerationParams>][] = [
+    ['seed below -1', { seed: -2 }], ['fractional seed', { seed: 1.5 }],
+    ['cfgScale > 30', { cfgScale: 31 }], ['cfgScale NaN', { cfgScale: NaN }], ['distilledCfg < 0', { distilledCfg: -1 }],
+    ['prompt too long', { prompt: 'a'.repeat(10001) }], ['negative prompt too long', { negativePrompt: 'a'.repeat(10001) }],
+    ['9 modules', { modules: Array.from({ length: 9 }, () => 'm') }], ['non-string module', { modules: [1 as never] }],
+    ['17 loras', { loras: loras(17) }], ['lora empty name', { loras: [{ name: '', weight: 1, enabled: true }] }],
+    ['lora weight 6', { loras: [{ name: 'l', weight: 6, enabled: true }] }],
+    ['lora enabled not boolean', { loras: [{ name: 'l', weight: 1, enabled: 1 as never }] }],
+    ['empty sampler', { sampler: '' }], ['empty scheduler', { scheduler: ' ' }],
+    ['unknown family', { family: 'nope' as never }], ['prototype family', { family: 'toString' as never }],
+  ]
+  test.each(rejections)('rejects %s', async (_name, over) => {
+    await call('settings:setServerUrl', mock.url)
+    await expect(call('jobs:enqueue', goodParams(over))).rejects.toThrow('error.invalidParams')
+    expect(repos.jobs.listActive()).toEqual([])
+  })
+
+  test('drops unknown extra keys', async () => {
+    await call('settings:setServerUrl', mock.url)
+    const jobs = (await call('jobs:enqueue', { ...goodParams(), evil: 'x', loras: [{ name: 'l', weight: 1, enabled: true, extra: 1 }] })) as { params: Record<string, unknown> }[]
+    expect(jobs[0]!.params).not.toHaveProperty('evil')
+    expect(jobs[0]!.params.loras).toEqual([{ name: 'l', weight: 1, enabled: true }])
+  })
 })

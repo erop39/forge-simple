@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { extname, join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeImage, protocol } from 'electron'
-import type { AppEvents } from '@shared/ipc'
+import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
 import { createForgeClient } from './forge/client'
 import { createConnectionMonitor } from './forge/connection'
@@ -17,6 +17,8 @@ import { createRepos } from './storage/repos'
 const THUMB_WIDTH = 480
 const MONITOR_INTERVAL_MS = 2000
 const LOG_RETENTION_DAYS = 90
+/** before-quit waits this long for the queue to stop; recover() fixes a still-running job on next start. */
+const SHUTDOWN_TIMEOUT_MS = 5000
 const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }
 
 // Must run before `ready`.
@@ -26,6 +28,7 @@ protocol.registerSchemesAsPrivileged([
 
 const makeThumb: MakeThumb = (png) => {
   const image = nativeImage.createFromBuffer(png)
+  if (image.isEmpty()) throw new Error('Image data could not be decoded')
   const { width, height } = image.getSize()
   const small = width > THUMB_WIDTH ? image.resize({ width: THUMB_WIDTH, quality: 'good' }) : image
   return { thumb: small.toJPEG(80), width, height }
@@ -35,10 +38,11 @@ let win: BrowserWindow | null = null
 
 function send<K extends keyof AppEvents>(event: K, payload: AppEvents[K]): void {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
-  win.webContents.send(`event:${event}`, payload)
+  win.webContents.send(eventChannel(event), payload)
 }
 
 function createWindow(onVisibilityChange: () => void): void {
+  const appOrigin = process.env['ELECTRON_RENDERER_URL'] ? new URL(process.env['ELECTRON_RENDERER_URL']).origin : 'file://'
   const created = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -57,6 +61,11 @@ function createWindow(onVisibilityChange: () => void): void {
   })
   win = created
 
+  created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  created.webContents.on('will-navigate', (event, url) => {
+    const origin = url.startsWith('file://') ? 'file://' : new URL(url).origin
+    if (origin !== appOrigin) event.preventDefault()
+  })
   created.once('ready-to-show', () => created.show())
   created.on('show', onVisibilityChange)
   created.on('hide', onVisibilityChange)
@@ -64,6 +73,7 @@ function createWindow(onVisibilityChange: () => void): void {
   created.on('restore', onVisibilityChange)
   created.on('closed', () => {
     if (win === created) win = null
+    onVisibilityChange() // no window left: stops the monitor
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -156,7 +166,10 @@ async function boot(): Promise<void> {
     monitor.stop()
     void (async () => {
       try {
-        await runner.stop()
+        await Promise.race([
+          runner.stop(),
+          new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS)),
+        ])
         oplog.write({ level: 'info', category: 'app', messageKey: 'log.app.closed' })
         db.close()
       } catch (err) {
@@ -168,12 +181,28 @@ async function boot(): Promise<void> {
   })
 
   createWindow(syncMonitor)
+  if (process.env['FNC_SMOKE'] === '1' && win) {
+    const { runSmoke } = await import('./fnc-smoke')
+    runSmoke(win)
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(syncMonitor)
   })
 }
 
-void app.whenReady().then(boot)
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  })
+  void app.whenReady().then(boot).catch((err: unknown) => {
+    console.error('startup failed', err)
+    app.exit(1)
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

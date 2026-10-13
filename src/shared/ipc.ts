@@ -6,13 +6,20 @@ import type {
  * Stable keys carried by the message of a rejected IPC call. They are never English text:
  * the renderer maps each key to a string from its own catalog.
  */
-export type IpcErrorKey =
-  | 'error.noServer'
-  | 'error.invalidParams'
-  | 'error.notFound'
-  | 'error.network'
-  | 'error.notForge'
-  | 'error.unexpected'
+export const IPC_ERROR_KEYS = [
+  'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
+] as const
+export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
+
+/**
+ * Electron re-wraps a handler rejection as "Error invoking remote method 'x': IpcError: error.foo".
+ * Returns the last `error.<name>` token when it is a known key, otherwise 'error.unexpected'.
+ */
+export function extractErrorKey(message: string): IpcErrorKey {
+  const tokens = message.match(/error\.[A-Za-z]+/g)
+  const last = tokens?.[tokens.length - 1]
+  return (IPC_ERROR_KEYS as readonly string[]).includes(last ?? '') ? (last as IpcErrorKey) : 'error.unexpected'
+}
 
 export interface ConnectionCheck { ok: boolean; latencyMs: number | null; errorKey: string | null }
 export interface AppSettings { serverUrl: string | null; imagesDir: string }
@@ -54,4 +61,7 @@ export const CHANNELS = [
   'connection:get',
 ] as const
 export type Channel = (typeof CHANNELS)[number]
+
+export const EVENT_NAMES = ['job:update', 'job:progress', 'image:added', 'image:removed', 'connection'] as const satisfies readonly (keyof AppEvents)[]
+export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

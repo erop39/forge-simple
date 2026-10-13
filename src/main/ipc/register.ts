@@ -1,5 +1,5 @@
-import { defaultParams } from '@shared/profiles'
-import type { AppEvents, ConnectionCheck, IpcErrorKey } from '@shared/ipc'
+import { defaultParams, PROFILES } from '@shared/profiles'
+import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import type { Catalog, ConnectionStatus, GenerationParams, ImageRecord } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
@@ -48,13 +48,38 @@ function forgeErrorKey(err: unknown): 'error.network' | 'error.notForge' {
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
+const MAX_TEXT = 10_000
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
+const isNumberIn = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
+const isOptionalNumber = (v: unknown): number | null | undefined =>
+  v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : undefined
+
+/** Checks every field the renderer sends and returns a copy holding exactly the known fields. */
 function validateEnqueue(p: unknown): GenerationParams {
   if (!isGenerationParams(p)) return fail('error.invalidParams')
-  if (p.prompt.trim() === '' || p.checkpoint.trim() === ''
-    || !isInt(p.count, 1, 8) || !isInt(p.width, 64, 4096) || !isInt(p.height, 64, 4096) || !isInt(p.steps, 1, 200)) {
+  const o = p as GenerationParams
+  const shift = isOptionalNumber(o.shift)
+  const clipSkip = isOptionalNumber(o.clipSkip)
+  const loras = o.loras
+  if (!Object.hasOwn(PROFILES, o.family)
+    || !isNonEmptyString(o.prompt) || o.prompt.length > MAX_TEXT || o.negativePrompt.length > MAX_TEXT
+    || !isNonEmptyString(o.checkpoint) || !isNonEmptyString(o.sampler) || !isNonEmptyString(o.scheduler)
+    || !isInt(o.count, 1, 8) || !isInt(o.width, 64, 4096) || !isInt(o.height, 64, 4096) || !isInt(o.steps, 1, 200)
+    || !isInt(o.seed, -1, MAX_ID) || !isNumberIn(o.cfgScale, 0, 30) || !isNumberIn(o.distilledCfg, 0, 30)
+    || shift === undefined || clipSkip === undefined
+    || o.modules.length > 8 || !o.modules.every((m) => typeof m === 'string')
+    || loras.length > 16
+    || !loras.every((l) => typeof l === 'object' && l !== null && isNonEmptyString(l.name)
+      && isNumberIn(l.weight, -5, 5) && typeof l.enabled === 'boolean')) {
     return fail('error.invalidParams')
   }
-  return p
+  return {
+    family: o.family, checkpoint: o.checkpoint, modules: [...o.modules], prompt: o.prompt, negativePrompt: o.negativePrompt,
+    width: o.width, height: o.height, steps: o.steps, cfgScale: o.cfgScale, distilledCfg: o.distilledCfg,
+    shift, clipSkip, sampler: o.sampler, scheduler: o.scheduler, seed: o.seed, count: o.count,
+    loras: loras.map((l) => ({ name: l.name, weight: l.weight, enabled: l.enabled })),
+  }
 }
 
 export function toImageRecord(row: ImageRow, imagesDir: string): ImageRecord {
@@ -71,7 +96,7 @@ export function registerIpc(
 
   // Handlers ignore the Electron event argument. Anything that is not an IpcError becomes
   // 'error.unexpected' so internal (English) messages never reach the renderer.
-  const handle = (channel: string, fn: (...args: unknown[]) => unknown): void => {
+  const handle = (channel: Channel, fn: (...args: unknown[]) => unknown): void => {
     const listener = async (_event: unknown, ...args: unknown[]): Promise<unknown> => {
       try {
         return await fn(...args)
@@ -91,7 +116,8 @@ export function registerIpc(
     try {
       return await deps.catalog().get(refresh)
     } catch (err) {
-      return fail(forgeErrorKey(err))
+      if (err instanceof ForgeError) return fail(forgeErrorKey(err))
+      throw err // not a Forge failure: the wrapper logs it and reports error.unexpected
     }
   }
 
@@ -178,7 +204,14 @@ export function registerIpc(
   handle('images:delete', async (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
     const row = repos.images.delete(id) ?? fail('error.notFound')
-    await deps.images.remove(row.filePath, row.thumbPath)
+    try {
+      await deps.images.remove(row.filePath, row.thumbPath)
+    } catch (err) {
+      oplog.write({
+        level: 'warn', category: 'storage', messageKey: 'log.storage.fileRemoveFailed', jobId: row.jobId,
+        details: { filePath: row.filePath, thumbPath: row.thumbPath, error: err instanceof Error ? err.message : String(err) },
+      })
+    }
     send('image:removed', { id })
     oplog.write({
       level: 'info', category: 'storage', messageKey: 'log.storage.imageDeleted',

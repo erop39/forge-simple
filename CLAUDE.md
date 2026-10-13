@@ -15,3 +15,8 @@ Design spec: `docs/superpowers/specs/2026-10-13-forge-neo-client-design.md`.
 - Every user-visible string goes through `t()` and lives in `src/renderer/locales/en.ts`; no display string literals in JSX or in the main process.
 - All HTTP requests to Forge are made from the main process. The renderer runs with `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.
 - Tests live next to the code (`x.ts` -> `x.test.ts`); TypeScript is strict; path aliases are `@shared/*`, `@main/*`, `@renderer/*`.
+
+## Smoke run
+
+`FNC_SMOKE=1` loads `src/main/fnc-smoke.ts`, which drives `window.api` against a mock Forge and prints one `FNC_SMOKE {...}` JSON line, then quits. Build first, start `PORT=7871 pnpm mock-forge`, then:
+`FNC_SMOKE=1 FNC_SMOKE_SERVER=127.0.0.1:7871 node_modules/.bin/electron . --user-data-dir=<temp dir>`. Always use a throwaway `--user-data-dir`.
