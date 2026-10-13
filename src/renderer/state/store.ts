@@ -26,6 +26,8 @@ export interface AppState {
   setParams(patch: Partial<GenerationParams>): void
   /** Takes the family defaults for a checkpoint, keeping the prompt and the negative prompt. */
   selectCheckpoint(title: string): Promise<void>
+  /** Reloads the catalog from the server (refresh) after a failed or stale load. */
+  retryCatalog(): Promise<void>
   generate(): Promise<void>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
@@ -43,6 +45,10 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean =>
 export function createAppStore(api: Api): StoreApi<AppState> {
   let initPromise: Promise<void> | null = null
   let partsSeq = 0
+  /** Jobs a terminal update removed this session; a stale copy of them is never merged back. */
+  const finished = new Set<number>()
+  const fresh = (jobs: readonly Job[]): Array<[number, Job]> =>
+    jobs.filter((j) => !finished.has(j.id)).map((j) => [j.id, j])
 
   return createStore<AppState>()((set, get) => {
     const fail = (e: unknown): void => set({ lastError: errorKeyOf(e) })
@@ -80,10 +86,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     }
 
     /** Loads the catalog and selects the loaded checkpoint, else the first one. */
-    async function loadCatalog(): Promise<void> {
+    async function loadCatalog(refresh = false): Promise<void> {
       let catalog: Catalog
       try {
-        catalog = await api.catalog.get()
+        catalog = await (refresh ? api.catalog.get(true) : api.catalog.get())
       } catch (e) {
         set({ catalog: null, catalogError: errorKeyOf(e) })
         return
@@ -108,8 +114,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         set((s) => {
           const jobs = { ...s.jobs }
           const progress = { ...s.progress }
-          if (job.status === 'done' || job.status === 'cancelled') delete jobs[job.id]
-          else jobs[job.id] = job
+          if (job.status === 'done' || job.status === 'cancelled') {
+            delete jobs[job.id]
+            finished.add(job.id)
+          } else jobs[job.id] = job
           if (job.status !== 'running') delete progress[job.id]
           return { jobs, progress }
         }),
@@ -133,7 +141,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       set((s) => ({
         settings: settings ?? s.settings,
         connection: connection ?? s.connection,
-        jobs: active ? { ...Object.fromEntries(active.map((j) => [j.id, j])), ...s.jobs } : s.jobs,
+        jobs: active ? { ...Object.fromEntries(fresh(active)), ...s.jobs } : s.jobs,
         images: images
           ? [...s.images.filter((i) => !images.some((l) => l.id === i.id)), ...images]
           : s.images,
@@ -177,6 +185,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         }
       },
 
+      async retryCatalog() {
+        await loadCatalog(true)
+      },
+
       async generate() {
         const { params } = get()
         if (!params || params.prompt.trim() === '') return
@@ -185,7 +197,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         // Queued jobs raise no job:update; a job an event already delivered is newer than this copy.
         set((s) => ({
           lastError: null,
-          jobs: { ...Object.fromEntries(created.map((j) => [j.id, j])), ...s.jobs },
+          jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs },
         }))
       },
 
@@ -195,7 +207,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       async retryJob(id) {
         const clone = await attempt(() => api.jobs.retry(id))
-        if (clone) set((s) => ({ jobs: { [clone.id]: clone, ...s.jobs } }))
+        if (clone) set((s) => ({ jobs: { ...Object.fromEntries(fresh([clone])), ...s.jobs } }))
       },
 
       async deleteImage(id) {
@@ -204,11 +216,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       async setServerUrl(url) {
         const check = await api.settings.setServerUrl(url)
-        if (check.ok) {
-          const settings = await attempt(() => api.settings.get())
-          if (settings) set({ settings })
-          await loadCatalog()
+        if (!check.ok) return check
+        try {
+          set({ settings: await api.settings.get() })
+        } catch (e) {
+          // The address was accepted but the app cannot see it: report a failure rather than a stuck success.
+          return { ok: false, latencyMs: null, errorKey: errorKeyOf(e) }
         }
+        await loadCatalog()
         return check
       },
 

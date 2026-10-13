@@ -274,3 +274,55 @@ test('togglePanel flips panelOpen', async () => {
   store.getState().togglePanel()
   expect(store.getState().panelOpen).toBe(true)
 })
+
+test('setServerUrl reports a failure when the settings refresh fails after an ok check', async () => {
+  const { api, store } = await ready({ serverUrl: null })
+  api.settings.get.mockRejectedValueOnce(new Error('error.unexpected'))
+  const check = await store.getState().setServerUrl('127.0.0.1:7861')
+  expect(check).toEqual({ ok: false, latencyMs: null, errorKey: 'error.unexpected' })
+  expect(store.getState().settings?.serverUrl).toBeNull()
+})
+
+test('a job removed by a terminal event is not re-added by an enqueue that resolves later', async () => {
+  const { api, store, emit } = await ready()
+  store.getState().setParams({ prompt: 'a red fox' })
+  api.jobs.enqueue.mockImplementationOnce(async () => {
+    emit('job:update', job(7, 'done'))
+    return [job(7)]
+  })
+  await store.getState().generate()
+  expect(store.getState().jobs[7]).toBeUndefined()
+})
+
+test('a retry clone that already finished is not re-added', async () => {
+  const { api, store, emit } = await ready()
+  api.jobs.retry.mockImplementationOnce(async () => {
+    emit('job:update', job(9, 'cancelled'))
+    return job(9)
+  })
+  await store.getState().retryJob(2)
+  expect(store.getState().jobs[9]).toBeUndefined()
+})
+
+test('init does not resurrect a job that finished while the list was loading', async () => {
+  const fake = fakeApi()
+  fake.api.jobs.listActive.mockImplementationOnce(async () => {
+    fake.emit('job:update', job(1, 'done'))
+    return [job(1, 'running'), job(2, 'queued')]
+  })
+  const store = createAppStore(fake.api)
+  await store.getState().init()
+  expect(Object.keys(store.getState().jobs)).toEqual(['2'])
+})
+
+test('retryCatalog reloads with refresh, clears the error and selects a checkpoint', async () => {
+  const fake = fakeApi()
+  fake.api.catalog.get.mockRejectedValueOnce(new Error('error.network'))
+  const store = createAppStore(fake.api)
+  await store.getState().init()
+  expect(store.getState().catalogError).toBe('error.network')
+  await store.getState().retryCatalog()
+  expect(fake.api.catalog.get).toHaveBeenLastCalledWith(true)
+  expect(store.getState().catalogError).toBeNull()
+  expect(store.getState().params?.checkpoint).toBe('b.safetensors')
+})

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { t } from './i18n/t'
 import { useAppStore } from './state/StoreProvider'
 import { EmptyState } from './components/EmptyState'
-import { ErrorNotice } from './components/ErrorNotice'
+import { Notice } from './components/ui/Notice'
 import { ServerDialog } from './components/ServerDialog'
 import { TopBar } from './components/TopBar'
 import styles from './App.module.css'
@@ -12,6 +12,8 @@ export function App() {
   const settings = useAppStore((s) => s.settings)
   const lastError = useAppStore((s) => s.lastError)
   const dismissError = useAppStore((s) => s.dismissError)
+  const catalogError = useAppStore((s) => s.catalogError)
+  const retryCatalog = useAppStore((s) => s.retryCatalog)
   const [dialogOpen, setDialogOpen] = useState(false)
 
   useEffect(() => {
@@ -25,7 +27,10 @@ export function App() {
     <div className={styles.shell}>
       <TopBar onOpenServer={openDialog} />
       <main className={styles.content}>
-        {lastError !== null && <ErrorNotice text={t(lastError)} onDismiss={dismissError} />}
+        {catalogError !== null && (
+          <Notice text={t(catalogError)} action={{ label: t('catalog.retry'), onClick: () => void retryCatalog() }} />
+        )}
+        {lastError !== null && <Notice text={t(lastError)} onDismiss={dismissError} />}
         {noServer && <EmptyState onConnect={openDialog} />}
       </main>
       <ServerDialog open={dialogOpen || noServer} onOpenChange={setDialogOpen} />

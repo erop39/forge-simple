@@ -45,3 +45,14 @@ test('it is a button that reports clicks', async () => {
   await userEvent.click(screen.getByRole('button', { name: /Connected/ }))
   expect(onClick).toHaveBeenCalledTimes(1)
 })
+
+test('without a server the chip is neutral, says so, and still opens the dialog', async () => {
+  const onClick = vi.fn()
+  render(<ConnectionChip status={null} onClick={onClick} />)
+  const chip = screen.getByRole('button', { name: new RegExp(t('connection.none')) })
+  expect(chip.textContent).toBe('No server')
+  expect(chip.querySelector('[data-dot]')?.getAttribute('aria-hidden')).toBe('true')
+  expect(screen.queryByText(/ ms$/)).toBeNull()
+  await userEvent.click(chip)
+  expect(onClick).toHaveBeenCalledTimes(1)
+})

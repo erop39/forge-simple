@@ -9,9 +9,18 @@ const LABELS: Record<ConnectionState, MessageKey> = {
   offline: 'connection.offline',
 }
 
-type ConnectionChipProps = { status: ConnectionStatus; onClick: () => void; className?: string }
+/** A null status means no server is configured: a neutral chip that still opens the dialog. */
+type ConnectionChipProps = { status: ConnectionStatus | null; onClick: () => void; className?: string }
 
 export function ConnectionChip({ status, onClick, className }: ConnectionChipProps) {
+  if (status === null) {
+    return (
+      <button type="button" className={[styles.chip, className].filter(Boolean).join(' ')} onClick={onClick}>
+        <span className={styles.dot} data-dot aria-hidden="true" />
+        <span>{t('connection.none')}</span>
+      </button>
+    )
+  }
   const { state, latencyMs, attempts } = status
   const detail =
     state === 'reconnecting'

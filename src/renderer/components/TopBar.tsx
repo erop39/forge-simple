@@ -7,9 +7,10 @@ import styles from './TopBar.module.css'
 
 export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
   const connection = useAppStore((s) => s.connection)
+  const noServer = useAppStore((s) => s.settings !== null && !s.settings.serverUrl)
   return (
     <header className={styles.bar}>
-      <ConnectionChip status={connection} onClick={onOpenServer} className={styles.noDrag} />
+      <ConnectionChip status={noServer ? null : connection} onClick={onOpenServer} className={styles.noDrag} />
       <IconButton
         label={t('topbar.settings')}
         icon={<GearSix size={20} />}

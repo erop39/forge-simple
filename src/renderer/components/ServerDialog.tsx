@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from '@phosphor-icons/react'
-import { useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
@@ -36,21 +36,25 @@ function ServerForm({ dismissible, onDone }: { dismissible: boolean; onDone: () 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const hintId = useId()
+  const errorId = useId()
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault()
     if (busy || url.trim() === '') return
     setBusy(true)
     setError(null)
+    let ok = false
     try {
       const check = await setServerUrl(url.trim())
-      if (check.ok) return onDone()
-      setError(errorText(check.errorKey))
+      ok = check.ok
+      if (!ok) setError(errorText(check.errorKey))
     } catch (e) {
       setError(errorText(e))
     }
     setBusy(false)
-    input.current?.focus()
+    if (ok) onDone()
+    else input.current?.focus()
   }
 
   return (
@@ -75,17 +79,17 @@ function ServerForm({ dismissible, onDone }: { dismissible: boolean; onDone: () 
           spellCheck={false}
           autoComplete="off"
           aria-invalid={error !== null}
-          aria-describedby={error !== null ? 'server-error server-hint' : 'server-hint'}
+          aria-describedby={error !== null ? `${errorId} ${hintId}` : hintId}
           onChange={(e) => setUrl(e.target.value)}
         />
       </label>
       {error !== null && (
-        <p id="server-error" role="alert" className={styles.error}>
+        <p id={errorId} role="alert" className={styles.error}>
           {error}
         </p>
       )}
-      <Dialog.Description id="server-hint" className={styles.hint}>
-        {t('server.hint')}
+      <Dialog.Description className={styles.hint}>
+        <span id={hintId}>{t('server.hint')}</span>
       </Dialog.Description>
       <div className={styles.actions}>
         <Button type="submit" variant="primary" disabled={busy || url.trim() === ''}>

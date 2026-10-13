@@ -41,7 +41,7 @@ function send<K extends keyof AppEvents>(event: K, payload: AppEvents[K]): void 
   win.webContents.send(eventChannel(event), payload)
 }
 
-function createWindow(onVisibilityChange: () => void): void {
+function createWindow(onVisibilityChange: () => void, onLoaded: () => void): void {
   const appOrigin = process.env['ELECTRON_RENDERER_URL'] ? new URL(process.env['ELECTRON_RENDERER_URL']).origin : 'file://'
   const created = new BrowserWindow({
     width: 1280,
@@ -72,6 +72,7 @@ function createWindow(onVisibilityChange: () => void): void {
     if (origin !== appOrigin) event.preventDefault()
   })
   created.once('ready-to-show', () => created.show())
+  created.webContents.on('did-finish-load', onLoaded) // a reloaded page must not start from a stale status
   created.on('show', onVisibilityChange)
   created.on('hide', onVisibilityChange)
   created.on('minimize', onVisibilityChange)
@@ -185,13 +186,14 @@ async function boot(): Promise<void> {
     })()
   })
 
-  createWindow(syncMonitor)
+  const openWindow = (): void => createWindow(syncMonitor, () => send('connection', monitor.current()))
+  openWindow()
   if (process.env['FNC_SMOKE'] === '1' && !app.isPackaged && win) {
     const { runSmoke } = await import('./fnc-smoke')
     runSmoke(win)
   }
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(syncMonitor)
+    if (BrowserWindow.getAllWindows().length === 0) openWindow()
   })
 }
 

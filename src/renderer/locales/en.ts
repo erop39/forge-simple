@@ -7,6 +7,7 @@ export const en = {
   'connection.offline': 'Offline',
   'connection.latency': '{ms} ms',
   'connection.attempt': 'attempt {n}',
+  'connection.none': 'No server',
 
   'server.title': 'Forge server',
   'server.address': 'Server address',
@@ -23,6 +24,7 @@ export const en = {
   'empty.noServer.body': 'Enter the address of the PC that runs Forge Neo.',
 
   'notice.dismiss': 'Dismiss',
+  'catalog.retry': 'Retry',
 
   // One entry per IpcErrorKey (src/shared/ipc.ts); the keys are the same strings.
   'error.noServer': 'Connect to a Forge server first.',

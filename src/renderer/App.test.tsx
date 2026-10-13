@@ -12,7 +12,7 @@ const catalog: Catalog = {
   modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1,
 }
 
-function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>) {
+function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>, catalogFails = false) {
   const api = {
     settings: {
       get: vi.fn(async () => ({ serverUrl, imagesDir: '' })),
@@ -28,6 +28,7 @@ function setup(serverUrl: string | null, setServerUrl?: () => Promise<Connection
     connection: { get: vi.fn(async () => ({ state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 })) },
     on: vi.fn(() => () => {}),
   }
+  if (catalogFails) api.catalog.get.mockRejectedValueOnce(new Error('error.network'))
   const store = createAppStore(api as unknown as Api)
   render(
     <StoreProvider store={store}>
@@ -123,4 +124,43 @@ test('a failed user action shows a dismissible notice', async () => {
   expect(alert.textContent).toContain(en['error.noServer'])
   await userEvent.click(screen.getByRole('button', { name: en['notice.dismiss'] }))
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('with no server the chip reads No server, not Reconnecting', async () => {
+  setup(null)
+  await screen.findByRole('dialog')
+  expect(document.body.textContent).toContain(en['connection.none'])
+  expect(document.body.textContent).not.toContain(en['connection.reconnecting'])
+})
+
+test('a refresh failure after an ok check leaves the form usable with an error', async () => {
+  const { api } = setup(null)
+  const input = await screen.findByRole('textbox', { name: en['server.address'] })
+  api.settings.get.mockRejectedValue(new Error('error.unexpected'))
+  await userEvent.type(input, '127.0.0.1:7861')
+  await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
+  expect((await screen.findByRole('alert')).textContent).toBe(en['error.unexpected'])
+  const button = screen.getByRole('button', { name: en['server.connect'] }) as HTMLButtonElement
+  expect(button.disabled).toBe(false)
+  expect((input as HTMLInputElement).readOnly).toBe(false)
+})
+
+test('the input and the dialog are both described, with distinct ids', async () => {
+  setup(null)
+  const input = await screen.findByRole('textbox', { name: en['server.address'] })
+  const dlg = screen.getByRole('dialog')
+  const hint = document.getElementById(input.getAttribute('aria-describedby')!.split(' ')[0]!)
+  expect(hint?.textContent).toBe(en['server.hint'])
+  expect(dlg.getAttribute('aria-describedby')).toBeTruthy()
+  expect(document.getElementById(dlg.getAttribute('aria-describedby')!)?.textContent).toContain(en['server.hint'])
+})
+
+test('a catalog failure shows a notice; Retry reloads and removes it', async () => {
+  const { api, store } = setup('http://127.0.0.1:7861', undefined, true)
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toContain(en['error.network'])
+  await userEvent.click(screen.getByRole('button', { name: en['catalog.retry'] }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  expect(api.catalog.get).toHaveBeenLastCalledWith(true)
+  expect(store.getState().params?.checkpoint).toBe('a.safetensors')
 })
