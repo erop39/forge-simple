@@ -63,7 +63,12 @@ function createWindow(onVisibilityChange: () => void): void {
 
   created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   created.webContents.on('will-navigate', (event, url) => {
-    const origin = url.startsWith('file://') ? 'file://' : new URL(url).origin
+    let origin: string
+    try {
+      origin = url.startsWith('file://') ? 'file://' : new URL(url).origin
+    } catch {
+      origin = '' // unparsable: treat as off-origin
+    }
     if (origin !== appOrigin) event.preventDefault()
   })
   created.once('ready-to-show', () => created.show())
@@ -181,7 +186,7 @@ async function boot(): Promise<void> {
   })
 
   createWindow(syncMonitor)
-  if (process.env['FNC_SMOKE'] === '1' && win) {
+  if (process.env['FNC_SMOKE'] === '1' && !app.isPackaged && win) {
     const { runSmoke } = await import('./fnc-smoke')
     runSmoke(win)
   }
