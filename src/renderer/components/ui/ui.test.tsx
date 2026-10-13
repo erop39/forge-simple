@@ -28,6 +28,7 @@ test('Select marks the current value as checked', async () => {
   render(<Select label="Sampler" value="Euler" options={options} onChange={() => {}} />)
   await userEvent.click(screen.getByRole('button', { name: /Sampler/ }))
   expect(screen.getByRole('menuitemradio', { name: 'Euler' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByRole('menuitemradio', { name: 'DPM' }).getAttribute('aria-checked')).toBe('false')
 })
 
 test('Button fires onClick and renders icon and label', async () => {

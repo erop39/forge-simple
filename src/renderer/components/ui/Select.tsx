@@ -1,5 +1,5 @@
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { CaretDown } from '@phosphor-icons/react'
+import { CaretDown, Check } from '@phosphor-icons/react'
 import styles from './Select.module.css'
 
 type SelectProps = {
@@ -23,7 +23,10 @@ export function Select({ value, options, onChange, label }: SelectProps) {
           <Menu.RadioGroup value={value} onValueChange={onChange}>
             {options.map((option) => (
               <Menu.RadioItem key={option.value} value={option.value} className={styles.item}>
-                {option.label}
+                <span className={styles.itemLabel}>{option.label}</span>
+                <Menu.ItemIndicator className={styles.indicator}>
+                  <Check size={16} weight="regular" aria-hidden />
+                </Menu.ItemIndicator>
               </Menu.RadioItem>
             ))}
           </Menu.RadioGroup>
