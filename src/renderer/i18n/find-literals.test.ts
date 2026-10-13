@@ -34,3 +34,45 @@ describe('findLiterals', () => {
     expect(findLiterals(`const title = 'x' // <b>Hello</b>\n/* <i>Hi</i> */`)).toEqual([])
   })
 })
+
+describe('findLiterals with real structure', () => {
+  test('sees JSX inside a block-bodied function component', () => {
+    const src = 'export function A() {\n  return <button title="x">Save</button>\n}'
+    expect(findLiterals(src)).toHaveLength(2)
+  })
+
+  test('sees JSX inside a block-bodied arrow component', () => {
+    const src = "export const A = () => {\n  return <button title={'x'}>Save</button>\n}"
+    expect(findLiterals(src)).toHaveLength(2)
+  })
+
+  test('ignores plain TypeScript after the last closing tag', () => {
+    const src = `export function A() {\n  return <div>{t('a')}</div>\n}\nexport function B() {\n  const s = 'Hello world'\n  return <p>{s}</p>\n}\nconst x = 1 < 2\nexport const label = 'Plain text'\n`
+    expect(findLiterals(src)).toEqual([])
+  })
+
+  test('flags text in nested elements', () => {
+    expect(findLiterals('<div><ul><li>Item</li></ul></div>')).toEqual(['Item'])
+  })
+
+  test('flags text in a fragment', () => {
+    expect(findLiterals('<>Hello</>')).toEqual(['Hello'])
+  })
+
+  test('flags text inside a conditional', () => {
+    expect(findLiterals('<div>{cond && <b>Text</b>}</div>')).toEqual(['Text'])
+  })
+
+  test('flags string and template children', () => {
+    expect(findLiterals("<b>{'Save'}</b>")).toEqual(['Save'])
+    expect(findLiterals('<b>{`Save`}</b>')).toEqual(['Save'])
+  })
+
+  test('flags a template literal attribute without substitutions', () => {
+    expect(findLiterals('<input title={`Name`} />')).toHaveLength(1)
+  })
+
+  test('does not flag non-literal children or other attributes', () => {
+    expect(findLiterals(`<input className="foo" type="button" role="status" data-x="y">{value}{t('x')}</input>`)).toEqual([])
+  })
+})

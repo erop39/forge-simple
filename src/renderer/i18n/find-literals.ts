@@ -1,48 +1,50 @@
-const ATTRIBUTES = ['aria-label', 'title', 'placeholder', 'alt']
+import { parse } from '@babel/parser'
+import type { Node } from '@babel/types'
 
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+const ATTRIBUTES = new Set(['aria-label', 'title', 'placeholder', 'alt'])
+const LATIN = /[A-Za-z]/
+
+function isPlainLiteral(node: Node | null | undefined): string | null {
+  if (!node) return null
+  if (node.type === 'StringLiteral') return node.value
+  if (node.type === 'TemplateLiteral') return node.quasis.map((q) => q.value.cooked ?? '').join('')
+  return null
 }
 
-// Replaces every balanced `{...}` with `{}`, or `{Q}` when the expression starts
-// with a string literal, so that `title={'x'}` stays detectable.
-function collapseBraces(source: string): string {
-  let out = ''
-  let depth = 0
-  let start = 0
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i]
-    if (ch === '{') {
-      if (depth === 0) start = i
-      depth++
-    } else if (ch === '}' && depth > 0) {
-      depth--
-      if (depth === 0) {
-        const inner = source.slice(start + 1, i).trimStart()
-        out += /^["'`]/.test(inner) ? '{Q}' : '{}'
-      }
-    } else if (depth === 0) {
-      out += ch
+function visit(node: Node, found: string[]): void {
+  if (node.type === 'JSXText' && LATIN.test(node.value)) {
+    found.push(node.value.trim())
+  } else if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+    for (const child of node.children) {
+      if (child.type !== 'JSXExpressionContainer') continue
+      const text = isPlainLiteral(child.expression as Node)
+      if (text !== null && LATIN.test(text)) found.push(text)
+    }
+  } else if (node.type === 'JSXAttribute' && node.name.type === 'JSXIdentifier' && ATTRIBUTES.has(node.name.name)) {
+    const value = node.value
+    const text =
+      value?.type === 'StringLiteral'
+        ? value.value
+        : value?.type === 'JSXExpressionContainer'
+          ? isPlainLiteral(value.expression as Node)
+          : null
+    if (text !== null && text !== undefined) found.push(`${node.name.name}="${text}"`)
+  }
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) if (item && typeof item.type === 'string') visit(item, found)
+    } else if (value && typeof value === 'object' && typeof (value as Node).type === 'string') {
+      visit(value as Node, found)
     }
   }
-  return out
 }
 
-// Returns user-visible literals found in JSX source: text containing a Latin letter
-// and string-literal values of aria-label / title / placeholder / alt.
+// Returns user-visible literals in a TSX source: JSX text containing a Latin letter,
+// string/template literal JSX children, and string-literal values of
+// aria-label / title / placeholder / alt. Anything outside JSX is ignored.
 export function findLiterals(source: string): string[] {
-  const code = collapseBraces(stripComments(source)).replace(/=>/g, '  ')
+  const ast = parse(source, { sourceType: 'module', plugins: ['typescript', 'jsx'] })
   const found: string[] = []
-  const tag = /(?<![\w$)\]])<(?:\/?[A-Za-z][\w.:-]*(?:\s[^<>]*)?|)>/g
-  const attr = new RegExp(`(?:^|\\s)(?:${ATTRIBUTES.join('|')})\\s*=\\s*(?:["']|\\{Q\\})`)
-  for (const match of code.matchAll(tag)) {
-    const text = match[0]
-    if (!text.startsWith('</') && attr.test(text)) found.push(text)
-    if (text.endsWith('/>')) continue
-    const after = code.slice(match.index + text.length)
-    const next = after.indexOf('<')
-    const content = next === -1 ? after : after.slice(0, next)
-    if (/[A-Za-z]/.test(content)) found.push(content.trim())
-  }
+  visit(ast.program, found)
   return found
 }
