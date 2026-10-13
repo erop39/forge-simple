@@ -1,0 +1,101 @@
+import { defaultParams } from '@shared/profiles'
+import type { Family, GenerationParams } from '@shared/types'
+import { buildTxt2ImgBody } from './payload'
+
+const avail = { samplers: ['Euler a', 'Euler'], schedulers: ['Automatic', 'Simple'] }
+const base = defaultParams('sdxl', 'sd_xl_base.safetensors [abc]', avail)
+const F = { shiftOptionKey: 'some_shift', modulesAs: 'path', thumbRoute: false } as const
+const forFamily = (family: Family): GenerationParams => defaultParams(family, `${family}.safetensors`, avail)
+
+test('sdxl: checkpoint, clip skip and fixed flags', () => {
+  const b = buildTxt2ImgBody({ ...base, prompt: 'a cat', negativePrompt: 'blurry' }, F)
+  expect(b).toMatchObject({
+    prompt: 'a cat', negative_prompt: 'blurry', cfg_scale: 5, batch_size: 1, n_iter: 1,
+    send_images: true, save_images: false, override_settings_restore_afterwards: false,
+    sampler_name: 'Euler a', scheduler: 'Automatic', steps: 28, width: 896, height: 1152,
+  })
+  expect(b.override_settings).toEqual({
+    sd_model_checkpoint: 'sd_xl_base.safetensors [abc]',
+    forge_additional_modules: [],
+    CLIP_stop_at_last_layers: 2,
+  })
+  expect(b).not.toHaveProperty('distilled_cfg_scale')
+})
+
+test('krea2: distilled cfg, cfg 1, empty negative, no clip skip', () => {
+  const b = buildTxt2ImgBody({ ...forFamily('krea2'), cfgScale: 7, negativePrompt: 'ignored' }, F)
+  expect(b.negative_prompt).toBe('')
+  expect(b.cfg_scale).toBe(1)
+  expect(b.distilled_cfg_scale).toBe(3.5)
+  expect(b.override_settings).not.toHaveProperty('CLIP_stop_at_last_layers')
+})
+
+test('clip skip is omitted when the profile has it but the value is null', () => {
+  const b = buildTxt2ImgBody({ ...base, clipSkip: null }, F)
+  expect(b.override_settings).not.toHaveProperty('CLIP_stop_at_last_layers')
+})
+
+test('zimage: shift goes to the option named by findings', () => {
+  const b = buildTxt2ImgBody(forFamily('zimage'), F)
+  expect(b.override_settings.some_shift).toBe(3)
+})
+
+test('shift is omitted when findings.shiftOptionKey is null', () => {
+  const b = buildTxt2ImgBody(forFamily('zimage'), { ...F, shiftOptionKey: null })
+  expect(Object.keys(b.override_settings).sort()).toEqual(['forge_additional_modules', 'sd_model_checkpoint'])
+})
+
+test('shift is omitted when the profile has no shift', () => {
+  const b = buildTxt2ImgBody({ ...base, shift: 3 }, F)
+  expect(b.override_settings).not.toHaveProperty('some_shift')
+})
+
+test('shift is omitted when the value is null', () => {
+  const b = buildTxt2ImgBody({ ...forFamily('zimage'), shift: null }, F)
+  expect(b.override_settings).not.toHaveProperty('some_shift')
+})
+
+test('modules are passed through in order', () => {
+  const b = buildTxt2ImgBody({ ...forFamily('zimage'), modules: ['b.safetensors', 'a.safetensors'] }, F)
+  expect(b.override_settings.forge_additional_modules).toEqual(['b.safetensors', 'a.safetensors'])
+})
+
+test('enabled loras are appended to the prompt, disabled ones are not', () => {
+  const b = buildTxt2ImgBody({
+    ...base, prompt: 'a cat', loras: [
+      { name: 'film', weight: 0.8, enabled: true },
+      { name: 'off', weight: 1, enabled: false },
+    ],
+  }, F)
+  expect(b.prompt).toBe('a cat <lora:film:0.8>')
+})
+
+test('loras are appended in list order with default number formatting', () => {
+  const b = buildTxt2ImgBody({
+    ...base, prompt: 'a cat', loras: [
+      { name: 'a', weight: 1, enabled: true },
+      { name: 'b', weight: 0.5, enabled: true },
+    ],
+  }, F)
+  expect(b.prompt).toBe('a cat <lora:a:1> <lora:b:0.5>')
+})
+
+test('a prompt without enabled loras is unchanged', () => {
+  const b = buildTxt2ImgBody({ ...base, prompt: 'a cat', loras: [{ name: 'off', weight: 1, enabled: false }] }, F)
+  expect(b.prompt).toBe('a cat')
+})
+
+test('seed -1 and explicit seed are passed as is', () => {
+  expect(buildTxt2ImgBody({ ...base, seed: -1 }, F).seed).toBe(-1)
+  expect(buildTxt2ImgBody({ ...base, seed: 12345 }, F).seed).toBe(12345)
+})
+
+test('the input params are not mutated', () => {
+  const p: GenerationParams = {
+    ...base, prompt: 'a cat', modules: ['m'], loras: [{ name: 'film', weight: 0.8, enabled: true }],
+  }
+  const snapshot = structuredClone(p)
+  const b = buildTxt2ImgBody(p, F)
+  expect(p).toEqual(snapshot)
+  expect(b.override_settings.forge_additional_modules).not.toBe(p.modules)
+})
