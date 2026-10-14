@@ -1,5 +1,5 @@
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
+  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
   RestartOutcome, ServerInfo,
 } from './types'
 
@@ -44,6 +44,8 @@ export interface AppEvents {
   'forge:capabilities': ForgeCapabilities
   /** Generations keep failing with HTTP 500 (unhealthy), or that ended. */
   'forge:health': ForgeHealth
+  /** A new operation-log entry. */
+  'oplog:added': OplogEntry
 }
 
 export interface Api {
@@ -77,6 +79,8 @@ export interface Api {
     cancel(id: number): Promise<void>
     retry(id: number): Promise<Job>
     listActive(): Promise<Job[]>
+    /** Any stored job (e.g. to show why a logged job failed); error.notFound when it is gone. */
+    get(id: number): Promise<Job>
   }
   images: {
     list(opts: { limit: number; beforeId?: number }): Promise<ImageRecord[]>
@@ -85,6 +89,16 @@ export interface Api {
   }
   clipboard: { writeText(text: string): Promise<void> }
   connection: { get(): Promise<ConnectionStatus> }
+  /** The operation log. */
+  oplog: {
+    list(query: OplogQuery): Promise<OplogEntry[]>
+    /** Writes the matching entries as JSON Lines to a file the user picks; false when the dialog was cancelled. */
+    export(query: OplogQuery): Promise<boolean>
+    /** Days entries are kept; older ones are deleted at start. */
+    retention(): Promise<number>
+    /** Whole days, 1..3650; anything else is refused with error.invalidParams. */
+    setRetention(days: number): Promise<void>
+  }
   /** Control of the active Forge. Both actions reject with error.noServer without one. */
   forge: {
     capabilities(): Promise<ForgeCapabilities>
@@ -108,16 +122,17 @@ export const CHANNELS = [
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',
-  'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive',
+  'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:get',
   'images:list', 'images:details', 'images:delete', 'clipboard:writeText',
   'connection:get',
   'forge:capabilities', 'forge:health', 'forge:restart', 'forge:unload',
+  'oplog:list', 'oplog:export', 'oplog:retention', 'oplog:setRetention',
 ] as const
 export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'servers',
-  'forge:capabilities', 'forge:health',
+  'forge:capabilities', 'forge:health', 'oplog:added',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

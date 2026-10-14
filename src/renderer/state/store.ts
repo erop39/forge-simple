@@ -1,12 +1,28 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
-  RestartOutcome, ServerInfo,
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset,
+  OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { errorKeyOf } from '../i18n/error-text'
 
 const IMAGE_PAGE = 100
+/** Log entries the panel holds; older ones need a narrower filter. */
+export const LOG_LIMIT = 1000
+
+export type LogPeriod = '1h' | '24h' | '7d' | 'all'
+export interface LogFilters { level: OplogLevel | 'all'; category: OplogCategory | 'all'; period: LogPeriod }
+const PERIOD_MS: Record<Exclude<LogPeriod, 'all'>, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 }
+
+/** The main-side query for the panel's filters; the period counts back from `now`. */
+export function logQuery(f: LogFilters, now: number): OplogQuery {
+  return {
+    ...(f.level !== 'all' ? { level: f.level } : {}),
+    ...(f.category !== 'all' ? { category: f.category } : {}),
+    ...(f.period !== 'all' ? { from: now - PERIOD_MS[f.period] } : {}),
+    limit: LOG_LIMIT,
+  }
+}
 
 export interface AppState {
   connection: ConnectionStatus
@@ -36,6 +52,12 @@ export interface AppState {
   forgeUnhealthy: boolean
   /** The restart confirmation opened from a job tile or the unhealthy notice. */
   restartAsked: boolean
+  logOpen: boolean
+  /** Newest first, matching logFilters; new entries arrive live while the panel is open. */
+  logEntries: OplogEntry[]
+  logFilters: LogFilters
+  /** An image another part of the window asked the gallery to show in the viewer. */
+  viewRequest: number | null
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
   setParams(patch: Partial<GenerationParams>): void
@@ -72,6 +94,17 @@ export interface AppState {
   unloadModel(): Promise<void>
   /** Hides the unhealthy notice until Forge is reported unhealthy again. */
   dismissUnhealthy(): void
+  /** Opens or closes the log panel (closing the parameters panel); opening loads the entries. */
+  toggleLog(): void
+  setLogFilters(patch: Partial<LogFilters>): void
+  /** Resolves false when the save dialog was cancelled; rejects with the error key. */
+  exportLog(): Promise<boolean>
+  logRetention(): Promise<number>
+  setLogRetention(days: number): Promise<void>
+  /** Any stored job; rejects with the error key (error.notFound when it is gone). */
+  getJob(id: number): Promise<Job>
+  requestView(imageId: number): void
+  clearViewRequest(): void
 }
 
 const OFFLINE: ConnectionStatus = { state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }
@@ -89,6 +122,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   // Bumped by each forge:capabilities / forge:health event: a load that started earlier is older.
   let capabilitiesSeq = 0
   let healthSeq = 0
+  let logSeq = 0
   let morePromise: Promise<void> | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -254,6 +288,24 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         healthSeq++
         set({ forgeUnhealthy: unhealthy })
       })
+      api.on('oplog:added', (entry) =>
+        set((s) => (!s.logOpen || !matchesLog(entry, s.logFilters) || s.logEntries.some((e) => e.id === entry.id)
+          ? s
+          : { logEntries: [entry, ...s.logEntries].slice(0, LOG_LIMIT) })),
+      )
+    }
+
+    /** Reloads the log for the current filters; only the newest request may set the entries. */
+    async function loadLog(): Promise<void> {
+      const seq = ++logSeq
+      const entries = await attempt(() => api.oplog.list(logQuery(get().logFilters, Date.now())))
+      if (!entries || seq !== logSeq) return
+      // Entries pushed live while this request ran are newer than its answer.
+      set((s) => ({ logEntries: [...s.logEntries.filter((e) => !entries.some((x) => x.id === e.id) && e.id > (entries[0]?.id ?? 0)), ...entries] }))
+    }
+
+    function matchesLog(e: OplogEntry, f: LogFilters): boolean {
+      return (f.level === 'all' || e.level === f.level) && (f.category === 'all' || e.category === f.category)
     }
 
     /** Loads what the active Forge allows and its health; an event that arrived meanwhile is newer. */
@@ -308,6 +360,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       capabilities: { canRestart: false },
       forgeUnhealthy: false,
       restartAsked: false,
+      logOpen: false,
+      logEntries: [],
+      logFilters: { level: 'all', category: 'all', period: '24h' },
+      viewRequest: null,
 
       init() {
         initPromise ??= load()
@@ -422,7 +478,45 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       },
 
       togglePanel() {
-        set((s) => ({ panelOpen: !s.panelOpen }))
+        set((s) => ({ panelOpen: !s.panelOpen, logOpen: false }))
+      },
+
+      toggleLog() {
+        const open = !get().logOpen
+        set({ logOpen: open, panelOpen: false })
+        if (open) {
+          set({ logEntries: [] })
+          void loadLog()
+        } else logSeq++
+      },
+
+      setLogFilters(patch) {
+        set((s) => ({ logFilters: { ...s.logFilters, ...patch }, logEntries: [] }))
+        void loadLog()
+      },
+
+      exportLog() {
+        return api.oplog.export(logQuery(get().logFilters, Date.now()))
+      },
+
+      logRetention() {
+        return api.oplog.retention()
+      },
+
+      setLogRetention(days) {
+        return api.oplog.setRetention(days)
+      },
+
+      getJob(id) {
+        return api.jobs.get(id)
+      },
+
+      requestView(imageId) {
+        set({ viewRequest: imageId })
+      },
+
+      clearViewRequest() {
+        set({ viewRequest: null })
       },
 
       askRestart() {

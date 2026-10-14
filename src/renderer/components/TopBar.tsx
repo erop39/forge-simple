@@ -1,14 +1,17 @@
-import { GearSix } from '@phosphor-icons/react'
+import { GearSix, Scroll } from '@phosphor-icons/react'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { IconButton } from './ui/IconButton'
 import { ConnectionChip } from './ConnectionChip'
+import { LOG_TOGGLE_ID } from './LogPanel'
 import styles from './TopBar.module.css'
 
 export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
   const connection = useAppStore((s) => s.connection)
   const noServer = useAppStore((s) => s.settings !== null && !s.settings.serverUrl)
   const serverName = useAppStore((s) => s.servers.find((server) => server.active)?.name ?? null)
+  const logOpen = useAppStore((s) => s.logOpen)
+  const toggleLog = useAppStore((s) => s.toggleLog)
   return (
     <header className={styles.bar}>
       <ConnectionChip
@@ -18,10 +21,18 @@ export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
         className={styles.noDrag}
       />
       <IconButton
+        id={LOG_TOGGLE_ID}
+        label={t('topbar.log')}
+        icon={<Scroll size={20} />}
+        aria-expanded={logOpen}
+        onClick={toggleLog}
+        className={`${styles.noDrag} ${styles.end}`}
+      />
+      <IconButton
         label={t('topbar.settings')}
         icon={<GearSix size={20} />}
         onClick={onOpenServer}
-        className={`${styles.noDrag} ${styles.end}`}
+        className={styles.noDrag}
       />
     </header>
   )

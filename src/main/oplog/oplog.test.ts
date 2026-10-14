@@ -1,5 +1,6 @@
 import { openDb, type Db } from '../storage/db'
-import { createOplog, type Oplog } from './oplog'
+import type { OplogEntry } from '@shared/types'
+import { createOplog, DEFAULT_RETENTION_DAYS, isRetentionDays, retentionDays, toJsonLines, type Oplog } from './oplog'
 
 let db: Db
 let log: Oplog
@@ -124,4 +125,50 @@ test('stores {} and reports through console.error when details cannot be seriali
   expect(() => log.write({ level: 'info', category: 'app', messageKey: 'big', details: { n: 10n } })).not.toThrow()
   expect(spy).toHaveBeenCalledTimes(2)
   expect(log.list().map((r) => [r.messageKey, r.details])).toEqual([['big', {}], ['circ', {}]])
+})
+
+describe('live listener, retention and export', () => {
+  test('each stored entry is handed to the listener as listed; a failing listener is only reported', () => {
+    const added: OplogEntry[] = []
+    const live = createOplog(db, () => 42, (e) => added.push(e))
+    live.write({ level: 'warn', category: 'queue', messageKey: 'log.queue.paused', jobId: 3, details: { reason: 'restart', prompt: 'x' } })
+    expect(added).toEqual(live.list())
+    expect(added[0]).toMatchObject({ time: 42, level: 'warn', jobId: 3, details: { reason: 'restart' } })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const broken = createOplog(db, () => 43, () => { throw new Error('gone') })
+    expect(() => broken.write({ level: 'info', category: 'app', messageKey: 'k' })).not.toThrow()
+    expect(spy).toHaveBeenCalled()
+  })
+
+  test('a failed write is not handed to the listener', () => {
+    const added: OplogEntry[] = []
+    const live = createOplog(db, () => 1, (e) => added.push(e))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    db.close()
+    live.write({ level: 'info', category: 'app', messageKey: 'k' })
+    expect(added).toEqual([])
+  })
+
+  test('retentionDays reads the setting: default 90, whole days 1..3650 only', () => {
+    expect(retentionDays(null)).toBe(90)
+    expect(retentionDays('30')).toBe(30)
+    expect(retentionDays('3650')).toBe(3650)
+    for (const bad of ['0', '3651', '1.5', 'abc', '']) expect(retentionDays(bad)).toBe(DEFAULT_RETENTION_DAYS)
+    expect(isRetentionDays(1)).toBe(true)
+    expect(isRetentionDays(0)).toBe(false)
+    expect(isRetentionDays(2.5)).toBe(false)
+  })
+
+  test('toJsonLines writes one JSON object per line with an ISO time', () => {
+    at(Date.UTC(2026, 9, 14, 12, 0, 0), { level: 'info', category: 'app', messageKey: 'log.app.started', details: { version: '0.1.0' } })
+    at(Date.UTC(2026, 9, 14, 12, 0, 1), { level: 'error', category: 'error', messageKey: 'log.error.generation', jobId: 7 })
+    const lines = toJsonLines(log.list()).trimEnd().split('\n')
+    expect(lines).toHaveLength(2)
+    expect(JSON.parse(lines[1]!)).toEqual({
+      id: 1, time: '2026-10-14T12:00:00.000Z', level: 'info', category: 'app', messageKey: 'log.app.started',
+      durationMs: null, jobId: null, details: { version: '0.1.0' },
+    })
+    expect(toJsonLines(log.list()).endsWith('\n')).toBe(true)
+    expect(toJsonLines([])).toBe('')
+  })
 })

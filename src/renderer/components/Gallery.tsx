@@ -62,6 +62,8 @@ export function Gallery() {
   const hasParams = useAppStore((s) => s.params !== null)
   const deleteImage = useAppStore((s) => s.deleteImage)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
+  const viewRequest = useAppStore((s) => s.viewRequest)
+  const clearViewRequest = useAppStore((s) => s.clearViewRequest)
   const [columnsRef, columnCount] = useColumnCount()
   const { hidden, toastOpen, request, undo } = usePendingDelete(deleteImage)
   const [viewerImage, setViewerImage] = useState<ImageRecord | null>(null)
@@ -102,6 +104,18 @@ export function Gallery() {
       setPendingNextId(null)
     }
   }, [pendingNextId, visibleImages, loadingOlder])
+
+  // Another part of the window (the activity log) asked to show an image: open it when it is loaded.
+  useEffect(() => {
+    if (viewRequest === null) return
+    const image = visibleImages.find((i) => i.id === viewRequest)
+    if (image) {
+      opener.current = null
+      setPendingNextId(null)
+      setViewerImage(image)
+    }
+    clearViewRequest()
+  }, [viewRequest, visibleImages, clearViewRequest])
 
   const closeViewer = (): void => {
     setPendingNextId(null)

@@ -1,0 +1,204 @@
+/* Overlays the right edge of the canvas below the top bar, like the parameters panel. */
+.panel {
+  position: fixed;
+  z-index: var(--z-panel);
+  top: var(--h-topbar);
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: var(--panel-w);
+  padding-bottom: var(--sp-3);
+  border-left: 1px solid var(--line);
+  background: var(--surface-1);
+  animation: panel-in var(--dur-panel-in) ease-out;
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-4);
+}
+
+.search {
+  height: var(--h-control);
+  margin: 0 var(--sp-4);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+}
+
+.search:hover {
+  border-color: var(--line-strong);
+}
+
+.search::placeholder {
+  color: var(--text-3);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.entry {
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--surface-2);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.level {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.warn {
+  color: var(--signal);
+}
+
+.error {
+  color: var(--blocked);
+}
+
+.info {
+  color: var(--text-2);
+}
+
+.category {
+  color: var(--text-3);
+}
+
+.duration {
+  margin-left: auto;
+}
+
+.text {
+  overflow-wrap: anywhere;
+}
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 var(--sp-4) var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+}
+
+.outcome p,
+p.outcome {
+  margin: 0;
+}
+
+.outcomeHead {
+  font-weight: 500;
+}
+
+.outcomeMeta,
+.outcomeDetail {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin: 0;
+  padding: 0 var(--sp-4);
+  color: var(--text-2);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+}
+
+.footerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+p.error {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}

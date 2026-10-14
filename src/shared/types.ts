@@ -42,9 +42,13 @@ export interface JobProgress {
 }
 export type ConnectionState = 'connected' | 'slow' | 'reconnecting' | 'offline';
 export interface ConnectionStatus { state: ConnectionState; latencyMs: number | null; attempts: number; lastOkAt: number | null }
-export type OplogLevel = 'info' | 'warn' | 'error';
-export type OplogCategory = 'app' | 'connection' | 'catalog' | 'checkpoint' | 'queue' | 'generation'
-  | 'preset' | 'settings' | 'storage' | 'error' | 'lock' | 'resources' | 'server' | 'backup';
+export const OPLOG_LEVELS = ['info', 'warn', 'error'] as const
+export type OplogLevel = (typeof OPLOG_LEVELS)[number];
+export const OPLOG_CATEGORIES = [
+  'app', 'connection', 'catalog', 'checkpoint', 'queue', 'generation',
+  'preset', 'settings', 'storage', 'error', 'lock', 'resources', 'server', 'backup',
+] as const
+export type OplogCategory = (typeof OPLOG_CATEGORIES)[number];
 export interface OplogEntry {
   id: number; time: number; level: OplogLevel; category: OplogCategory;
   messageKey: string; durationMs: number | null; jobId: number | null; details: Record<string, unknown>;
@@ -70,3 +74,5 @@ export interface ForgeHealth { unhealthy: boolean }
  * `notAllowed`: Forge runs without --api-server-stop. `notRestartable`: its launcher cannot restart it.
  */
 export type RestartOutcome = 'restarting' | 'notAllowed' | 'notRestartable'
+/** Which log entries to list or export; newest first. Text search happens in the renderer on the shown text. */
+export interface OplogQuery { level?: OplogLevel; category?: OplogCategory; from?: number; limit?: number }

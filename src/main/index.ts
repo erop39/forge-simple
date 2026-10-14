@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { extname, join } from 'node:path'
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
 import { createCapabilities } from './forge/capabilities'
@@ -8,7 +8,7 @@ import { createForgeClient } from './forge/client'
 import { createConnectionMonitor } from './forge/connection'
 import { FINDINGS } from './forge/findings'
 import { forwardEvents, registerIpc } from './ipc/register'
-import { createOplog } from './oplog/oplog'
+import { createOplog, RETENTION_KEY, retentionDays } from './oplog/oplog'
 import { createRunner } from './queue/runner'
 import { openDb } from './storage/db'
 import { resolveImageRequest } from './storage/image-protocol'
@@ -17,7 +17,6 @@ import { createRepos } from './storage/repos'
 
 const THUMB_WIDTH = 480
 const MONITOR_INTERVAL_MS = 2000
-const LOG_RETENTION_DAYS = 90
 /** before-quit waits this long for the queue to stop; recover() fixes a still-running job on next start. */
 const SHUTDOWN_TIMEOUT_MS = 5000
 const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }
@@ -95,10 +94,10 @@ async function boot(): Promise<void> {
   const db = openDb(join(userData, 'forge-neo-client.db'))
   const now = (): number => Date.now()
   const repos = createRepos(db, now)
-  const oplog = createOplog(db, now)
+  const oplog = createOplog(db, now, (entry) => send('oplog:added', entry))
   const imagesDir = (): string => repos.settings.get('imagesDir') ?? join(userData, 'images')
 
-  oplog.purgeOlderThan(LOG_RETENTION_DAYS)
+  oplog.purgeOlderThan(retentionDays(repos.settings.get(RETENTION_KEY)))
   oplog.write({
     level: 'info', category: 'app', messageKey: 'log.app.started',
     details: { version: app.getVersion(), platform: process.platform },
@@ -154,6 +153,11 @@ async function boot(): Promise<void> {
     copyToClipboard: (value) => clipboard.writeText(value),
     onServerChanged: syncMonitor,
     capabilities,
+    chooseExportPath: async (defaultName) => {
+      const options = { defaultPath: join(app.getPath('documents'), defaultName) }
+      const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      return result.canceled || !result.filePath ? null : result.filePath
+    },
   }, send)
 
   protocol.handle('fnc-img', async (request) => {

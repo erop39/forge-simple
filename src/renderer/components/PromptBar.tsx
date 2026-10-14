@@ -104,6 +104,7 @@ export function PromptBar() {
   const catalogError = useAppStore((s) => s.catalogError)
   const settings = useAppStore((s) => s.settings)
   const panelOpen = useAppStore((s) => s.panelOpen)
+  const logOpen = useAppStore((s) => s.logOpen)
   const setParams = useAppStore((s) => s.setParams)
   const selectCheckpoint = useAppStore((s) => s.selectCheckpoint)
   const generate = useAppStore((s) => s.generate)
@@ -165,7 +166,7 @@ export function PromptBar() {
   if (ratio === CUSTOM_RATIO) ratioOptions.push({ value: CUSTOM_RATIO, label: t('prompt.ratioCustom') })
 
   return (
-    <div ref={publishHeight} className={`${styles.bar} ${panelOpen ? styles.shifted : ''}`}>
+    <div ref={publishHeight} className={`${styles.bar} ${panelOpen || logOpen ? styles.shifted : ''}`}>
       <UnhealthyNotice />
       {model?.profile.negative && negativeOpen && (
         <GrowingField

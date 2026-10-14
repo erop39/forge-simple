@@ -238,3 +238,11 @@ test('Next loads the next gallery page when the oldest loaded image is open', as
   await waitFor(() => expect(screen.getByRole('img', { name: 'Generated image 2' })).toBeDefined())
   expect((screen.getByRole('button', { name: en['viewer.next'] }) as HTMLButtonElement).disabled).toBe(true)
 })
+
+test('a view request from elsewhere (the activity log) opens that image and is cleared', async () => {
+  const details = vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' }))
+  vi.stubGlobal('api', { images: { details }, clipboard: { writeText: vi.fn() } })
+  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(8), image(7)], viewRequest: 7 })
+  expect(await screen.findByRole('img', { name: 'Generated image 7' })).toBeDefined()
+  expect(store.getState().viewRequest).toBeNull()
+})

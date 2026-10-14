@@ -38,6 +38,7 @@ const api: Api = {
     cancel: (id) => invoke('jobs:cancel', id),
     retry: (id) => invoke('jobs:retry', id),
     listActive: () => invoke('jobs:listActive'),
+    get: (id) => invoke('jobs:get', id),
   },
   images: {
     list: (opts) => invoke('images:list', opts),
@@ -46,6 +47,12 @@ const api: Api = {
   },
   clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },
+  oplog: {
+    list: (query) => invoke('oplog:list', query),
+    export: (query) => invoke('oplog:export', query),
+    retention: () => invoke('oplog:retention'),
+    setRetention: (days) => invoke('oplog:setRetention', days),
+  },
   forge: {
     capabilities: () => invoke('forge:capabilities'),
     health: () => invoke('forge:health'),

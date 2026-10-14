@@ -23,7 +23,8 @@ Forge's HTTP API. One user, no login.
   the next job loads it afresh; when generations keep failing, a notice suggests restarting Forge.
 - Restarts Forge and unloads the model from the server dialog (restart needs Forge's `--api-server-stop` flag).
 - An operation log in the database: queue events, start and finish of every generation with its
-  duration, checkpoint changes, connection loss and recovery, errors. Prompts are never written to it.
+  duration, checkpoint changes, connection loss and recovery, Forge restarts, errors. Prompts are never
+  written to it. The Activity log panel shows, filters, searches and exports it.
 
 ## Requirements
 
@@ -76,12 +77,13 @@ git-ignored; do not share it.
 
 The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge-neo-client` on Windows):
 
-- `forge-neo-client.db` - SQLite database with servers, jobs, image records, settings and the operation log. The log is the `oplog` table; entries older than 90 days are purged at start-up.
+- `forge-neo-client.db` - SQLite database with servers, jobs, image records, settings and the operation log. The log is the `oplog` table; entries older than the retention period (90 days unless changed in the Activity log panel, 1 to 3650) are purged at start-up.
 - `images/` - generated PNGs in month folders (`images/2026-10/`) and JPEG thumbnails in `images/thumbs/`.
 
 ## Screens
 
-- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button; both open the server dialog.
+- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button, which both open the server dialog, and the Activity log button.
+- **Activity log** - a side panel on the right (`Esc` closes it) with the operation log, newest first: time, level (icon and word), category, the message and the duration where there is one. Filter by level, category and period (last hour, 24 hours, 7 days, all time) and search the shown text; new entries appear while it is open. Clicking an entry that belongs to a job shows, for a failed job, its stored error (code, HTTP status and Forge's message, which is kept with the job and never copied into the log), and for a finished job opens its image if the gallery has it loaded. Export writes the entries matching the level, category and period filters (not the text search) to a JSON Lines file you choose; Keep for sets how many days entries are kept. Forge's own console output is not in it: it stays on the home PC, the API does not expose it.
 - **Server dialog** - the saved Forge Neo servers (each started with `--api --listen`), each with a name and address; the active one is marked. Add, edit, delete (with confirmation) or Use a server. A new or changed address is tested before it is saved, and a wrong one shows what to check under the field. Switching is refused while a job runs. Under the list, Unload model and Restart Forge act on the active server (see Restarting Forge). Queued jobs stay with the server they were queued on: those of an inactive server show "Waiting for <name>" and run once it is active again. Deleting a server removes its queued jobs; its images stay. With no saved server the dialog opens by itself on the add form.
 - **Prompt bar** - floats at the bottom centre. The prompt field grows to six lines; `Ctrl+Enter` generates (from the prompt or the negative prompt) and `Up Arrow` in an empty prompt field brings back the last prompt. The row below holds the checkpoint (grouped by model family in its menu), aspect ratio, a steps slider, image count, a Negative toggle (not offered for families without a negative prompt), the All parameters button and Generate; in a narrow window the controls move to a second line under the checkpoint. Switching checkpoints keeps the selected image dimensions and proportions. The bookmark button next to the Negative toggle holds saved negative prompts: choosing one replaces the negative text (and opens the field), "Save current as preset…" names the current negative, and "Manage presets…" renames or deletes them. Switching checkpoints keeps the negative text.
 - The prompt field appears as soon as the window opens. You can type while models load; Generate becomes available once a model is ready.

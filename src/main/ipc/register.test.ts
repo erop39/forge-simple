@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultParams } from '@shared/profiles'
@@ -36,6 +36,8 @@ let catalogThrows: boolean
 let imageStore: ReturnType<typeof createImageStore>
 let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
+let exportPath: string | null
+let exportNames: string[]
 
 beforeEach(async () => {
   mock = await startMockForge({ stepMs: 5 })
@@ -69,6 +71,8 @@ beforeEach(async () => {
   handlers = new Map()
   sent = []
   copiedText = null
+  exportPath = null
+  exportNames = []
   const send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]): void => { sent.push({ e, p }) }
   registerIpc(
     { handle: (ch, fn) => { handlers.set(ch, fn as never) } },
@@ -80,6 +84,7 @@ beforeEach(async () => {
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
+      chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
     },
     send,
   )
@@ -416,6 +421,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
     images: imageStore, oplog, imagesDir: () => dir, createClient: () => { throw boom },
     copyToClipboard: () => undefined,
     capabilities: { current: () => ({ canRestart: false }), refresh: async () => ({ canRestart: false }), reset: () => undefined },
+    chooseExportPath: async () => null,
   }, () => undefined)
   const err = await h.get('jobs:listActive')!({}).catch((e: Error) => e)
   expect((err as Error).message).toBe('error.unexpected')
@@ -545,7 +551,7 @@ describe('forge control', () => {
     repos.servers.setActiveUrl(mock.url)
     expect(await call('forge:restart')).toBe('notAllowed')
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
-      level: 'warn', messageKey: 'log.server.restartRequested', details: { url: mock.url, outcome: 'notAllowed' },
+      level: 'warn', messageKey: 'log.server.restartRefused', details: { url: mock.url, outcome: 'notAllowed' },
     })
     expect(logKeys()).not.toContain('log.queue.paused')
   })
@@ -591,4 +597,77 @@ describe('forge control', () => {
   test('health reports the runner flag', async () => {
     expect(await call('forge:health')).toEqual({ unhealthy: false })
   })
+})
+
+describe('operation log', () => {
+  const seed = () => {
+    oplog.write({ level: 'info', category: 'app', messageKey: 'log.app.started' })
+    oplog.write({ level: 'error', category: 'error', messageKey: 'log.error.generation', jobId: 4, details: { kind: 'http', status: 500 } })
+    oplog.write({ level: 'warn', category: 'queue', messageKey: 'log.queue.paused', details: { reason: 'restart' } })
+  }
+
+  test('list filters by level, category, time and limit, newest first', async () => {
+    seed()
+    expect((await call('oplog:list', {}) as { messageKey: string }[]).map((e) => e.messageKey))
+      .toEqual(['log.queue.paused', 'log.error.generation', 'log.app.started'])
+    expect(await call('oplog:list', { level: 'error' })).toHaveLength(1)
+    expect(await call('oplog:list', { category: 'queue' })).toHaveLength(1)
+    expect(await call('oplog:list', { from: 1001 })).toHaveLength(0)
+    expect(await call('oplog:list', { limit: 2 })).toHaveLength(2)
+  })
+
+  test.each([
+    ['a bad level', { level: 'debug' }],
+    ['a bad category', { category: 'nope' }],
+    ['a negative from', { from: -1 }],
+    ['a zero limit', { limit: 0 }],
+    ['not an object', 'all'],
+  ])('list rejects %s with error.invalidParams', async (_n, query) => {
+    await expect(call('oplog:list', query)).rejects.toThrow('error.invalidParams')
+  })
+
+  test('export writes the matching entries as JSON Lines to the chosen file and logs the export', async () => {
+    seed()
+    exportPath = path.join(dir, 'log.jsonl')
+    expect(await call('oplog:export', { level: 'error' })).toBe(true)
+    expect(exportNames[0]).toMatch(/^forge-neo-client-log-\d{4}-\d{2}-\d{2}\.jsonl$/)
+    const lines = readFileSync(exportPath, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>)
+    expect(lines).toEqual([expect.objectContaining({ messageKey: 'log.error.generation', jobId: 4, time: new Date(1000).toISOString() })])
+    expect(oplog.list({ category: 'backup' })[0]).toMatchObject({ messageKey: 'log.backup.logExported', details: { path: exportPath, count: 1 } })
+  })
+
+  test('a cancelled save dialog writes nothing', async () => {
+    seed()
+    expect(await call('oplog:export', {})).toBe(false)
+    expect(oplog.list({ category: 'backup' })).toEqual([])
+  })
+
+  test('retention defaults to 90 days; a change is saved, validated and logged as a settings change', async () => {
+    expect(await call('oplog:retention')).toBe(90)
+    await call('oplog:setRetention', 30)
+    expect(await call('oplog:retention')).toBe(30)
+    expect(repos.settings.get('oplog.retentionDays')).toBe('30')
+    expect(oplog.list({ category: 'settings' })[0]).toMatchObject({
+      messageKey: 'log.settings.changed', details: { key: 'oplog.retentionDays', old: 90, new: 30 },
+    })
+    for (const bad of [0, 3651, 1.5, '30', null]) {
+      await expect(call('oplog:setRetention', bad)).rejects.toThrow('error.invalidParams')
+    }
+  })
+
+  test('new entries are pushed live through the listener', () => {
+    const pushed: unknown[] = []
+    const live = createOplog(db, () => 5, (e) => pushed.push(e))
+    live.write({ level: 'info', category: 'app', messageKey: 'log.app.started' })
+    expect(pushed).toEqual([expect.objectContaining({ messageKey: 'log.app.started', time: 5 })])
+  })
+})
+
+test('jobs:get returns any stored job, with its error; unknown ids are error.notFound', async () => {
+  const s = repos.servers.setActiveUrl(mock.url)
+  const job = repos.jobs.insert(s.id, 'txt2img', goodParams())
+  repos.jobs.setStatus(job.id, 'failed', { error: { code: 'forgeHttp', status: 500, detail: 'TypeError: x' } })
+  expect(await call('jobs:get', job.id)).toMatchObject({ id: job.id, status: 'failed', error: { code: 'forgeHttp', status: 500, detail: 'TypeError: x' } })
+  await expect(call('jobs:get', 999)).rejects.toThrow('error.notFound')
+  await expect(call('jobs:get', 'x')).rejects.toThrow('error.invalidParams')
 })

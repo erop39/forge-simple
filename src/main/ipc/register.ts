@@ -1,12 +1,17 @@
+import { writeFile } from 'node:fs/promises'
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
-import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, RestartOutcome, ServerInfo,
+import {
+  OPLOG_CATEGORIES, OPLOG_LEVELS,
+  type Catalog, type ConnectionStatus, type ForgeCapabilities, type GenerationParams, type ImageRecord,
+  type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
-import type { Oplog } from '../oplog/oplog'
+import {
+  isRetentionDays, retentionDays, RETENTION_KEY, toJsonLines, type Oplog, type OplogFilter,
+} from '../oplog/oplog'
 import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
@@ -28,6 +33,8 @@ export interface IpcDeps {
   copyToClipboard(text: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
   onServerChanged?(): void
+  /** Asks the user where to save a log export (a save dialog); null when cancelled. */
+  chooseExportPath(defaultName: string): Promise<string | null>
   /** What the active Forge allows (see forge/capabilities.ts). */
   capabilities: { current(): ForgeCapabilities; refresh(): Promise<ForgeCapabilities>; reset(): void }
 }
@@ -35,6 +42,7 @@ export interface IpcDeps {
 type Send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]) => void
 
 const MAX_IMAGE_PAGE = 500
+const MAX_LOG_PAGE = 5000
 const MAX_ID = Number.MAX_SAFE_INTEGER
 
 class IpcError extends Error {
@@ -127,6 +135,25 @@ function validateEnqueue(p: unknown): GenerationParams {
     shift, clipSkip, sampler: o.sampler, scheduler: o.scheduler, seed: o.seed, count: o.count,
     loras: loras.map((l) => ({ name: l.name, weight: l.weight, enabled: l.enabled })),
   }
+}
+
+/** Checks a log query from the renderer; text search is not part of it (the renderer searches the shown text). */
+function validateLogQuery(q: unknown): OplogFilter {
+  if (q === undefined) return {}
+  if (typeof q !== 'object' || q === null) return fail('error.invalidParams')
+  const { level, category, from, limit } = q as Record<string, unknown>
+  const out: OplogFilter = {}
+  if (level !== undefined) {
+    if (!(OPLOG_LEVELS as readonly unknown[]).includes(level)) return fail('error.invalidParams')
+    out.level = level as OplogFilter['level']
+  }
+  if (category !== undefined) {
+    if (!(OPLOG_CATEGORIES as readonly unknown[]).includes(category)) return fail('error.invalidParams')
+    out.category = category as OplogFilter['category']
+  }
+  if (from !== undefined) out.from = isInt(from, 0, MAX_ID) ? from : fail('error.invalidParams')
+  if (limit !== undefined) out.limit = isInt(limit, 1, MAX_LOG_PAGE) ? limit : fail('error.invalidParams')
+  return out
 }
 
 export function toImageRecord(row: ImageRow, imagesDir: string): ImageRecord {
@@ -390,6 +417,11 @@ export function registerIpc(
 
   handle('jobs:listActive', () => repos.jobs.listActive())
 
+  handle('jobs:get', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    return repos.jobs.get(id) ?? fail('error.notFound')
+  })
+
   handle('images:list', (opts) => {
     if (typeof opts !== 'object' || opts === null) return fail('error.invalidParams')
     const { limit, beforeId } = opts as { limit?: unknown; beforeId?: unknown }
@@ -433,6 +465,35 @@ export function registerIpc(
 
   handle('connection:get', () => deps.monitor.current())
 
+  // ---- operation log -----------------------------------------------------
+
+  handle('oplog:list', (query) => oplog.list(validateLogQuery(query)))
+
+  handle('oplog:export', async (query): Promise<boolean> => {
+    // The export holds every matching entry up to the list maximum, not just the page on screen.
+    const filter: OplogFilter = { ...validateLogQuery(query), limit: MAX_LOG_PAGE }
+    const day = new Date().toISOString().slice(0, 10)
+    const path = await deps.chooseExportPath(`forge-neo-client-log-${day}.jsonl`)
+    if (path === null) return false
+    const entries = oplog.list(filter)
+    await writeFile(path, toJsonLines(entries), 'utf8')
+    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.logExported', details: { path, count: entries.length } })
+    return true
+  })
+
+  handle('oplog:retention', () => retentionDays(repos.settings.get(RETENTION_KEY)))
+
+  handle('oplog:setRetention', (days) => {
+    if (!isRetentionDays(days)) return fail('error.invalidParams')
+    const old = retentionDays(repos.settings.get(RETENTION_KEY))
+    repos.settings.set(RETENTION_KEY, String(days))
+    if (old !== days) {
+      oplog.write({
+        level: 'info', category: 'settings', messageKey: 'log.settings.changed', details: { key: RETENTION_KEY, old, new: days },
+      })
+    }
+  })
+
   // ---- control of the active Forge ---------------------------------------
   // The log carries the server's name and address only.
 
@@ -452,7 +513,8 @@ export function registerIpc(
       throw err
     }
     oplog.write({
-      level: outcome === 'restarting' ? 'info' : 'warn', category: 'server', messageKey: 'log.server.restartRequested',
+      level: outcome === 'restarting' ? 'info' : 'warn', category: 'server',
+      messageKey: outcome === 'restarting' ? 'log.server.restartRequested' : 'log.server.restartRefused',
       details: { name: server.name, url: server.url, outcome },
     })
     // Reconnecting shows at once instead of on the monitor's next sample.

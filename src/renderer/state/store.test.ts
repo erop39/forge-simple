@@ -1,8 +1,8 @@
 import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
-  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, RestartOutcome, ServerInfo,
+  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, OplogEntry, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
-import { createAppStore } from './store'
+import { createAppStore, LOG_LIMIT, logQuery } from './store'
 
 const baseParams: GenerationParams = {
   family: 'sdxl', checkpoint: 'a.safetensors', modules: [], prompt: '', negativePrompt: 'family negative',
@@ -34,6 +34,9 @@ const progress = (jobId: number): JobProgress => ({
 })
 const home: ServerInfo = { id: 1, name: 'Home', url: 'http://127.0.0.1:7861', active: true }
 const blurry: NegativePreset = { id: 1, name: 'Blurry', text: 'blurry, lowres', createdAt: 1 }
+const logEntry = (id: number, level: OplogEntry['level'] = 'info', category: OplogEntry['category'] = 'app'): OplogEntry => ({
+  id, time: id, level, category, messageKey: 'log.app.started', durationMs: null, jobId: null, details: {},
+})
 const connected = { state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 } as const
 
 function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
@@ -66,9 +69,16 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
       cancel: vi.fn(async () => {}),
       retry: vi.fn(async () => job(9)),
       listActive: vi.fn(async (): Promise<Job[]> => [job(1, 'running'), job(2, 'queued')]),
+      get: vi.fn(async (id: number) => job(id, 'failed')),
     },
     images: { list: vi.fn(async (): Promise<ImageRecord[]> => [image(5), image(4)]), delete: vi.fn(async () => {}) },
     connection: { get: vi.fn(async () => connected) },
+    oplog: {
+      list: vi.fn(async (): Promise<OplogEntry[]> => [logEntry(2, 'error'), logEntry(1)]),
+      export: vi.fn(async () => true),
+      retention: vi.fn(async () => 90),
+      setRetention: vi.fn(async () => {}),
+    },
     forge: {
       capabilities: vi.fn(async () => ({ canRestart: true })),
       health: vi.fn(async () => ({ unhealthy: false })),
@@ -137,7 +147,7 @@ test('init is safe to call twice: one load, one set of subscriptions', async () 
   const { api, store } = await ready()
   await store.getState().init()
   expect(api.settings.get).toHaveBeenCalledTimes(1)
-  expect(api.on).toHaveBeenCalledTimes(9)
+  expect(api.on).toHaveBeenCalledTimes(10)
 })
 
 test('params stay null when the catalog has no checkpoints', async () => {
@@ -646,5 +656,73 @@ describe('forge control', () => {
     expect(store.getState().forgeUnhealthy).toBe(false)
     emit('forge:health', { unhealthy: true })
     expect(store.getState().forgeUnhealthy).toBe(true)
+  })
+})
+
+describe('activity log', () => {
+  test('logQuery maps the filters to a main query; the period counts back from now', () => {
+    expect(logQuery({ level: 'all', category: 'all', period: 'all' }, 10_000_000)).toEqual({ limit: LOG_LIMIT })
+    expect(logQuery({ level: 'error', category: 'server', period: '1h' }, 10_000_000))
+      .toEqual({ level: 'error', category: 'server', from: 10_000_000 - 3_600_000, limit: LOG_LIMIT })
+  })
+
+  test('opening loads the entries for the filters (last 24 hours by default) and closes the parameters panel', async () => {
+    const { store, api } = await ready()
+    store.getState().togglePanel()
+    store.getState().toggleLog()
+    expect(store.getState().panelOpen).toBe(false)
+    await vi.waitFor(() => expect(store.getState().logEntries.map((e) => e.id)).toEqual([2, 1]))
+    const query = (api.oplog.list.mock.calls as unknown as [{ from: number; limit: number }][])[0]![0]
+    expect(Date.now() - query.from).toBeGreaterThanOrEqual(86_400_000)
+    expect(query.limit).toBe(LOG_LIMIT)
+    store.getState().togglePanel()
+    expect(store.getState().logOpen).toBe(false)
+  })
+
+  test('a filter change reloads; an older answer that arrives late is dropped', async () => {
+    const { store, api } = await ready()
+    let release!: (v: OplogEntry[]) => void
+    api.oplog.list.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    store.getState().toggleLog()
+    api.oplog.list.mockResolvedValueOnce([logEntry(5, 'error')])
+    store.getState().setLogFilters({ level: 'error' })
+    await vi.waitFor(() => expect(store.getState().logEntries.map((e) => e.id)).toEqual([5]))
+    release([logEntry(1)])
+    await Promise.resolve()
+    expect(store.getState().logEntries.map((e) => e.id)).toEqual([5])
+    expect(api.oplog.list).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'error' }))
+  })
+
+  test('live entries are added on top while open and matching; ignored when closed or filtered out', async () => {
+    const { store, emit } = await ready()
+    emit('oplog:added', logEntry(10))
+    expect(store.getState().logEntries).toEqual([])
+    store.getState().toggleLog()
+    await vi.waitFor(() => expect(store.getState().logEntries).toHaveLength(2))
+    emit('oplog:added', logEntry(11, 'warn'))
+    emit('oplog:added', logEntry(11, 'warn'))
+    expect(store.getState().logEntries.map((e) => e.id)).toEqual([11, 2, 1])
+    store.getState().setLogFilters({ category: 'server' })
+    emit('oplog:added', logEntry(12, 'info', 'app'))
+    expect(store.getState().logEntries.some((e) => e.id === 12)).toBe(false)
+  })
+
+  test('export, retention and job lookup go to main', async () => {
+    const { store, api } = await ready()
+    store.getState().setLogFilters({ level: 'warn' })
+    expect(await store.getState().exportLog()).toBe(true)
+    expect(api.oplog.export).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }))
+    expect(await store.getState().logRetention()).toBe(90)
+    await store.getState().setLogRetention(30)
+    expect(api.oplog.setRetention).toHaveBeenCalledWith(30)
+    expect((await store.getState().getJob(4)).status).toBe('failed')
+  })
+
+  test('requestView holds an image id until cleared', async () => {
+    const { store } = await ready()
+    store.getState().requestView(5)
+    expect(store.getState().viewRequest).toBe(5)
+    store.getState().clearViewRequest()
+    expect(store.getState().viewRequest).toBeNull()
   })
 })
