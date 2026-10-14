@@ -11,14 +11,14 @@
 .grid {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--gap-tile);
 }
 
 .column {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap-tile);
   min-width: 0;
 }
 

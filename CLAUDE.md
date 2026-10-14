@@ -33,7 +33,7 @@ UI strings, README and CHANGELOG are English.
 - `src/main/` — owns all state. `forge/` (HTTP client, catalog, connection monitor, active-server holder, probe findings), `generation/payload.ts` (params → txt2img body), `queue/` (runner, speed), `storage/` (SQLite, repos, image files, `fnc-img://` resolver), `oplog/` (operation log), `ipc/register.ts` (every IPC handler), `index.ts` (Electron wiring, protocol, window).
 - `src/preload/index.ts` — exposes exactly the `Api` from `src/shared/ipc.ts` as `window.api`.
 - `src/shared/` — `types.ts`, `ipc.ts` (Api, channels, `IpcErrorKey`), `profiles.ts` (model families; imported by main and renderer, no Node imports).
-- `src/renderer/` — React. `state/store.ts` (zustand, provided via `StoreProvider`), `components/` (+ `ui/` primitives), `locales/en.ts`, `i18n/`, `styles/` (`tokens.css`, `base.css`, `motion.module.css`).
+- `src/renderer/` — React. `state/store.ts` (zustand, provided via `StoreProvider`; `state/gallery-items.ts` merges jobs and images and lays out columns), `components/` (+ `ui/` primitives; `use-pending-delete.ts` drives delete-with-undo), `format.ts` (shared display formatters such as `baseName`), `locales/en.ts`, `i18n/`, `styles/` (`tokens.css`, `base.css`, `motion.module.css`). The prompt bar publishes its height as the root CSS variable `--prompt-bar-h`; floating content pads by it.
 - `tools/mock-forge/server.ts`, `tools/probe/probe.mjs`.
 
 ## Rules

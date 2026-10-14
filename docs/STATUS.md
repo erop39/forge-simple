@@ -13,7 +13,7 @@ taken, or something starts waiting on the user.
 | 1 Probe script | done; the user ran it on their Forge, findings applied (task "P") |
 | 2–15 Scaffold → prompt bar and parameters panel | done, each reviewed |
 | P Probe findings | done, reviewed |
-| 16 Gallery (job and image tiles, delete with undo, paging) | implemented (b91c70f), review pending |
+| 16 Gallery (job and image tiles, delete with undo, paging) | done, reviewed |
 | 17 End-to-end check and release 0.1.0 | not started |
 | Final whole-branch review | not started |
 
@@ -54,3 +54,7 @@ Collected by reviewers and deferred; the final review triages them. The full lis
 - `images.source_image_id` has no `ON DELETE`; deleting a source image will fail once upscale exists (plan 3).
 - `fnc-img:` is allowed only in `img-src`; a future viewer that needs blobs must change the CSP.
 - The module value is stored as a full path; if Forge ever expects names, `FINDINGS.modulesAs` drives it.
+- The spec's 260 ms crossfade from a finished job's mosaic to its image (`--dur-reveal`) is in no plan-1 task; a finished job simply becomes an image tile. Carry into plan 2.
+- Gallery tiles may change column when a job is added (greedy shortest-column layout); revisit with plan 2's virtualization. Each image tile is two tab stops (tile + Delete) — roving tabindex in plan 2.
+- Gallery paging does not retry by itself after a failed page load while the sentinel stays in view.
+- vitest sometimes prints "Timeout terminating forks worker" on this machine; all tests pass. Investigate in the final review.
