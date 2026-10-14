@@ -20,14 +20,15 @@ test('detectFamily matches on the base name with either path separator', () => {
 })
 
 test.each<[string, Family]>([
-  ['krea2\\exampleKreaMix_v1.safetensors', 'krea2'],
+  ['krea2\\exampleMix_v1.safetensors', 'krea2'],
   ['IL\\exampleIllustrious_v3.safetensors', 'sdxl'],
-  ['anima 2026\\exampleAnimaMix_fp8.safetensors [0123abcd45]', 'anima'],
+  ['anima 2026\\exampleMix_fp8.safetensors [0123abcd45]', 'anima'],
   ['anima\\exampleWesternMix_v10.safetensors', 'anima'],
   ['qwen\\krea2_x.safetensors', 'krea2'],
+  ['IL\\exampleMix.safetensors [krea]', 'sdxl'],
   ['qwen/sub\\mystery.safetensors [abc]', 'qwen'],
   ['krea2\\qwen\\mystery.safetensors', 'qwen'],
-])('detectFamily reads folders and strips the hash: %s -> %s', (title, family) => {
+])('detectFamily reads folders (keyword-free base names) and ignores a trailing [hash]: %s -> %s', (title, family) => {
   expect(detectFamily(title)).toBe(family)
 })
 

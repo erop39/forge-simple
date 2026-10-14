@@ -21,7 +21,7 @@ export interface FamilyProfile {
   }
 }
 
-// Defaults are a hypothesis until confirmed by the API probe.
+// Defaults are a hypothesis until checked against real generations.
 export const PROFILES: Record<Family, FamilyProfile> = {
   sdxl: {
     family: 'sdxl', negative: true, cfg: true, distilledCfg: false, shift: false, clipSkip: true,
