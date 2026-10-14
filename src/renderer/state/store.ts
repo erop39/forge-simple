@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, GenerationParams, ImageRecord, Job, JobProgress, PartStatus, ServerInfo,
+  Catalog, ConnectionStatus, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, ServerInfo,
 } from '@shared/types'
 import { errorKeyOf } from '../i18n/error-text'
 
@@ -12,6 +12,8 @@ export interface AppState {
   settings: AppSettings | null
   /** Saved servers, ordered by name; at most one is active. */
   servers: ServerInfo[]
+  /** Saved negative prompts, ordered by name. */
+  negativePresets: NegativePreset[]
   catalog: Catalog | null
   /** Why the catalog could not be loaded, as an error key; null when it loaded or was not requested. */
   catalogError: IpcErrorKey | null
@@ -49,6 +51,10 @@ export interface AppState {
   removeServer(id: number): Promise<void>
   /** Rejects with the error key when main refuses (e.g. error.jobRunning). */
   activateServer(id: number): Promise<void>
+  /** The negative-preset changes reject with the error key when main refuses (e.g. error.presetNameTaken). */
+  addNegativePreset(name: string, text: string): Promise<void>
+  renameNegativePreset(id: number, name: string): Promise<void>
+  removeNegativePreset(id: number): Promise<void>
   dismissError(): void
   togglePanel(): void
 }
@@ -64,6 +70,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   // Bumped by every checkpoint selection and catalog load; a response from an older one is dropped.
   let selectSeq = 0
   let catalogSeq = 0
+  let presetsSeq = 0
   let morePromise: Promise<void> | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -176,6 +183,19 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       return check
     }
 
+    /** Reloads the negative presets; only the newest request may set the list. */
+    async function loadPresets(): Promise<void> {
+      const seq = ++presetsSeq
+      const list = await attempt(() => api.negativePresets.list())
+      if (list && seq === presetsSeq) set({ negativePresets: list })
+    }
+
+    /** Runs a preset change (rejecting on refusal) and then reloads the list. */
+    async function changePresets(call: () => Promise<unknown>): Promise<void> {
+      await call()
+      await loadPresets()
+    }
+
     function forgetJob(id: number): void {
       finished.add(id)
       set((s) => {
@@ -229,13 +249,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           : s.images,
         imagesExhausted: images ? images.length < IMAGE_PAGE : s.imagesExhausted,
       }))
-      if (settings?.serverUrl) await loadCatalog()
+      await Promise.all([loadPresets(), settings?.serverUrl ? loadCatalog() : undefined])
     }
 
     return {
       connection: OFFLINE,
       settings: null,
       servers: [],
+      negativePresets: [],
       catalog: null,
       catalogError: null,
       lastError: null,
@@ -342,6 +363,18 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       async activateServer(id) {
         await api.servers.activate(id)
         await syncServers()
+      },
+
+      addNegativePreset(name, text) {
+        return changePresets(() => api.negativePresets.add({ name, text }))
+      },
+
+      renameNegativePreset(id, name) {
+        return changePresets(() => api.negativePresets.update(id, { name }))
+      },
+
+      removeNegativePreset(id) {
+        return changePresets(() => api.negativePresets.remove(id))
       },
 
       dismissError() {

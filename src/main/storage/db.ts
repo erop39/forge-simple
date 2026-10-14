@@ -24,6 +24,9 @@ CREATE INDEX oplog_time ON oplog(time);
 `,
   // 2: saved servers are soft-deleted (jobs and images keep pointing at them).
   `ALTER TABLE servers ADD COLUMN removed_at INTEGER;`,
+  // 3: named negative prompts the user can put back into the Negative field.
+  `CREATE TABLE negative_presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  text TEXT NOT NULL, created_at INTEGER NOT NULL);`,
 ]
 
 export function openDb(path: string): Db {

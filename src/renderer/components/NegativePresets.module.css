@@ -1,0 +1,97 @@
+/* The preset dialogs share the server dialog's look. */
+.overlay { composes: overlay from './ServerDialog.module.css'; }
+.content { composes: content from './ServerDialog.module.css'; }
+.form { composes: form from './ServerDialog.module.css'; }
+.head { composes: head from './ServerDialog.module.css'; }
+.title { composes: title from './ServerDialog.module.css'; }
+.field { composes: field from './ServerDialog.module.css'; }
+.label { composes: label from './ServerDialog.module.css'; }
+.input { composes: input from './ServerDialog.module.css'; }
+.error { composes: error from './ServerDialog.module.css'; }
+.hint { composes: hint from './ServerDialog.module.css'; }
+.actions { composes: actions from './ServerDialog.module.css'; }
+.rowActions { composes: rowActions from './ServerDialog.module.css'; }
+.confirmText { composes: confirmText from './ServerDialog.module.css'; }
+.name { composes: name from './ServerDialog.module.css'; }
+
+/* Many presets scroll inside the dialog. */
+.list {
+  composes: list from './ServerDialog.module.css';
+  max-height: var(--h-menu-max);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.rowBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--h-bar);
+}
+
+.rowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The saved text, one line, cut with an ellipsis; the full text is the tooltip. */
+.text {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--sp-3) 0;
+  color: var(--text-2);
+}
+
+/* ---- the menu (its frame and items come from ui/Select) ---- */
+
+.menuItem[data-disabled] {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.menuName {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuEmpty {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-2);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--line);
+}
+
+/* The panel takes the focus on open only as a starting point for the keyboard. */
+.content:focus-visible {
+  outline: none;
+}

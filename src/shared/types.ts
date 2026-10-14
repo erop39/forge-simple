@@ -59,3 +59,5 @@ export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[];
 export interface PartStatus { role: 'model' | 'module'; value: string; found: boolean }
 /** A saved Forge server as the renderer sees it. Exactly one (or none) is active. */
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }
+/** A saved negative prompt; its text replaces the Negative field when applied. */
+export interface NegativePreset { id: number; name: string; text: string; createdAt: number }

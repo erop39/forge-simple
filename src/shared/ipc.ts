@@ -1,5 +1,6 @@
 import type {
-  Catalog, ConnectionStatus, GenerationParams, ImageDetails, ImageRecord, Job, JobProgress, PartStatus, ServerInfo,
+  Catalog, ConnectionStatus, GenerationParams, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
+  ServerInfo,
 } from './types'
 
 /**
@@ -8,7 +9,7 @@ import type {
  */
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
-  'error.duplicateServer', 'error.jobRunning',
+  'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -26,6 +27,8 @@ export interface ConnectionCheck { ok: boolean; latencyMs: number | null; errorK
 export interface AppSettings { serverUrl: string | null; imagesDir: string }
 /** A server to save. An empty name is replaced by the address's host. */
 export interface ServerInput { name: string; url: string }
+/** A negative preset to save; the name is trimmed by main. */
+export interface NegativePresetInput { name: string; text: string }
 
 export interface AppEvents {
   'job:update': Job
@@ -51,6 +54,14 @@ export interface Api {
     remove(id: number): Promise<void>
     /** Refused with error.jobRunning while a job runs. */
     activate(id: number): Promise<void>
+  }
+  /** Named negative prompts. A name already taken (ignoring case) is refused with error.presetNameTaken. */
+  negativePresets: {
+    /** Ordered by name, ignoring case. */
+    list(): Promise<NegativePreset[]>
+    add(input: NegativePresetInput): Promise<NegativePreset>
+    update(id: number, patch: Partial<NegativePresetInput>): Promise<NegativePreset>
+    remove(id: number): Promise<void>
   }
   catalog: {
     get(refresh?: boolean): Promise<Catalog>
@@ -79,6 +90,7 @@ declare global { interface Window { api: Api } }
 export const CHANNELS = [
   'settings:get',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate',
+  'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive',
   'images:list', 'images:details', 'images:delete', 'clipboard:writeText',

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { GenerationParams, JobError } from '@shared/types'
 import Database from 'better-sqlite3'
 import { MIGRATIONS, openDb } from './db'
-import { createRepos, DuplicateServerError } from './repos'
+import { createRepos, DuplicatePresetError, DuplicateServerError } from './repos'
 
 const params = (over: Partial<GenerationParams> = {}): GenerationParams => ({
   family: 'sdxl', checkpoint: 'model.safetensors [abc]', modules: [], prompt: 'p', negativePrompt: 'n',
@@ -336,6 +336,79 @@ test('a database at user_version 1 upgrades and keeps its active server and jobs
     expect(repos.servers.active()).toEqual({ id: 1, name: 'home', url: 'http://home:7860', active: true, lastConnectedAt: 5 })
     expect(repos.servers.list()).toHaveLength(1)
     expect(repos.jobs.nextQueued(1)?.id).toBe(1)
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+describe('negative presets', () => {
+  test('list is ordered by name ignoring case', () => {
+    const { repos } = setup()
+    repos.negativePresets.add('beta', 'b text')
+    repos.negativePresets.add('Alpha', 'a text')
+    repos.negativePresets.add('gamma', 'g text')
+    expect(repos.negativePresets.list().map((p) => p.name)).toEqual(['Alpha', 'beta', 'gamma'])
+  })
+
+  test('add stores name, text and creation time', () => {
+    const { repos } = setup(4242)
+    const p = repos.negativePresets.add('blurry', 'blurry, lowres')
+    expect(p).toEqual({ id: p.id, name: 'blurry', text: 'blurry, lowres', createdAt: 4242 })
+    expect(repos.negativePresets.list()).toEqual([p])
+  })
+
+  test('a duplicate name throws DuplicatePresetError, ignoring case', () => {
+    const { repos } = setup()
+    repos.negativePresets.add('Hands', 'bad hands')
+    expect(() => repos.negativePresets.add('Hands', 'x')).toThrow(DuplicatePresetError)
+    expect(() => repos.negativePresets.add('hANDS', 'x')).toThrow(DuplicatePresetError)
+    expect(repos.negativePresets.list()).toHaveLength(1)
+  })
+
+  test('update renames and changes text; unknown id is null', () => {
+    const { repos } = setup()
+    const p = repos.negativePresets.add('one', 'first')
+    expect(repos.negativePresets.update(p.id, { name: 'uno' })).toEqual({ ...p, name: 'uno' })
+    expect(repos.negativePresets.update(p.id, { text: 'second' })).toEqual({ ...p, name: 'uno', text: 'second' })
+    expect(repos.negativePresets.get(p.id)?.text).toBe('second')
+    expect(repos.negativePresets.update(999, { name: 'x' })).toBeNull()
+  })
+
+  test('renaming onto another preset name throws; a case-only rename of itself works', () => {
+    const { repos } = setup()
+    const a = repos.negativePresets.add('a', 'x')
+    repos.negativePresets.add('b', 'y')
+    expect(() => repos.negativePresets.update(a.id, { name: 'B' })).toThrow(DuplicatePresetError)
+    expect(repos.negativePresets.update(a.id, { name: 'A' })?.name).toBe('A')
+  })
+
+  test('remove deletes and returns the preset; unknown id is null', () => {
+    const { repos } = setup()
+    const p = repos.negativePresets.add('gone', 'x')
+    expect(repos.negativePresets.remove(p.id)).toEqual(p)
+    expect(repos.negativePresets.list()).toEqual([])
+    expect(repos.negativePresets.remove(p.id)).toBeNull()
+  })
+})
+
+test('a database at user_version 2 upgrades with an empty preset table and keeps its servers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fnc-db-'))
+  const file = join(dir, 'app.db')
+  try {
+    const old = new Database(file)
+    old.exec(MIGRATIONS[0]!)
+    old.exec(MIGRATIONS[1]!)
+    old.pragma('user_version = 2')
+    old.prepare("INSERT INTO servers (name, url, active) VALUES ('home', 'http://home:7860', 1)").run()
+    old.close()
+
+    const db = openDb(file)
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length)
+    const repos = createRepos(db, () => 7)
+    expect(repos.servers.active()?.name).toBe('home')
+    expect(repos.negativePresets.list()).toEqual([])
+    expect(repos.negativePresets.add('n', 't').createdAt).toBe(7)
     db.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })

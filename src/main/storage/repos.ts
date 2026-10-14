@@ -1,4 +1,6 @@
-import type { GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType, ServerInfo } from '@shared/types'
+import type {
+  GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+} from '@shared/types'
 import type { Db } from './db'
 
 export interface Server extends ServerInfo { lastConnectedAt: number | null }
@@ -14,6 +16,19 @@ export class DuplicateServerError extends Error {
     this.name = 'DuplicateServerError'
   }
 }
+
+/** Another negative preset already has that name (names compare without case). */
+export class DuplicatePresetError extends Error {
+  constructor() {
+    super('A negative preset already has this name')
+    this.name = 'DuplicatePresetError'
+  }
+}
+
+interface PresetSql { id: number; name: string; text: string; created_at: number }
+const toPreset = (r: PresetSql): NegativePreset => ({ id: r.id, name: r.name, text: r.text, createdAt: r.created_at })
+const isUniqueViolation = (err: unknown): boolean =>
+  typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'SQLITE_CONSTRAINT_UNIQUE'
 
 interface ServerSql {
   id: number; name: string; url: string; active: number; last_connected_at: number | null; removed_at: number | null
@@ -269,5 +284,48 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, settings }
+  const presetById = db.prepare('SELECT * FROM negative_presets WHERE id = ?')
+  const getPreset = (id: number): NegativePreset | null => {
+    const r = presetById.get(id) as PresetSql | undefined
+    return r ? toPreset(r) : null
+  }
+  /** Runs a write, turning a name clash into DuplicatePresetError. */
+  const uniqueName = <T>(write: () => T): T => {
+    try {
+      return write()
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new DuplicatePresetError()
+      throw err
+    }
+  }
+
+  const negativePresets = {
+    list(): NegativePreset[] {
+      return (db.prepare('SELECT * FROM negative_presets ORDER BY name COLLATE NOCASE, id').all() as PresetSql[]).map(toPreset)
+    },
+    get: getPreset,
+    /** Throws DuplicatePresetError when the name is taken (ignoring case). */
+    add(name: string, text: string): NegativePreset {
+      const res = uniqueName(() =>
+        db.prepare('INSERT INTO negative_presets (name, text, created_at) VALUES (?, ?, ?)').run(name, text, now()))
+      return getPreset(Number(res.lastInsertRowid)) as NegativePreset
+    },
+    /** Null when there is no such preset; throws DuplicatePresetError when another preset has the name. */
+    update(id: number, patch: { name?: string; text?: string }): NegativePreset | null {
+      const before = getPreset(id)
+      if (!before) return null
+      const next = { name: patch.name ?? before.name, text: patch.text ?? before.text }
+      uniqueName(() => db.prepare('UPDATE negative_presets SET name = ?, text = ? WHERE id = ?').run(next.name, next.text, id))
+      return getPreset(id)
+    },
+    /** The deleted preset, or null when there was none. */
+    remove(id: number): NegativePreset | null {
+      const before = getPreset(id)
+      if (!before) return null
+      db.prepare('DELETE FROM negative_presets WHERE id = ?').run(id)
+      return before
+    },
+  }
+
+  return { servers, jobs, images, settings, negativePresets }
 }

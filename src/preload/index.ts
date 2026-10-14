@@ -22,6 +22,12 @@ const api: Api = {
     remove: (id) => invoke('servers:remove', id),
     activate: (id) => invoke('servers:activate', id),
   },
+  negativePresets: {
+    list: () => invoke('negativePresets:list'),
+    add: (input) => invoke('negativePresets:add', input),
+    update: (id, patch) => invoke('negativePresets:update', id, patch),
+    remove: (id) => invoke('negativePresets:remove', id),
+  },
   catalog: {
     get: (refresh) => invoke('catalog:get', refresh),
     defaults: (checkpointTitle) => invoke('catalog:defaults', checkpointTitle),

@@ -1,6 +1,6 @@
 import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
-  Catalog, GenerationParams, ImageRecord, Job, JobProgress, PartStatus, ServerInfo,
+  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, ServerInfo,
 } from '@shared/types'
 import { createAppStore } from './store'
 
@@ -33,6 +33,7 @@ const progress = (jobId: number): JobProgress => ({
   jobId, step: 3, totalSteps: 20, stage: 'sampling', stepsPerSec: 2, elapsedMs: 1000, preview: null,
 })
 const home: ServerInfo = { id: 1, name: 'Home', url: 'http://127.0.0.1:7861', active: true }
+const blurry: NegativePreset = { id: 1, name: 'Blurry', text: 'blurry, lowres', createdAt: 1 }
 const connected = { state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 } as const
 
 function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
@@ -48,6 +49,12 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
       update: vi.fn(async (): Promise<ConnectionCheck> => ({ ok: true, latencyMs: null, errorKey: null })),
       remove: vi.fn(async () => {}),
       activate: vi.fn(async () => {}),
+    },
+    negativePresets: {
+      list: vi.fn(async (): Promise<NegativePreset[]> => [blurry]),
+      add: vi.fn(async (input: { name: string; text: string }): Promise<NegativePreset> => ({ id: 2, createdAt: 2, ...input })),
+      update: vi.fn(async (): Promise<NegativePreset> => blurry),
+      remove: vi.fn(async () => {}),
     },
     catalog: {
       get: vi.fn(async () => cat),
@@ -528,4 +535,53 @@ test('concurrent loadMoreImages calls share one request', async () => {
   await Promise.all([store.getState().loadMoreImages(), store.getState().loadMoreImages()])
   expect(fake.api.images.list).toHaveBeenCalledTimes(1)
   expect(store.getState().images).toHaveLength(200)
+})
+
+describe('negative presets', () => {
+  const hands: NegativePreset = { id: 2, name: 'Hands', text: 'bad hands', createdAt: 2 }
+
+  test('init loads the presets', async () => {
+    const { store } = await ready()
+    expect(store.getState().negativePresets).toEqual([blurry])
+  })
+
+  test('add, rename and remove call main and reload the list', async () => {
+    const { api, store } = await ready()
+    api.negativePresets.list.mockResolvedValueOnce([blurry, hands])
+    await store.getState().addNegativePreset('Hands', 'bad hands')
+    expect(api.negativePresets.add).toHaveBeenCalledWith({ name: 'Hands', text: 'bad hands' })
+    expect(store.getState().negativePresets).toEqual([blurry, hands])
+
+    api.negativePresets.list.mockResolvedValueOnce([blurry, { ...hands, name: 'Fingers' }])
+    await store.getState().renameNegativePreset(2, 'Fingers')
+    expect(api.negativePresets.update).toHaveBeenCalledWith(2, { name: 'Fingers' })
+    expect(store.getState().negativePresets.map((p) => p.name)).toEqual(['Blurry', 'Fingers'])
+
+    api.negativePresets.list.mockResolvedValueOnce([blurry])
+    await store.getState().removeNegativePreset(2)
+    expect(api.negativePresets.remove).toHaveBeenCalledWith(2)
+    expect(store.getState().negativePresets).toEqual([blurry])
+  })
+
+  test('a refused change rejects with the error and leaves the list alone', async () => {
+    const { api, store } = await ready()
+    api.negativePresets.add.mockRejectedValueOnce(new Error('error.presetNameTaken'))
+    await expect(store.getState().addNegativePreset('blurry', 'x')).rejects.toThrow('error.presetNameTaken')
+    expect(api.negativePresets.list).toHaveBeenCalledTimes(1)
+    expect(store.getState().negativePresets).toEqual([blurry])
+  })
+
+  test('a late list response never overwrites a newer one', async () => {
+    const { api, store } = await ready()
+    let releaseOld: (v: NegativePreset[]) => void = () => {}
+    api.negativePresets.list
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve }))
+      .mockResolvedValueOnce([blurry, hands])
+    const first = store.getState().removeNegativePreset(2)
+    await vi.waitFor(() => expect(api.negativePresets.list).toHaveBeenCalledTimes(2))
+    await store.getState().addNegativePreset('Hands', 'bad hands')
+    releaseOld([])
+    await first
+    expect(store.getState().negativePresets).toEqual([blurry, hands])
+  })
 })

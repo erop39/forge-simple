@@ -26,6 +26,7 @@ function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionChe
       remove: vi.fn(),
       activate: vi.fn(),
     },
+    negativePresets: { list: vi.fn(async () => []), add: vi.fn(), update: vi.fn(), remove: vi.fn() },
     catalog: {
       get: vi.fn(async () => served),
       defaults: vi.fn(async () => defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })),

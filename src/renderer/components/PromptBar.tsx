@@ -6,6 +6,7 @@ import { t } from '../i18n/t'
 import { checkpointOptions } from '../state/checkpoint-options'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
+import { NegativePresetMenu } from './NegativePresetMenu'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { Select } from './ui/Select'
@@ -209,13 +210,22 @@ export function PromptBar() {
                 onCommit={(count) => setParams({ count })}
               />
               {model.profile.negative && (
-                <Button
-                  aria-expanded={negativeOpen}
-                  aria-controls={negativeOpen ? negativeId : undefined}
-                  onClick={() => setNegativeOpen((open) => !open)}
-                >
-                  {t('prompt.negative')}
-                </Button>
+                <>
+                  <Button
+                    aria-expanded={negativeOpen}
+                    aria-controls={negativeOpen ? negativeId : undefined}
+                    onClick={() => setNegativeOpen((open) => !open)}
+                  >
+                    {t('prompt.negative')}
+                  </Button>
+                  <NegativePresetMenu
+                    negative={model.params.negativePrompt}
+                    onApply={(negativePrompt) => {
+                      setParams({ negativePrompt })
+                      setNegativeOpen(true)
+                    }}
+                  />
+                </>
               )}
               <IconButton
                 id={PARAMS_TOGGLE_ID}

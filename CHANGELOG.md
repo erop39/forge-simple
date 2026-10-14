@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Negative-prompt presets: a menu next to the Negative toggle puts a saved negative into the field (replacing its text), saves the current negative under a name, and opens a dialog to rename or delete presets. Names are unique regardless of case; the operation log records preset names only, never their text.
 - Saved Forge servers: the server dialog lists them with a name and address, adds, edits and deletes them, and switches the active one with one click (not while a job runs). The connection chip shows the active server's name. Queued jobs stay with their server; those of an inactive server show "Waiting for <name>". Deleting a server removes its queued jobs and keeps its images.
 - Full-window image viewer opened from a finished gallery tile, with the saved full-resolution PNG, generation settings below it, and a Copy prompt button backed by the system clipboard.
 - Gallery navigation in the image viewer with previous/next icons and Left/Right keys. Moving past the oldest loaded image fetches the next page; the counter shows the number currently loaded. The header keeps clear of Windows' caption buttons and the arrows take real mouse clicks.

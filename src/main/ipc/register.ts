@@ -9,7 +9,7 @@ import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicateServerError, hostOf, isGenerationParams, type createRepos, type ImageRow, type Server,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, type createRepos, type ImageRow, type Server,
 } from '../storage/repos'
 
 export interface IpcDeps {
@@ -72,6 +72,31 @@ const isNumberIn = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
 const isOptionalNumber = (v: unknown): number | null | undefined =>
   v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : undefined
+
+const MAX_PRESET_NAME = 80
+
+/** A trimmed, non-empty preset name, or undefined when it is not one. */
+const presetName = (v: unknown): string | undefined => {
+  if (typeof v !== 'string') return undefined
+  const trimmed = v.trim()
+  return trimmed !== '' && trimmed.length <= MAX_PRESET_NAME ? trimmed : undefined
+}
+/** Negative text follows the enqueue limit for negative prompts; empty is allowed. */
+const isPresetText = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_TEXT
+
+/** Checks a preset patch; `partial` allows either field to be missing, but not both. */
+function validatePresetInput(input: unknown, partial: boolean): { name?: string; text?: string } {
+  if (typeof input !== 'object' || input === null) return fail('error.invalidParams')
+  const { name, text } = input as { name?: unknown; text?: unknown }
+  const out: { name?: string; text?: string } = {}
+  if (name !== undefined || !partial) out.name = presetName(name) ?? fail('error.invalidParams')
+  if (text !== undefined || !partial) {
+    if (!isPresetText(text)) return fail('error.invalidParams')
+    out.text = text
+  }
+  if (out.name === undefined && out.text === undefined) return fail('error.invalidParams')
+  return out
+}
 
 /** Checks every field the renderer sends and returns a copy holding exactly the known fields. */
 function validateEnqueue(p: unknown): GenerationParams {
@@ -267,6 +292,49 @@ export function registerIpc(
     })
     if (target.active) activeServerChanged(target.url)
     sendServers()
+  })
+
+  // ---- negative presets ------------------------------------------------
+  // The log carries preset names only: the text is prompt content.
+
+  const presetNameFree = <T>(write: () => T): T => {
+    try {
+      return write()
+    } catch (err) {
+      if (err instanceof DuplicatePresetError) return fail('error.presetNameTaken')
+      throw err
+    }
+  }
+
+  handle('negativePresets:list', () => repos.negativePresets.list())
+
+  handle('negativePresets:add', (input) => {
+    const { name, text } = validatePresetInput(input, false) as { name: string; text: string }
+    const preset = presetNameFree(() => repos.negativePresets.add(name, text))
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.created', details: { name: preset.name } })
+    return preset
+  })
+
+  handle('negativePresets:update', (id, patch) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const valid = validatePresetInput(patch, true)
+    const before = repos.negativePresets.get(id) ?? fail('error.notFound')
+    const after = presetNameFree(() => repos.negativePresets.update(id, valid)) ?? fail('error.notFound')
+    if (after.name !== before.name) {
+      oplog.write({
+        level: 'info', category: 'preset', messageKey: 'log.preset.renamed', details: { old: before.name, new: after.name },
+      })
+    }
+    if (after.text !== before.text) {
+      oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.updated', details: { name: after.name } })
+    }
+    return after
+  })
+
+  handle('negativePresets:remove', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const removed = repos.negativePresets.remove(id) ?? fail('error.notFound')
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.deleted', details: { name: removed.name } })
   })
 
   handle('catalog:get', (refresh) => loadCatalog(refresh === true))

@@ -460,3 +460,58 @@ describe('jobs:enqueue boundary', () => {
     expect(jobs[0]!.params.loras).toEqual([{ name: 'l', weight: 1, enabled: true }])
   })
 })
+
+describe('negative presets', () => {
+  const SECRET = 'a very private negative text'
+  const presetLog = () => oplog.list({ category: 'preset' })
+
+  test('add trims the name, saves, logs the name only, and list returns it', async () => {
+    const created = (await call('negativePresets:add', { name: '  Hands  ', text: SECRET })) as { id: number; name: string }
+    expect(created).toMatchObject({ name: 'Hands', text: SECRET })
+    expect(await call('negativePresets:list')).toEqual([created])
+    expect(presetLog()[0]).toMatchObject({ messageKey: 'log.preset.created', details: { name: 'Hands' } })
+  })
+
+  test('rename, text change and delete log names and never the text', async () => {
+    const p = (await call('negativePresets:add', { name: 'one', text: SECRET })) as { id: number }
+    expect(await call('negativePresets:update', p.id, { name: 'two' })).toMatchObject({ name: 'two', text: SECRET })
+    expect(await call('negativePresets:update', p.id, { text: `${SECRET} 2` })).toMatchObject({ text: `${SECRET} 2` })
+    await call('negativePresets:remove', p.id)
+    expect(await call('negativePresets:list')).toEqual([])
+    expect(presetLog().map((e) => [e.messageKey, e.details]).reverse()).toEqual([
+      ['log.preset.created', { name: 'one' }],
+      ['log.preset.renamed', { old: 'one', new: 'two' }],
+      ['log.preset.updated', { name: 'two' }],
+      ['log.preset.deleted', { name: 'two' }],
+    ])
+    const rows = db.prepare('SELECT message_key, details FROM oplog').all()
+    expect(JSON.stringify(rows)).not.toContain(SECRET)
+  })
+
+  test('a taken name (any case) is refused with error.presetNameTaken', async () => {
+    const a = (await call('negativePresets:add', { name: 'Hands', text: 'x' })) as { id: number }
+    await expect(call('negativePresets:add', { name: 'hands', text: 'y' })).rejects.toThrow('error.presetNameTaken')
+    const b = (await call('negativePresets:add', { name: 'Eyes', text: 'y' })) as { id: number }
+    await expect(call('negativePresets:update', b.id, { name: 'HANDS' })).rejects.toThrow('error.presetNameTaken')
+    expect(a.id).not.toBe(b.id)
+  })
+
+  test('validation: name trimmed non-empty and at most 80 characters, text a string within the prompt limit', async () => {
+    const bad: unknown[] = [
+      null, 'x', { name: '   ', text: 'x' }, { name: 'n'.repeat(81), text: 'x' }, { name: 'n', text: 5 },
+      { name: 'n', text: 't'.repeat(10_001) }, { name: 5, text: 'x' },
+    ]
+    for (const input of bad) {
+      await expect(call('negativePresets:add', input)).rejects.toThrow('error.invalidParams')
+    }
+    expect(await call('negativePresets:add', { name: 'n'.repeat(80), text: 't'.repeat(10_000) })).toBeTruthy()
+    const p = (await call('negativePresets:add', { name: 'ok', text: '' })) as { id: number }
+    await expect(call('negativePresets:update', p.id, { name: '' })).rejects.toThrow('error.invalidParams')
+    await expect(call('negativePresets:update', p.id, {})).rejects.toThrow('error.invalidParams')
+    await expect(call('negativePresets:update', 0, { name: 'x' })).rejects.toThrow('error.invalidParams')
+    await expect(call('negativePresets:update', 999, { name: 'x' })).rejects.toThrow('error.notFound')
+    await expect(call('negativePresets:remove', 'one')).rejects.toThrow('error.invalidParams')
+    await expect(call('negativePresets:remove', 999)).rejects.toThrow('error.notFound')
+    expect(presetLog().every((e) => e.messageKey === 'log.preset.created')).toBe(true)
+  })
+})
