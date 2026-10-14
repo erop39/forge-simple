@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A failed job now shows Forge's error message (for example `TypeError: 'NoneType' object is not callable`), not only the error class name.
 - Switching checkpoints preserves the selected width and height, including custom sizes and aspect ratios; the initial checkpoint still uses its model family's defaults.
 - The prompt field now appears at startup while the model catalog loads; text typed before the first model is ready is kept.
 - Dropdown menus with a long list scroll (mouse wheel and keyboard) instead of running off the window; they stay inside the window and open on the selected item.

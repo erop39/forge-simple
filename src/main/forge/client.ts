@@ -137,6 +137,10 @@ function errorDetail(text: string): string {
   try {
     const json: unknown = JSON.parse(text)
     if (isObj(json)) {
+      // Forge's exception handler puts the class name in `error` and its message in `errors`.
+      if (typeof json.error === 'string' && json.error !== '' && typeof json.errors === 'string' && json.errors !== '') {
+        return `${json.error}: ${json.errors}`.slice(0, 300)
+      }
       for (const key of ['detail', 'error', 'message']) {
         const v = json[key]
         if (v === undefined || v === null || v === '') continue

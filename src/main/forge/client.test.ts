@@ -159,7 +159,11 @@ describe('list calls', () => {
 
 describe('errors', () => {
   test.each([
-    ['error', { error: 'OutOfMemoryError', errors: 'CUDA out of memory' }, 'OutOfMemoryError'],
+    ['error', { error: 'OutOfMemoryError', errors: 'CUDA out of memory' }, 'OutOfMemoryError: CUDA out of memory'],
+    // Forge's own exception handler shape: the class name in `error`, its message in `errors`.
+    ['error (Forge shape)', { error: 'TypeError', detail: '', body: '', errors: "'NoneType' object is not callable" },
+      "TypeError: 'NoneType' object is not callable"],
+    ['error without message', { error: 'TypeError', detail: '', body: '', errors: '' }, 'TypeError'],
     ['detail', { detail: 'Not allowed' }, 'Not allowed'],
     ['message', { message: 'boom' }, 'boom'],
   ])('HTTP 500 with a JSON %s becomes ForgeError http with detail', async (_field, json, detail) => {
