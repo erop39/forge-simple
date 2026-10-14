@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../i18n/t'
 import { aspectOfItem, galleryItems, itemKey, layoutColumns, type GalleryItem } from '../state/gallery-items'
 import { useAppStore } from '../state/StoreProvider'
+import { useToday } from '../state/use-today'
 import { GalleryEmpty } from './EmptyState'
 import { ImageTile } from './ImageTile'
 import { ImageViewer } from './ImageViewer'
@@ -63,6 +64,7 @@ export function Gallery() {
   const deleteImage = useAppStore((s) => s.deleteImage)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
   const viewRequest = useAppStore((s) => s.viewRequest)
+  const today = useToday()
   const clearViewRequest = useAppStore((s) => s.clearViewRequest)
   const [columnsRef, columnCount] = useColumnCount()
   const { hidden, toastOpen, request, undo } = usePendingDelete(deleteImage)
@@ -149,9 +151,10 @@ export function Gallery() {
         progress={item.progress}
         queuePosition={item.queuePosition}
         waitingFor={item.waiting ? serverName(item.job.serverId) : null}
+        now={today}
       />
     ) : (
-      <ImageTile key={itemKey(item)} image={item.image} onOpen={openViewer} onDelete={request} />
+      <ImageTile key={itemKey(item)} image={item.image} onOpen={openViewer} onDelete={request} now={today} />
     )
 
   return (

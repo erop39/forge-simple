@@ -299,6 +299,8 @@ describe('server control', () => {
     await createForgeClient(mock.url).unloadCheckpoint()
     expect(mock.requests.at(-1)).toMatchObject({ method: 'POST', path: '/sdapi/v1/unload-checkpoint' })
     expect(mock.stats().unloads).toBe(1)
+    mock.respond('/sdapi/v1/unload-checkpoint', { hang: true })
+    await expectForgeError(createForgeClient(mock.url).unloadCheckpoint(50), { kind: 'timeout' })
     mock.respond('/sdapi/v1/unload-checkpoint', { status: 500, json: { detail: 'nope' } })
     await expectForgeError(createForgeClient(mock.url).unloadCheckpoint(), { kind: 'http', status: 500 })
   })

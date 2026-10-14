@@ -11,7 +11,9 @@ test('wheelValue steps, clamps and keeps to multipleOf', () => {
   expect(wheelValue(2, -10, { min: 1, max: 30, step: 1 })).toBe(1)
   expect(wheelValue(1024, 1, { min: 64, max: 4096, step: 8, multipleOf: 8 })).toBe(1032)
   expect(wheelValue(1020, 1, { min: 64, max: 4096, step: 8, multipleOf: 8 })).toBe(1032)
-  expect(wheelValue(4090, 10, { min: 60, max: 4090, step: 8, multipleOf: 8 })).toBe(4088)
+  expect(wheelValue(4080, 10, { min: 60, max: 4090, step: 8, multipleOf: 8 })).toBe(4088)
+  // Up from an off-grid value at the top must not move it down onto the grid.
+  expect(wheelValue(4090, 10, { min: 60, max: 4090, step: 8, multipleOf: 8 })).toBe(4090)
   expect(wheelValue(70, -10, { min: 60, max: 4090, step: 8, multipleOf: 8 })).toBe(64)
 })
 
@@ -62,6 +64,29 @@ test('at a bound nothing is committed, but the page still does not scroll', () =
   expect(onCommit).not.toHaveBeenCalled()
 })
 
+test.each([1, 3, 5])('a %s-line notch (line mode) is exactly one step', (lines) => {
+  const onCommit = vi.fn()
+  render(<Steps initial={20} min={1} max={150} onCommit={onCommit} />)
+  const slider = screen.getByText('Steps')
+  wheel(slider, { deltaY: -lines, deltaMode: 1 })
+  expect(onCommit).toHaveBeenLastCalledWith(21)
+  wheel(slider, { deltaY: lines, deltaMode: 1, shiftKey: true })
+  expect(onCommit).toHaveBeenLastCalledWith(11)
+  expect(onCommit).toHaveBeenCalledTimes(2)
+})
+
+test('a page-mode event and a pixel notch of 50 px or more are one step each, whatever their size', () => {
+  const onCommit = vi.fn()
+  render(<Steps initial={20} min={1} max={150} onCommit={onCommit} />)
+  const slider = screen.getByText('Steps')
+  wheel(slider, { deltaY: -1, deltaMode: 2 })
+  expect(onCommit).toHaveBeenLastCalledWith(21)
+  wheel(slider, { deltaY: -300 })
+  expect(onCommit).toHaveBeenLastCalledWith(22)
+  wheel(slider, { deltaY: 50 })
+  expect(onCommit).toHaveBeenLastCalledWith(21)
+})
+
 test('small trackpad deltas add up to one step per 100 px; a change of direction starts over', () => {
   const onCommit = vi.fn()
   render(<Steps initial={20} min={1} max={150} onCommit={onCommit} />)
@@ -71,11 +96,34 @@ test('small trackpad deltas add up to one step per 100 px; a change of direction
   wheel(slider, { deltaY: -20 })
   expect(onCommit).toHaveBeenCalledTimes(1)
   expect(onCommit).toHaveBeenLastCalledWith(21)
-  wheel(slider, { deltaY: -60 })
-  wheel(slider, { deltaY: 60 })
+  wheel(slider, { deltaY: -40 })
+  wheel(slider, { deltaY: 40 })
+  wheel(slider, { deltaY: 40 })
   expect(onCommit).toHaveBeenCalledTimes(1)
-  wheel(slider, { deltaY: 3, deltaMode: 1 })
-  expect(onCommit).toHaveBeenLastCalledWith(20)
+})
+
+test('a stored value outside the range never moves the wrong way', () => {
+  const onCommit = vi.fn()
+  const { unmount } = render(<Steps initial={200} min={1} max={150} onCommit={onCommit} />)
+  wheel(screen.getByText('Steps'), { deltaY: -100 })
+  expect(onCommit).not.toHaveBeenCalled()
+  wheel(screen.getByText('Steps'), { deltaY: 100 })
+  expect(onCommit).toHaveBeenLastCalledWith(150)
+  unmount()
+  onCommit.mockClear()
+  render(<Field initial={40} min={64} max={4096} step={8} multipleOf={8} onCommit={onCommit} />)
+  wheel(screen.getByRole('spinbutton'), { deltaY: 100 })
+  expect(onCommit).not.toHaveBeenCalled()
+  expect(wheelValue(40, -1, { min: 64, max: 4096, step: 8, multipleOf: 8 })).toBe(40)
+  expect(wheelValue(40, 1, { min: 64, max: 4096, step: 8, multipleOf: 8 })).toBe(64)
+})
+
+test('the listener follows the element when it is replaced (inline switched)', () => {
+  const onCommit = vi.fn()
+  const { rerender } = render(<NumberField label="Count" value={2} min={1} max={8} onCommit={onCommit} />)
+  rerender(<NumberField inline label="Count" value={2} min={1} max={8} onCommit={onCommit} />)
+  wheel(screen.getByText('Count'), { deltaY: -100 })
+  expect(onCommit).toHaveBeenCalledWith(3)
 })
 
 test('a sideways wheel without Shift is left to the page', () => {

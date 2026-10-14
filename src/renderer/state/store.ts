@@ -97,8 +97,11 @@ export interface AppState {
   /** Opens or closes the log panel (closing the parameters panel); opening loads the entries. */
   toggleLog(): void
   setLogFilters(patch: Partial<LogFilters>): void
-  /** Resolves false when the save dialog was cancelled; rejects with the error key. */
-  exportLog(): Promise<boolean>
+  /**
+   * Exports the entries matching the filters, or exactly `ids` (the panel's search results) when given.
+   * Resolves false when the save dialog was cancelled; rejects with the error key.
+   */
+  exportLog(ids?: number[]): Promise<boolean>
   logRetention(): Promise<number>
   setLogRetention(days: number): Promise<void>
   /** Any stored job; rejects with the error key (error.notFound when it is gone). */
@@ -495,8 +498,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         void loadLog()
       },
 
-      exportLog() {
-        return api.oplog.export(logQuery(get().logFilters, Date.now()))
+      exportLog(ids) {
+        const { limit: _shown, ...query } = logQuery(get().logFilters, Date.now())
+        return api.oplog.export(ids ? { ...query, ids } : query)
       },
 
       logRetention() {

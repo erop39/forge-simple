@@ -172,3 +172,24 @@ describe('live listener, retention and export', () => {
     expect(toJsonLines([])).toBe('')
   })
 })
+
+test('ids limits the list to those entries; an empty list matches nothing', () => {
+  for (let i = 1; i <= 4; i++) at(i, { level: 'info', category: 'app', messageKey: `m${i}` })
+  expect(log.list({ ids: [1, 3] }).map((r) => r.messageKey)).toEqual(['m3', 'm1'])
+  expect(log.list({ ids: [] })).toEqual([])
+})
+
+test('before pages through entries in list order, ties on time included', () => {
+  at(10, { level: 'info', category: 'app', messageKey: 'a' })
+  at(20, { level: 'info', category: 'app', messageKey: 'b' })
+  at(20, { level: 'info', category: 'app', messageKey: 'c' })
+  at(30, { level: 'info', category: 'app', messageKey: 'd' })
+  const pages: string[][] = []
+  let page = log.list({ limit: 2 })
+  while (page.length > 0) {
+    pages.push(page.map((r) => r.messageKey))
+    const last = page[page.length - 1]!
+    page = log.list({ limit: 2, before: { time: last.time, id: last.id } })
+  }
+  expect(pages).toEqual([['d', 'c'], ['b', 'a']])
+})

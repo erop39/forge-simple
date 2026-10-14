@@ -1,4 +1,5 @@
-import { writeFile } from 'node:fs/promises'
+import { appendFile, writeFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
@@ -35,6 +36,8 @@ export interface IpcDeps {
   onServerChanged?(): void
   /** Asks the user where to save a log export (a save dialog); null when cancelled. */
   chooseExportPath(defaultName: string): Promise<string | null>
+  /** Entries read per page while exporting; injectable for tests. */
+  exportPageSize?: number
   /** What the active Forge allows (see forge/capabilities.ts). */
   capabilities: { current(): ForgeCapabilities; refresh(): Promise<ForgeCapabilities>; reset(): void }
 }
@@ -141,7 +144,7 @@ function validateEnqueue(p: unknown): GenerationParams {
 function validateLogQuery(q: unknown): OplogFilter {
   if (q === undefined) return {}
   if (typeof q !== 'object' || q === null) return fail('error.invalidParams')
-  const { level, category, from, limit } = q as Record<string, unknown>
+  const { level, category, from, limit, ids } = q as Record<string, unknown>
   const out: OplogFilter = {}
   if (level !== undefined) {
     if (!(OPLOG_LEVELS as readonly unknown[]).includes(level)) return fail('error.invalidParams')
@@ -153,8 +156,18 @@ function validateLogQuery(q: unknown): OplogFilter {
   }
   if (from !== undefined) out.from = isInt(from, 0, MAX_ID) ? from : fail('error.invalidParams')
   if (limit !== undefined) out.limit = isInt(limit, 1, MAX_LOG_PAGE) ? limit : fail('error.invalidParams')
+  if (ids !== undefined) {
+    if (!Array.isArray(ids) || ids.length > MAX_LOG_PAGE || !ids.every((id) => isInt(id, 1, MAX_ID))) {
+      return fail('error.invalidParams')
+    }
+    out.ids = [...(ids as number[])]
+  }
   return out
 }
+
+/** YYYY-MM-DD of the local calendar day. */
+const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 export function toImageRecord(row: ImageRow, imagesDir: string): ImageRecord {
   const { filePath, thumbPath, ...rest } = row
@@ -470,14 +483,25 @@ export function registerIpc(
   handle('oplog:list', (query) => oplog.list(validateLogQuery(query)))
 
   handle('oplog:export', async (query): Promise<boolean> => {
-    // The export holds every matching entry up to the list maximum, not just the page on screen.
-    const filter: OplogFilter = { ...validateLogQuery(query), limit: MAX_LOG_PAGE }
-    const day = new Date().toISOString().slice(0, 10)
-    const path = await deps.chooseExportPath(`forge-neo-client-log-${day}.jsonl`)
+    // The export holds every matching entry, read page by page, not just what the panel shows.
+    const { limit: _shown, ...filter } = validateLogQuery(query)
+    const path = await deps.chooseExportPath(`forge-neo-client-log-${localDay(new Date())}.jsonl`)
     if (path === null) return false
-    const entries = oplog.list(filter)
-    await writeFile(path, toJsonLines(entries), 'utf8')
-    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.logExported', details: { path, count: entries.length } })
+    const pageSize = deps.exportPageSize ?? MAX_LOG_PAGE
+    await writeFile(path, '', 'utf8')
+    let count = 0
+    let before: OplogFilter['before']
+    for (;;) {
+      const page = oplog.list({ ...filter, limit: pageSize, ...(before ? { before } : {}) })
+      if (page.length === 0) break
+      await appendFile(path, toJsonLines(page), 'utf8')
+      count += page.length
+      if (page.length < pageSize) break
+      const last = page[page.length - 1]!
+      before = { time: last.time, id: last.id }
+    }
+    // The file name only: the folder may name the user.
+    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.logExported', details: { file: basename(path), count } })
     return true
   })
 

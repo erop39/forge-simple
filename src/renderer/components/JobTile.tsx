@@ -10,7 +10,10 @@ import { Tooltip } from './ui/Tooltip'
 import styles from './JobTile.module.css'
 
 /** waitingFor: the name of the (inactive) server a queued job waits for; null when it is in the active queue. */
-type JobTileProps = { job: Job; progress: JobProgress | null; queuePosition: number | null; waitingFor?: string | null }
+/** now: a moment of the current day, for the time a failed job ended. */
+type JobTileProps = {
+  job: Job; progress: JobProgress | null; queuePosition: number | null; waitingFor?: string | null; now?: number
+}
 
 const STAGE_KEYS: Record<JobProgress['stage'], MessageKey> = {
   sampling: 'job.stage.sampling',
@@ -76,7 +79,7 @@ function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null
   )
 }
 
-function FailedBody({ job }: { job: Job }) {
+function FailedBody({ job, now }: { job: Job; now: number | undefined }) {
   const retryJob = useAppStore((s) => s.retryJob)
   const dismissJob = useAppStore((s) => s.dismissJob)
   const askRestart = useAppStore((s) => s.askRestart)
@@ -89,7 +92,7 @@ function FailedBody({ job }: { job: Job }) {
       <h3 className={styles.heading}>
         <WarningCircle size={20} aria-hidden="true" />
         {t(job.status === 'interrupted' ? 'job.interrupted' : 'job.failed')}
-        {job.finishedAt !== null && <span className={`mono ${styles.when}`}>{shortTime(job.finishedAt)}</span>}
+        {job.finishedAt !== null && <span className={`mono ${styles.when}`}>{shortTime(job.finishedAt, now)}</span>}
       </h3>
       <p className={styles.message}>{message}</p>
       {detail !== null && (
@@ -111,7 +114,7 @@ function FailedBody({ job }: { job: Job }) {
 }
 
 /** A job that has not produced an image yet: waiting, running, failed or interrupted. */
-export function JobTile({ job, progress, queuePosition, waitingFor = null }: JobTileProps) {
+export function JobTile({ job, progress, queuePosition, waitingFor = null, now }: JobTileProps) {
   const failed = job.status === 'failed' || job.status === 'interrupted'
   const stateClass = failed
     ? job.status === 'interrupted'
@@ -127,7 +130,7 @@ export function JobTile({ job, progress, queuePosition, waitingFor = null }: Job
       style={{ aspectRatio: `${job.params.width} / ${job.params.height}` }}
     >
       {failed ? (
-        <FailedBody job={job} />
+        <FailedBody job={job} now={now} />
       ) : job.status === 'queued' ? (
         <QueuedBody job={job} queuePosition={queuePosition} waitingFor={waitingFor} />
       ) : (

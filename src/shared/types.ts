@@ -75,4 +75,8 @@ export interface ForgeHealth { unhealthy: boolean }
  */
 export type RestartOutcome = 'restarting' | 'notAllowed' | 'notRestartable'
 /** Which log entries to list or export; newest first. Text search happens in the renderer on the shown text. */
-export interface OplogQuery { level?: OplogLevel; category?: OplogCategory; from?: number; limit?: number }
+export interface OplogQuery {
+  level?: OplogLevel; category?: OplogCategory; from?: number; limit?: number
+  /** Only these entries (the panel's search results, for export). */
+  ids?: number[]
+}

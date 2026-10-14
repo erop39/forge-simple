@@ -193,5 +193,11 @@
 
 .forgeActions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
+}
+
+/* The group wraps whole buttons; a label never breaks inside its button. */
+.forgeActions > button {
+  white-space: nowrap;
 }

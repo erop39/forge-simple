@@ -170,9 +170,10 @@ const MEMORY = {
 
 const NOT_FOUND = { detail: 'Not Found' }
 
-/** The body Forge's exception handler sends with a 500 (fictional message). */
 /** Sentinel: the route asked for a simulated restart. */
 const RESTART = { restart: true }
+
+/** The body Forge's exception handler sends with a 500 (fictional message). */
 
 const FORGE_500 = { error: 'TypeError', detail: '', body: '', errors: "'NoneType' object is not callable" }
 

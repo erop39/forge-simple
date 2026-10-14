@@ -1,5 +1,4 @@
 import * as RadixSlider from '@radix-ui/react-slider'
-import { useRef } from 'react'
 import { useWheelStep } from './use-wheel-step'
 import styles from './Slider.module.css'
 
@@ -20,8 +19,7 @@ type SliderProps = {
  * Home/End; the mouse wheel over it steps the value (Shift: ten steps).
  */
 export function Slider({ label, value, min, max, step, onCommit, inline = false }: SliderProps) {
-  const wrapper = useRef<HTMLSpanElement>(null)
-  useWheelStep(wrapper, { value, min, max, step, onCommit })
+  const wrapper = useWheelStep({ value, min, max, step, onCommit })
   const slider = (
     <>
       <RadixSlider.Root

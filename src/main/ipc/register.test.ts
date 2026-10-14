@@ -85,6 +85,7 @@ beforeEach(async () => {
       copyToClipboard: (value) => { copiedText = value },
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
+      exportPageSize: 3,
     },
     send,
   )
@@ -633,7 +634,35 @@ describe('operation log', () => {
     expect(exportNames[0]).toMatch(/^forge-neo-client-log-\d{4}-\d{2}-\d{2}\.jsonl$/)
     const lines = readFileSync(exportPath, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>)
     expect(lines).toEqual([expect.objectContaining({ messageKey: 'log.error.generation', jobId: 4, time: new Date(1000).toISOString() })])
-    expect(oplog.list({ category: 'backup' })[0]).toMatchObject({ messageKey: 'log.backup.logExported', details: { path: exportPath, count: 1 } })
+    expect(oplog.list({ category: 'backup' })[0]).toMatchObject({ messageKey: 'log.backup.logExported', details: { file: 'log.jsonl', count: 1 } })
+    expect(JSON.stringify(oplog.list({ category: 'backup' })[0]!.details)).not.toContain(dir)
+  })
+
+  test('export pages through every matching entry, beyond one page, and counts them all', async () => {
+    for (let i = 0; i < 10; i++) oplog.write({ level: 'info', category: 'queue', messageKey: 'log.queue.added', jobId: i + 1 })
+    oplog.write({ level: 'info', category: 'app', messageKey: 'log.app.started' })
+    exportPath = path.join(dir, 'all.jsonl')
+    expect(await call('oplog:export', { category: 'queue', limit: 2 })).toBe(true)
+    const lines = readFileSync(exportPath, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as { jobId: number })
+    expect(lines.map((l) => l.jobId)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1])
+    expect(oplog.list({ category: 'backup' })[0]?.details).toEqual({ file: 'all.jsonl', count: 10 })
+  })
+
+  test('export with ids writes exactly those entries (the panel search results)', async () => {
+    seed()
+    exportPath = path.join(dir, 'some.jsonl')
+    await call('oplog:export', { ids: [1, 3] })
+    const lines = readFileSync(exportPath, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as { id: number })
+    expect(lines.map((l) => l.id)).toEqual([3, 1])
+    await expect(call('oplog:export', { ids: [0] })).rejects.toThrow('error.invalidParams')
+    await expect(call('oplog:export', { ids: 'x' })).rejects.toThrow('error.invalidParams')
+  })
+
+  test('the default export file name carries the local date', async () => {
+    await call('oplog:export', {})
+    const d = new Date()
+    const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(exportNames[0]).toBe(`forge-neo-client-log-${local}.jsonl`)
   })
 
   test('a cancelled save dialog writes nothing', async () => {

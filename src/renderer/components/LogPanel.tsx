@@ -155,7 +155,8 @@ function Row({ entry, text }: { entry: OplogEntry; text: string }) {
   )
 }
 
-function Footer() {
+/** `visibleIds`: the rows the text search left, or null when nothing is searched (export then uses the filters). */
+function Footer({ visibleIds }: { visibleIds: number[] | null }) {
   const exportLog = useAppStore((s) => s.exportLog)
   const logRetention = useAppStore((s) => s.logRetention)
   const setLogRetention = useAppStore((s) => s.setLogRetention)
@@ -163,15 +164,21 @@ function Footer() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** The retention value waiting for its delayed save. */
+  const pendingDays = useRef<number | null>(null)
 
   useEffect(() => {
     let live = true
     logRetention().then((n) => live && setDays(n), () => undefined)
     return () => {
       live = false
+      // Closing the panel saves a value still waiting for its delay instead of dropping it.
       if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = null
+      if (pendingDays.current !== null) void setLogRetention(pendingDays.current).catch(() => undefined)
+      pendingDays.current = null
     }
-  }, [logRetention])
+  }, [logRetention, setLogRetention])
 
   async function run(action: () => Promise<string | null>): Promise<void> {
     setStatus(null)
@@ -186,7 +193,7 @@ function Footer() {
   return (
     <footer className={styles.footer}>
       <div className={styles.footerRow}>
-        <Button onClick={() => void run(async () => ((await exportLog()) ? t('logPanel.exported') : null))}>
+        <Button onClick={() => void run(async () => ((await exportLog(visibleIds ?? undefined)) ? t('logPanel.exported') : null))}>
           {t('logPanel.export')}
         </Button>
         {days !== null && (
@@ -198,9 +205,11 @@ function Footer() {
             max={3650}
             onCommit={(next) => {
               setDays(next)
+              pendingDays.current = next
               if (saveTimer.current) clearTimeout(saveTimer.current)
               saveTimer.current = setTimeout(() => {
                 saveTimer.current = null
+                pendingDays.current = null
                 void run(async () => {
                   await setLogRetention(next)
                   return null
@@ -273,7 +282,7 @@ export function LogPanel() {
         ))}
       </ul>
       {rows.length === 0 && <p className={styles.empty}>{t('logPanel.empty')}</p>}
-      <Footer />
+      <Footer visibleIds={search.trim() === '' ? null : rows.map(({ entry }) => entry.id)} />
     </aside>
   )
 }

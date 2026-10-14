@@ -7,6 +7,10 @@ export interface OplogWrite {
 }
 export interface OplogFilter {
   level?: OplogLevel; category?: OplogCategory; from?: number; to?: number; text?: string; limit?: number
+  /** Only these entries. */
+  ids?: readonly number[]
+  /** Paging cursor: only entries older than this one in list order (time, then id, descending). */
+  before?: { time: number; id: number }
 }
 export interface Oplog {
   write(e: OplogWrite): void
@@ -36,7 +40,7 @@ export function toJsonLines(entries: readonly OplogEntry[]): string {
 }
 
 const DEFAULT_LIMIT = 500
-const MAX_LIMIT = 5000
+export const MAX_LIMIT = 5000
 const DAY_MS = 86_400_000
 const FORBIDDEN_KEYS = new Set(['prompt', 'negativePrompt'])
 
@@ -111,6 +115,15 @@ export function createOplog(db: Db, now: () => number, onAdded?: (entry: OplogEn
       if (f.category !== undefined) { where.push('category = ?'); args.push(f.category) }
       if (f.from !== undefined) { where.push('time >= ?'); args.push(f.from) }
       if (f.to !== undefined) { where.push('time <= ?'); args.push(f.to) }
+      if (f.ids !== undefined) {
+        if (f.ids.length === 0) return []
+        where.push(`id IN (${f.ids.map(() => '?').join(', ')})`)
+        args.push(...f.ids)
+      }
+      if (f.before !== undefined) {
+        where.push('(time < ? OR (time = ? AND id < ?))')
+        args.push(f.before.time, f.before.time, f.before.id)
+      }
       if (f.text) {
         const like = `%${escapeLike(f.text)}%`
         where.push("(message_key LIKE ? ESCAPE '!' OR details LIKE ? ESCAPE '!')")

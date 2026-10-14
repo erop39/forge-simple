@@ -189,7 +189,7 @@ export const en = {
   'log.settings.changed': 'Setting {key} changed from {old} to {new}.',
   'log.storage.imageDeleted': 'Image {imageId} deleted.',
   'log.storage.fileRemoveFailed': "Couldn't remove an image file: {filePath}",
-  'log.backup.logExported': 'Exported {count} log entries to {path}.',
+  'log.backup.logExported': 'Exported {count} log entries to {file}.',
 
   'empty.noServer.title': 'Connect to your Forge',
   'empty.noServer.body': 'Enter the address of the PC that runs Forge Neo.',

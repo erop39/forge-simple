@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { useWheelStep } from './use-wheel-step'
 import styles from './NumberField.module.css'
 
@@ -28,8 +28,7 @@ export function NumberField({
   label, value, min, max, step = 1, integer = true, multipleOf, onCommit, inline = false,
 }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null)
-  const wrapper = useRef<HTMLElement>(null)
-  useWheelStep(wrapper, {
+  const wrapper = useWheelStep({
     value, min, max, step, multipleOf,
     onCommit: (next) => {
       setDraft(null)
@@ -59,7 +58,7 @@ export function NumberField({
 
   const input = (
     <input
-      ref={inline ? undefined : (wrapper as React.RefObject<HTMLInputElement>)}
+      ref={inline ? undefined : wrapper}
       type="text"
       inputMode={integer ? 'numeric' : 'decimal'}
       role="spinbutton"
@@ -78,7 +77,7 @@ export function NumberField({
   )
   if (!inline) return input
   return (
-    <label ref={wrapper as React.RefObject<HTMLLabelElement>} className={styles.inline}>
+    <label ref={wrapper} className={styles.inline}>
       <span className={styles.label}>{label}</span>
       {input}
     </label>

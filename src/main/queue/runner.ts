@@ -37,6 +37,8 @@ export const PROGRESS_FAILURE_LIMIT = 15
 export const MAX_COUNT = 8
 /** Consecutive generation 500s on one server after which Forge counts as unhealthy. */
 export const UNHEALTHY_AFTER = 2
+/** The automatic unload after a 500 is best effort: the queue waits at most this long for it. */
+export const RECOVERY_UNLOAD_TIMEOUT_MS = 15_000
 
 interface ActiveJob {
   jobId: number
@@ -528,7 +530,7 @@ export function createRunner(deps: RunnerDeps): {
    */
   async function unloadAfterError(job: Job, client: ForgeClient): Promise<void> {
     try {
-      await client.unloadCheckpoint()
+      await client.unloadCheckpoint(RECOVERY_UNLOAD_TIMEOUT_MS)
       log({ level: 'info', category: 'checkpoint', messageKey: 'log.recovery.unloaded', jobId: job.id })
     } catch (err) {
       log({

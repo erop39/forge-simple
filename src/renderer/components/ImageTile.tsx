@@ -5,11 +5,14 @@ import { t } from '../i18n/t'
 import { IconButton } from './ui/IconButton'
 import styles from './ImageTile.module.css'
 
-type ImageTileProps = { image: ImageRecord; onOpen(image: ImageRecord, trigger: HTMLButtonElement): void; onDelete(id: number): void }
+/** `now`: a moment of the current day, so the caption's time knows what "today" is. */
+type ImageTileProps = {
+  image: ImageRecord; onOpen(image: ImageRecord, trigger: HTMLButtonElement): void; onDelete(id: number): void; now?: number
+}
 
 /** A finished image: only the picture; the frame marking and the delete button show on hover and focus. */
-export function ImageTile({ image, onOpen, onDelete }: ImageTileProps) {
-  const caption = frameCaption(image)
+export function ImageTile({ image, onOpen, onDelete, now }: ImageTileProps) {
+  const caption = frameCaption(image, now)
   return (
     <div
       role="group"

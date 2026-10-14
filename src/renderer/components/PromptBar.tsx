@@ -57,7 +57,6 @@ type GrowingFieldProps = {
   onKeyDown?(event: KeyboardEvent<HTMLTextAreaElement>): void
 }
 
-/** A textarea that grows with its content; CSS caps the height at six lines and then it scrolls. */
 /** Shown after repeated Forge 500s: offers the restart, or explains how to allow it. */
 function UnhealthyNotice() {
   const unhealthy = useAppStore((s) => s.forgeUnhealthy)
@@ -72,6 +71,7 @@ function UnhealthyNotice() {
   )
 }
 
+/** A textarea that grows with its content; CSS caps the height at six lines and then it scrolls. */
 function GrowingField({ id, value, label, placeholder, className, onChange, onKeyDown }: GrowingFieldProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {

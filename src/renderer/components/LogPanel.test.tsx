@@ -151,7 +151,7 @@ test('an event without a job is not clickable; a job that is gone says so', asyn
 test('Export reports the result; Keep for shows and saves the retention; the Forge console note is there', async () => {
   const { exportLog, setLogRetention } = setup()
   await userEvent.click(screen.getByRole('button', { name: en['logPanel.export'] }))
-  expect(exportLog).toHaveBeenCalled()
+  expect(exportLog).toHaveBeenCalledWith(undefined)
   expect((await screen.findByRole('status')).textContent).toBe(en['logPanel.exported'])
   const days = await screen.findByRole('spinbutton', { name: en['logPanel.keepFor'] })
   expect((days as HTMLInputElement).value).toBe('90')
@@ -160,6 +160,24 @@ test('Export reports the result; Keep for shows and saves the retention; the For
   await waitFor(() => expect(setLogRetention).toHaveBeenCalledWith(30))
   expect(setLogRetention).toHaveBeenCalledTimes(1)
   expect(screen.getByText(en['logPanel.forgeConsole'])).toBeDefined()
+})
+
+test('with a text search, Export writes exactly the rows shown', async () => {
+  const { exportLog } = setup()
+  await userEvent.type(screen.getByRole('searchbox', { name: en['logPanel.search'] }), 'generation')
+  await userEvent.click(screen.getByRole('button', { name: en['logPanel.export'] }))
+  expect(exportLog).toHaveBeenCalledWith([finished.id, failedEntry.id])
+})
+
+test('a retention value still waiting for its save is saved when the panel closes', async () => {
+  const { setLogRetention, unmount } = setup()
+  const days = await screen.findByRole('spinbutton', { name: en['logPanel.keepFor'] })
+  await userEvent.clear(days)
+  await userEvent.type(days, '45')
+  expect(setLogRetention).not.toHaveBeenCalled()
+  unmount()
+  expect(setLogRetention).toHaveBeenCalledTimes(1)
+  expect(setLogRetention).toHaveBeenCalledWith(45)
 })
 
 test('a cancelled export shows nothing; a failed one shows the error', async () => {

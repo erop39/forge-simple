@@ -8,7 +8,7 @@ import { createOplog, type Oplog } from '../oplog/oplog'
 import { openDb, type Db } from '../storage/db'
 import type { createImageStore } from '../storage/image-store'
 import { createRepos, type ImageRow } from '../storage/repos'
-import { createRunner } from './runner'
+import { createRunner, RECOVERY_UNLOAD_TIMEOUT_MS } from './runner'
 
 const FINDINGS: ProbeFindings = { shiftField: 'distilled_cfg_scale', modulesAs: 'path', thumbRoute: true }
 const CKPT = 'sd_xl_base.safetensors [abc]'
@@ -877,6 +877,7 @@ describe('recovery after Forge 500s', () => {
     expect(await runOne(h, http500())).toBe('ran')
     expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: { code: 'forgeHttp', status: 500 } })
     expect(h.client.unloadCheckpoint).toHaveBeenCalledTimes(1)
+    expect(h.client.unloadCheckpoint).toHaveBeenCalledWith(RECOVERY_UNLOAD_TIMEOUT_MS)
     const unloaded = h.oplog.list().find((e) => e.messageKey === 'log.recovery.unloaded')
     expect(unloaded).toMatchObject({ level: 'info', category: 'checkpoint', jobId: a.id })
     expect(JSON.stringify(unloaded?.details)).not.toContain('NoneType')

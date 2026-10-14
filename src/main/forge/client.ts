@@ -107,8 +107,8 @@ export interface ForgeClient {
   options(): Promise<Record<string, unknown>>
   /** Forge's launch flags (`/cmd-flags`), e.g. `api_server_stop`. */
   cmdFlags(): Promise<Record<string, unknown>>
-  /** Unloads the current checkpoint; the next generation loads it afresh. */
-  unloadCheckpoint(): Promise<void>
+  /** Unloads the current checkpoint; the next generation loads it afresh. Default timeout: the control timeout. */
+  unloadCheckpoint(timeoutMs?: number): Promise<void>
   /** Asks Forge to restart itself; throws a ForgeError only when the request could not be sent or failed otherwise. */
   restartServer(): Promise<RestartOutcome>
 }
@@ -322,8 +322,8 @@ export function createForgeClient(
       return asObj(await request('GET', `${API}/cmd-flags`, { timeoutMs: listTimeoutMs }), 'cmd-flags')
     },
 
-    async unloadCheckpoint() {
-      await request('POST', `${API}/unload-checkpoint`, { timeoutMs: controlTimeoutMs })
+    async unloadCheckpoint(timeoutMs = controlTimeoutMs) {
+      await request('POST', `${API}/unload-checkpoint`, { timeoutMs })
     },
 
     async restartServer() {
