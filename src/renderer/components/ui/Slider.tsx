@@ -19,7 +19,8 @@ export function Slider({ label, value, min, max, step, onCommit, inline = false 
     <>
       <RadixSlider.Root
         className={styles.root}
-        value={[value]}
+        // A stored value outside the range (e.g. older steps > max) keeps its readout; the thumb clamps.
+        value={[Math.min(max, Math.max(min, value))]}
         min={min}
         max={max}
         step={step}

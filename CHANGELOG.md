@@ -48,5 +48,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dropdown menus with a long list scroll (mouse wheel and keyboard) instead of running off the window; they stay inside the window and open on the selected item.
 - `Ctrl+Enter` also generates from the negative-prompt field.
 - The Images field in the prompt bar no longer overlaps the next control, and the running job's caption stays on one line (shortened with an ellipsis, full text on hover).
-
 - A slow `/sdapi/v1/loras` no longer breaks the catalog: it has a 60 s timeout of its own, and when it fails the catalog loads with no LoRAs and logs a warning.
