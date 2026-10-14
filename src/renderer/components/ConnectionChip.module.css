@@ -36,6 +36,18 @@
   background: var(--blocked);
 }
 
+.name {
+  overflow: hidden;
+  max-width: var(--w-chip-name);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* After a server name the status reads as secondary. */
+.state {
+  color: var(--text-2);
+}
+
 .detail {
   color: var(--text-2);
 }

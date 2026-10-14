@@ -1,6 +1,6 @@
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
-import type { Catalog, ConnectionStatus, GenerationParams, ImageRecord } from '@shared/types'
+import type { Catalog, ConnectionStatus, GenerationParams, ImageRecord, ServerInfo } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
@@ -8,7 +8,9 @@ import type { Oplog } from '../oplog/oplog'
 import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
-import { isGenerationParams, type createRepos, type ImageRow } from '../storage/repos'
+import {
+  DuplicateServerError, hostOf, isGenerationParams, type createRepos, type ImageRow, type Server,
+} from '../storage/repos'
 
 export interface IpcDeps {
   repos: ReturnType<typeof createRepos>
@@ -21,7 +23,8 @@ export interface IpcDeps {
   imagesDir(): string
   /** Builds a throwaway client for a candidate address. */
   createClient(url: string): ForgeClient
-  /** Called after a new server address was saved (e.g. to start the connection monitor). */
+  copyToClipboard(text: string): void
+  /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
   onServerChanged?(): void
 }
 
@@ -47,6 +50,21 @@ function forgeErrorKey(err: unknown): 'error.network' | 'error.notForge' {
 
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
+
+const MAX_SERVER_NAME = 100
+const MAX_SERVER_URL = 2048
+
+/** Checks a server's name and address as sent by the renderer; the address is not normalised yet. */
+function validateServerInput(input: unknown): { name: string; url: string } {
+  if (typeof input !== 'object' || input === null) return fail('error.invalidParams')
+  const { name, url } = input as { name?: unknown; url?: unknown }
+  if (typeof name !== 'string' || typeof url !== 'string') return fail('error.invalidParams')
+  const trimmed = name.trim()
+  if (trimmed.length > MAX_SERVER_NAME || url.length > MAX_SERVER_URL) return fail('error.invalidParams')
+  return { name: trimmed, url }
+}
+
+const toServerInfo = ({ id, name, url, active }: Server): ServerInfo => ({ id, name, url, active })
 
 const MAX_TEXT = 10_000
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
@@ -123,30 +141,132 @@ export function registerIpc(
 
   handle('settings:get', () => ({ serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir() }))
 
-  handle('settings:setServerUrl', async (url): Promise<ConnectionCheck> => {
-    if (typeof url !== 'string') return fail('error.invalidParams')
+  // ---- saved servers ----------------------------------------------------
+
+  const sendServers = (): void => send('servers', repos.servers.list().map(toServerInfo))
+
+  /** Everything that follows the active server: monitor, runner, connection sample, and the log entry. */
+  function activeServerChanged(old: string | null): void {
+    const next = repos.servers.active()?.url ?? null
+    oplog.write({
+      level: 'info', category: 'settings', messageKey: 'log.settings.serverChanged',
+      details: { key: 'serverUrl', old, new: next },
+    })
+    deps.onServerChanged?.()
+    runner.kick()
+    if (next !== null) void deps.monitor.sampleOnce()
+  }
+
+  /** Normalises and pings an address; a failure is a ConnectionCheck, not a rejection. */
+  async function testAddress(url: string): Promise<{ url: string; check: ConnectionCheck }> {
     let normalised: string
     try {
       normalised = normalizeBaseUrl(url)
     } catch {
-      return { ok: false, latencyMs: null, errorKey: 'error.network' }
+      return { url, check: { ok: false, latencyMs: null, errorKey: 'error.network' } }
     }
-    let latencyMs: number
     try {
-      latencyMs = await deps.createClient(normalised).ping()
+      const latencyMs = await deps.createClient(normalised).ping()
+      return { url: normalised, check: { ok: true, latencyMs, errorKey: null } }
     } catch (err) {
-      return { ok: false, latencyMs: null, errorKey: forgeErrorKey(err) }
+      return { url: normalised, check: { ok: false, latencyMs: null, errorKey: forgeErrorKey(err) } }
     }
-    const old = repos.servers.active()?.url ?? null
-    repos.servers.setActiveUrl(normalised)
+  }
+
+  const normalisedOrSelf = (url: string): string => {
+    try {
+      return normalizeBaseUrl(url)
+    } catch {
+      return url
+    }
+  }
+
+  const rethrowDuplicate = (err: unknown): never => {
+    if (err instanceof DuplicateServerError) return fail('error.duplicateServer')
+    throw err
+  }
+
+  /** True when another live server already has this (normalised) address. */
+  const takenByOther = (url: string, id: number | null): boolean =>
+    repos.servers.list().some((s) => s.url === url && s.id !== id)
+
+  handle('servers:list', () => repos.servers.list().map(toServerInfo))
+
+  handle('servers:add', async (input): Promise<ConnectionCheck> => {
+    const { name, url } = validateServerInput(input)
+    if (takenByOther(normalisedOrSelf(url), null)) return fail('error.duplicateServer')
+    const tested = await testAddress(url)
+    if (!tested.check.ok) return tested.check
+    let server: Server
+    try {
+      server = repos.servers.add(name || hostOf(tested.url), tested.url)
+    } catch (err) {
+      return rethrowDuplicate(err)
+    }
     oplog.write({
-      level: 'info', category: 'settings', messageKey: 'log.settings.serverChanged',
-      details: { key: 'serverUrl', old, new: normalised },
+      level: 'info', category: 'server', messageKey: 'log.server.added', details: { name: server.name, url: server.url },
     })
-    deps.onServerChanged?.()
-    runner.kick()
-    void deps.monitor.sampleOnce()
-    return { ok: true, latencyMs, errorKey: null }
+    if (!repos.servers.active()) {
+      repos.servers.activate(server.id)
+      activeServerChanged(null)
+    }
+    sendServers()
+    return tested.check
+  })
+
+  handle('servers:update', async (id, input): Promise<ConnectionCheck> => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const { name, url } = validateServerInput(input)
+    const before = repos.servers.get(id) ?? fail('error.notFound')
+    let next = { name: name || before.name, url: before.url }
+    let check: ConnectionCheck = { ok: true, latencyMs: null, errorKey: null }
+    const urlChanged = normalisedOrSelf(url) !== before.url
+    if (urlChanged) {
+      if (takenByOther(normalisedOrSelf(url), id)) return fail('error.duplicateServer')
+      if (before.active && repos.jobs.hasRunning()) return fail('error.jobRunning')
+      const tested = await testAddress(url)
+      if (!tested.check.ok) return tested.check
+      check = tested.check
+      next = { name: name || hostOf(tested.url), url: tested.url }
+    }
+    try {
+      repos.servers.update(id, next) ?? fail('error.notFound')
+    } catch (err) {
+      return rethrowDuplicate(err)
+    }
+    oplog.write({
+      level: 'info', category: 'server', messageKey: 'log.server.updated',
+      details: { old: { name: before.name, url: before.url }, new: next },
+    })
+    if (before.active && urlChanged) activeServerChanged(before.url)
+    sendServers()
+    return check
+  })
+
+  handle('servers:activate', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const target = repos.servers.get(id) ?? fail('error.notFound')
+    if (target.active) return
+    if (repos.jobs.hasRunning()) return fail('error.jobRunning')
+    const old = repos.servers.active()?.url ?? null
+    repos.servers.activate(id)
+    activeServerChanged(old)
+    sendServers()
+  })
+
+  handle('servers:remove', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const target = repos.servers.get(id) ?? fail('error.notFound')
+    // Only the active server can have a running job.
+    if (target.active && repos.jobs.hasRunning()) return fail('error.jobRunning')
+    const { deletedJobIds } = repos.servers.remove(id) ?? fail('error.notFound')
+    for (const jobId of deletedJobIds) send('job:removed', { id: jobId })
+    oplog.write({
+      level: 'info', category: 'server', messageKey: 'log.server.removed',
+      details: { name: target.name, url: target.url, deletedJobs: deletedJobIds.length },
+    })
+    if (target.active) activeServerChanged(target.url)
+    sendServers()
   })
 
   handle('catalog:get', (refresh) => loadCatalog(refresh === true))
@@ -186,6 +306,8 @@ export function registerIpc(
     if (job.status !== 'failed' && job.status !== 'interrupted' && job.status !== 'cancelled') {
       return fail('error.invalidParams')
     }
+    // A job of a removed server is retried on the active one; without one there is nowhere to run it.
+    if (!repos.servers.get(job.serverId)) requireServer()
     return runner.retry(id)
   })
 
@@ -200,6 +322,18 @@ export function registerIpc(
     const rows = repos.images.list(beforeId === undefined ? { limit: clamped } : { limit: clamped, beforeId })
     const dir = deps.imagesDir()
     return rows.map((r) => toImageRecord(r, dir))
+  })
+
+  handle('images:details', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const row = repos.images.get(id) ?? fail('error.notFound')
+    const job = repos.jobs.get(row.jobId) ?? fail('error.notFound')
+    return { image: toImageRecord(row, deps.imagesDir()), params: validateEnqueue(job.params), jobType: job.type }
+  })
+
+  handle('clipboard:writeText', (value) => {
+    if (typeof value !== 'string' || value.length > MAX_TEXT) return fail('error.invalidParams')
+    deps.copyToClipboard(value)
   })
 
   handle('images:delete', async (id) => {

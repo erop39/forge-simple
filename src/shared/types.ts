@@ -33,6 +33,8 @@ export interface ImageRecord {
   width: number; height: number; seed: number; infotext: string;
   createdAt: number; durationMs: number | null; hidden: boolean; sourceImageId: number | null;
 }
+/** Saved image with the exact settings from its generation job. */
+export interface ImageDetails { image: ImageRecord; params: GenerationParams; jobType: JobType }
 export interface JobProgress {
   jobId: number; step: number; totalSteps: number;
   stage: 'sampling' | 'hires' | 'upscaling';
@@ -55,3 +57,5 @@ export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[];
   /** Per-preset default module lists from the server's options (full paths). */
   familyModules: Partial<Record<Family, string[]>> }
 export interface PartStatus { role: 'model' | 'module'; value: string; found: boolean }
+/** A saved Forge server as the renderer sees it. Exactly one (or none) is active. */
+export interface ServerInfo { id: number; name: string; url: string; active: boolean }

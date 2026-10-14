@@ -34,6 +34,22 @@ test('queuePosition counts from 1 among queued jobs and is null otherwise', () =
   expect(items[1]).toMatchObject({ progress: null })
 })
 
+test('queued jobs of another server follow the active queue, unnumbered and marked waiting', () => {
+  const other = (id: number): Job => ({ ...job(id, 'queued'), serverId: 2 })
+  const jobs = Object.fromEntries([other(1), job(2, 'queued'), other(3), job(4, 'queued'), job(5, 'failed')].map((j) => [j.id, j]))
+  const items = galleryItems(jobs, {}, [], 1)
+  expect(label(items)).toEqual(['job2', 'job4', 'job1', 'job3', 'job5'])
+  expect(items.map((i) => (i.kind === 'job' ? [i.queuePosition, i.waiting] : null))).toEqual([
+    [1, false], [2, false], [null, true], [null, true], [null, false],
+  ])
+})
+
+test('with no active server every queued job waits; without a server id none does', () => {
+  const jobs = { 1: job(1, 'queued') }
+  expect(galleryItems(jobs, {}, [], null)[0]).toMatchObject({ waiting: true, queuePosition: null })
+  expect(galleryItems(jobs, {}, [])[0]).toMatchObject({ waiting: false, queuePosition: 1 })
+})
+
 test('layoutColumns keeps the order within each column and loses no item', () => {
   const items = Array.from({ length: 9 }, (_, i) => i)
   const columns = layoutColumns(items, 3, () => 1)

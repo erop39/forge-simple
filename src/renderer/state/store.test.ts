@@ -1,6 +1,6 @@
 import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
-  Catalog, GenerationParams, ImageRecord, Job, JobProgress, PartStatus,
+  Catalog, GenerationParams, ImageRecord, Job, JobProgress, PartStatus, ServerInfo,
 } from '@shared/types'
 import { createAppStore } from './store'
 
@@ -32,6 +32,7 @@ const image = (id: number): ImageRecord => ({
 const progress = (jobId: number): JobProgress => ({
   jobId, step: 3, totalSteps: 20, stage: 'sampling', stepsPerSec: 2, elapsedMs: 1000, preview: null,
 })
+const home: ServerInfo = { id: 1, name: 'Home', url: 'http://127.0.0.1:7861', active: true }
 const connected = { state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 } as const
 
 function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
@@ -40,7 +41,13 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
   const api = {
     settings: {
       get: vi.fn(async () => ({ serverUrl: over.serverUrl === undefined ? 'http://127.0.0.1:7861' : over.serverUrl, imagesDir: 'C:\\images' })),
-      setServerUrl: vi.fn(async (): Promise<ConnectionCheck> => ({ ok: true, latencyMs: 12, errorKey: null })),
+    },
+    servers: {
+      list: vi.fn(async (): Promise<ServerInfo[]> => (over.serverUrl === null ? [] : [home])),
+      add: vi.fn(async (): Promise<ConnectionCheck> => ({ ok: true, latencyMs: 12, errorKey: null })),
+      update: vi.fn(async (): Promise<ConnectionCheck> => ({ ok: true, latencyMs: null, errorKey: null })),
+      remove: vi.fn(async () => {}),
+      activate: vi.fn(async () => {}),
     },
     catalog: {
       get: vi.fn(async () => cat),
@@ -82,6 +89,22 @@ test('init loads settings, catalog, active jobs and images, and picks the loaded
   expect(s.images.map((i) => i.id)).toEqual([5, 4])
   expect(s.catalog?.checkpoints).toHaveLength(2)
   expect(s.params?.checkpoint).toBe('b.safetensors')
+  expect(s.servers).toEqual([home])
+})
+
+test('typing before catalog load survives selection of the initial checkpoint', async () => {
+  const fake = fakeApi()
+  let releaseCatalog: (value: Catalog) => void = () => {}
+  fake.api.catalog.get.mockImplementationOnce(() => new Promise<Catalog>((resolve) => { releaseCatalog = resolve }))
+  const store = createAppStore(fake.api)
+  store.getState().setParams({ prompt: 'a fox' })
+  expect(store.getState().draftPrompt).toBe('a fox')
+  const loading = store.getState().init()
+  await vi.waitFor(() => expect(fake.api.catalog.get).toHaveBeenCalledTimes(1))
+  expect(store.getState().params).toBeNull()
+  releaseCatalog(catalog())
+  await loading
+  expect(store.getState().params?.prompt).toBe('a fox')
 })
 
 test('init falls back to the first checkpoint when the loaded one is not listed', async () => {
@@ -101,7 +124,7 @@ test('init is safe to call twice: one load, one set of subscriptions', async () 
   const { api, store } = await ready()
   await store.getState().init()
   expect(api.settings.get).toHaveBeenCalledTimes(1)
-  expect(api.on).toHaveBeenCalledTimes(5)
+  expect(api.on).toHaveBeenCalledTimes(7)
 })
 
 test('params stay null when the catalog has no checkpoints', async () => {
@@ -178,6 +201,16 @@ test('selectCheckpoint keeps the prompt and swaps the rest for family defaults',
   expect(p?.negativePrompt).toBe('blurry')
 })
 
+test('selectCheckpoint preserves the chosen image ratio across model families', async () => {
+  const { api, store } = await ready()
+  store.getState().setParams({ width: 896, height: 1152 })
+  api.catalog.defaults.mockResolvedValueOnce(paramsFor('a.safetensors', {
+    family: 'krea2', width: 1024, height: 1024,
+  }))
+  await store.getState().selectCheckpoint('a.safetensors')
+  expect(store.getState().params).toMatchObject({ width: 896, height: 1152 })
+})
+
 test('selectCheckpoint refreshes the parts list', async () => {
   const { api, store } = await ready()
   const parts: PartStatus[] = [{ role: 'model', value: 'a.safetensors', found: true }]
@@ -249,24 +282,142 @@ test('a rejected cancel is reported through lastError', async () => {
   expect(store.getState().lastError).toBe('error.invalidParams')
 })
 
-test('setServerUrl on success refreshes settings and the catalog and selects a checkpoint', async () => {
+test('addServer on success refreshes settings, servers and the catalog and selects a checkpoint', async () => {
   const { api, store } = await ready({ serverUrl: null })
   api.settings.get.mockResolvedValueOnce({ serverUrl: 'http://127.0.0.1:7861', imagesDir: 'C:\\images' })
-  const check = await store.getState().setServerUrl('127.0.0.1:7861')
+  api.servers.list.mockResolvedValueOnce([home])
+  const check = await store.getState().addServer({ name: 'Home', url: '127.0.0.1:7861' })
   expect(check.ok).toBe(true)
+  expect(api.servers.add).toHaveBeenCalledWith({ name: 'Home', url: '127.0.0.1:7861' })
   expect(store.getState().settings?.serverUrl).toBe('http://127.0.0.1:7861')
+  expect(store.getState().servers).toEqual([home])
   expect(store.getState().catalog).not.toBeNull()
   expect(store.getState().params?.checkpoint).toBe('b.safetensors')
 })
 
-test('setServerUrl on failure returns the check and changes nothing else', async () => {
+test('addServer on failure returns the check and changes nothing else', async () => {
   const { api, store } = await ready({ serverUrl: null })
-  api.settings.setServerUrl.mockResolvedValueOnce({ ok: false, latencyMs: null, errorKey: 'error.network' })
+  api.servers.add.mockResolvedValueOnce({ ok: false, latencyMs: null, errorKey: 'error.network' })
   api.settings.get.mockClear()
-  const check = await store.getState().setServerUrl('nowhere')
+  const check = await store.getState().addServer({ name: '', url: 'nowhere' })
   expect(check).toEqual({ ok: false, latencyMs: null, errorKey: 'error.network' })
   expect(api.settings.get).not.toHaveBeenCalled()
   expect(store.getState().catalog).toBeNull()
+})
+
+test('adding an inactive server does not reload the catalog', async () => {
+  const { api, store } = await ready()
+  api.catalog.get.mockClear()
+  await store.getState().addServer({ name: 'Other', url: 'http://other.test' })
+  expect(api.catalog.get).not.toHaveBeenCalled()
+})
+
+test('activateServer switches: settings, servers and the catalog of the new server are loaded', async () => {
+  const { api, store } = await ready()
+  const other: ServerInfo = { id: 2, name: 'Other', url: 'http://other.test', active: true }
+  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images' })
+  api.servers.list.mockResolvedValueOnce([{ ...home, active: false }, other])
+  api.catalog.get.mockClear()
+  await store.getState().activateServer(2)
+  expect(api.servers.activate).toHaveBeenCalledWith(2)
+  expect(store.getState().settings?.serverUrl).toBe(other.url)
+  expect(store.getState().servers.find((s) => s.active)?.id).toBe(2)
+  expect(api.catalog.get).toHaveBeenCalledTimes(1)
+})
+
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => { resolve = r })
+  return { promise, resolve }
+}
+
+test('a server switch drops the old params at once, keeps the prompt, and a late old response cannot win', async () => {
+  const { api, store } = await ready()
+  store.getState().setParams({ prompt: 'a lighthouse' })
+  const oldDefaults = deferred<GenerationParams>()
+  api.catalog.defaults.mockReturnValueOnce(oldDefaults.promise)
+  const oldPick = store.getState().selectCheckpoint('a.safetensors')
+  const other: ServerInfo = { id: 2, name: 'Other', url: 'http://other.test', active: true }
+  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images' })
+  api.servers.list.mockResolvedValueOnce([{ ...home, active: false }, other])
+  const next = deferred<Catalog>()
+  api.catalog.get.mockReturnValueOnce(next.promise)
+  // The switch returns without waiting for the new catalog.
+  await store.getState().activateServer(2)
+  expect(store.getState().params).toBeNull()
+  expect(store.getState().draftPrompt).toBe('a lighthouse')
+  await store.getState().generate()
+  expect(api.jobs.enqueue).not.toHaveBeenCalled()
+  oldDefaults.resolve(paramsFor('a.safetensors'))
+  await oldPick
+  expect(store.getState().params).toBeNull()
+  next.resolve(catalog({ checkpoints: [{ title: 'c.safetensors', name: 'c', filename: 'c.safetensors', family: 'sdxl' }], loadedCheckpoint: null }))
+  await vi.waitFor(() => expect(store.getState().params?.checkpoint).toBe('c.safetensors'))
+  expect(store.getState().params?.prompt).toBe('a lighthouse')
+})
+
+test('a superseded checkpoint choice that fails does not report an error', async () => {
+  const { api, store } = await ready()
+  let rejectFirst!: (e: Error) => void
+  api.catalog.defaults.mockReturnValueOnce(new Promise<GenerationParams>((_, r) => { rejectFirst = r }))
+  const a = store.getState().selectCheckpoint('a.safetensors')
+  await store.getState().selectCheckpoint('b.safetensors')
+  rejectFirst(new Error('error.network'))
+  await a
+  expect(store.getState().lastError).toBeNull()
+  expect(store.getState().params?.checkpoint).toBe('b.safetensors')
+})
+
+test('the last checkpoint choice wins when an older defaults response resolves later', async () => {
+  const { api, store } = await ready()
+  const first = deferred<GenerationParams>()
+  const second = deferred<GenerationParams>()
+  api.catalog.defaults.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  const a = store.getState().selectCheckpoint('a.safetensors')
+  const b = store.getState().selectCheckpoint('b.safetensors')
+  second.resolve(paramsFor('b.safetensors'))
+  await b
+  first.resolve(paramsFor('a.safetensors'))
+  await a
+  expect(store.getState().params?.checkpoint).toBe('b.safetensors')
+})
+
+test('activateServer passes a refusal on to the caller', async () => {
+  const { api, store } = await ready()
+  api.servers.activate.mockRejectedValueOnce(new Error('error.jobRunning'))
+  await expect(store.getState().activateServer(2)).rejects.toThrow('error.jobRunning')
+})
+
+test('removing the active server clears the catalog and the parameters', async () => {
+  const { api, store } = await ready()
+  api.settings.get.mockResolvedValueOnce({ serverUrl: null, imagesDir: 'C:\\images' })
+  api.servers.list.mockResolvedValueOnce([])
+  await store.getState().removeServer(1)
+  expect(api.servers.remove).toHaveBeenCalledWith(1)
+  const s = store.getState()
+  expect(s.settings?.serverUrl).toBeNull()
+  expect(s.servers).toEqual([])
+  expect(s.catalog).toBeNull()
+  expect(s.params).toBeNull()
+})
+
+test('updateServer saves through the api and refreshes the list', async () => {
+  const { api, store } = await ready()
+  api.servers.list.mockResolvedValueOnce([{ ...home, name: 'Renamed' }])
+  const check = await store.getState().updateServer(1, { name: 'Renamed', url: home.url })
+  expect(check.ok).toBe(true)
+  expect(api.servers.update).toHaveBeenCalledWith(1, { name: 'Renamed', url: home.url })
+  expect(store.getState().servers[0]?.name).toBe('Renamed')
+})
+
+test('a servers event replaces the list; job:removed drops the job and its progress', async () => {
+  const { store, emit } = await ready()
+  emit('servers', [])
+  expect(store.getState().servers).toEqual([])
+  emit('job:progress', progress(2))
+  emit('job:removed', { id: 2 })
+  expect(store.getState().jobs[2]).toBeUndefined()
+  expect(store.getState().progress[2]).toBeUndefined()
 })
 
 test('togglePanel flips panelOpen', async () => {
@@ -275,10 +426,10 @@ test('togglePanel flips panelOpen', async () => {
   expect(store.getState().panelOpen).toBe(true)
 })
 
-test('setServerUrl reports a failure when the settings refresh fails after an ok check', async () => {
+test('addServer reports a failure when the refresh fails after an ok check', async () => {
   const { api, store } = await ready({ serverUrl: null })
   api.settings.get.mockRejectedValueOnce(new Error('error.unexpected'))
-  const check = await store.getState().setServerUrl('127.0.0.1:7861')
+  const check = await store.getState().addServer({ name: '', url: '127.0.0.1:7861' })
   expect(check).toEqual({ ok: false, latencyMs: null, errorKey: 'error.unexpected' })
   expect(store.getState().settings?.serverUrl).toBeNull()
 })

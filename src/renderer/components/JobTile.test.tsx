@@ -24,6 +24,15 @@ test('queued tile shows "queued · 2" and a Cancel button', async () => {
   expect(cancelJob).toHaveBeenCalledWith(3)
 })
 
+test('a queued tile of another server says which server it waits for instead of its place', async () => {
+  const cancelJob = vi.fn(async () => {})
+  renderWithStore(<JobTile job={job('queued')} progress={null} queuePosition={null} waitingFor="Studio" />, 'sdxl', { cancelJob })
+  expect(screen.getByText('Waiting for Studio')).toBeDefined()
+  expect(screen.queryByText(/queued ·/)).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: en['job.cancel'] }))
+  expect(cancelJob).toHaveBeenCalledWith(3)
+})
+
 test('running tile shows stage, "step 5/8", speed and elapsed seconds', () => {
   renderWithStore(<JobTile job={job('running')} progress={progress()} queuePosition={null} />)
   expect(screen.getByText('Sampling · step 5/8 · 2.3 it/s · 12 s')).toBeDefined()

@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Saved Forge servers: the server dialog lists them with a name and address, adds, edits and deletes them, and switches the active one with one click (not while a job runs). The connection chip shows the active server's name. Queued jobs stay with their server; those of an inactive server show "Waiting for <name>". Deleting a server removes its queued jobs and keeps its images.
+- Full-window image viewer opened from a finished gallery tile, with the saved full-resolution PNG, generation settings below it, and a Copy prompt button backed by the system clipboard.
+- Gallery navigation in the image viewer with previous/next icons and Left/Right keys. Moving past the oldest loaded image fetches the next page; the counter shows the number currently loaded. The header keeps clear of Windows' caption buttons and the arrows take real mouse clicks.
 - Application scaffold: Electron + React + TypeScript with electron-vite, a vitest runner that uses Electron's ABI for better-sqlite3, and a dark frameless main window.
 - `tools/probe/probe.mjs`, a script that probes a live Forge instance and records its API behaviour; missing option keys are reported as `null`.
 - String catalog and typed message lookup (`t()`), shared domain types, and a test that rejects user-visible string literals in renderer components.
@@ -45,6 +48,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Switching checkpoints preserves the selected width and height, including custom sizes and aspect ratios; the initial checkpoint still uses its model family's defaults.
+- The prompt field now appears at startup while the model catalog loads; text typed before the first model is ready is kept.
 - Dropdown menus with a long list scroll (mouse wheel and keyboard) instead of running off the window; they stay inside the window and open on the selected item.
 - `Ctrl+Enter` also generates from the negative-prompt field.
 - The Images field in the prompt bar no longer overlaps the next control, and the running job's caption stays on one line (shortened with an ellipsis, full text on hover).

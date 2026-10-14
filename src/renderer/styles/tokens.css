@@ -29,6 +29,7 @@
   --h-control: 28px;
   --h-bar: 32px;
   --h-topbar: 44px;
+  --w-caption-controls: 140px;
   /* Tallest a dropdown menu gets before it scrolls. */
   --h-menu-max: 420px;
   --gap-tile: 6px;
@@ -43,6 +44,8 @@
   --font-mono: 'JetBrains Mono', monospace;
 
   --panel-w: 320px;
+  /* Widest the server name in the connection chip gets before it is cut. */
+  --w-chip-name: 180px;
 
   /* One z-index scale: panel < prompt bar < menus < dialogs < tooltips. */
   --z-panel: 10;

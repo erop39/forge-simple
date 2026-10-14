@@ -57,6 +57,11 @@
   min-height: var(--h-bar);
 }
 
+.pending {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
 /* The model select takes what is left and ellipsizes; below its basis the controls drop to a second line. */
 .row > :first-child {
   flex: 1 1 200px;

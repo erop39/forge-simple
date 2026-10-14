@@ -83,7 +83,10 @@ function GrowingField({ id, value, label, placeholder, className, onChange, onKe
 
 export function PromptBar() {
   const params = useAppStore((s) => s.params)
+  const draftPrompt = useAppStore((s) => s.draftPrompt)
   const catalog = useAppStore((s) => s.catalog)
+  const catalogError = useAppStore((s) => s.catalogError)
+  const settings = useAppStore((s) => s.settings)
   const panelOpen = useAppStore((s) => s.panelOpen)
   const setParams = useAppStore((s) => s.setParams)
   const selectCheckpoint = useAppStore((s) => s.selectCheckpoint)
@@ -106,15 +109,19 @@ export function PromptBar() {
     observer.current.observe(el)
   }, [])
 
-  if (!params || !catalog) return null
-  const profile = PROFILES[params.family]
-  const blank = params.prompt.trim() === ''
-  const area = profile.defaults.width * profile.defaults.height
-  const ratio = currentRatio(params, area)
+  const prompt = params?.prompt ?? draftPrompt
+  // The catalog can take time to load, especially its optional LoRA list. The writing field stays
+  // usable meanwhile; model-dependent controls appear once the store carries the draft into a model.
+  const model = params !== null && catalog !== null ? { params, catalog, profile: PROFILES[params.family] } : null
+  const loading = model === null && (settings === null || settings.serverUrl !== null)
+    && catalog === null && catalogError === null
+  const blank = prompt.trim() === ''
+  const area = model ? model.profile.defaults.width * model.profile.defaults.height : 0
+  const ratio = model ? currentRatio(model.params, area) : CUSTOM_RATIO
 
   function submit(): void {
-    if (!params || blank) return
-    writeLastPrompt(params.prompt)
+    if (!model || blank) return
+    writeLastPrompt(model.params.prompt)
     void generate()
   }
 
@@ -129,7 +136,7 @@ export function PromptBar() {
 
   function onPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (submitOnCtrlEnter(event)) return
-    if (event.key === 'ArrowUp' && params?.prompt === '') {
+    if (event.key === 'ArrowUp' && prompt === '') {
       const last = readLastPrompt()
       if (last !== '') {
         event.preventDefault()
@@ -143,11 +150,11 @@ export function PromptBar() {
 
   return (
     <div ref={publishHeight} className={`${styles.bar} ${panelOpen ? styles.shifted : ''}`}>
-      {profile.negative && negativeOpen && (
+      {model?.profile.negative && negativeOpen && (
         <GrowingField
           id={negativeId}
           className={`${styles.field} ${styles.negativeField}`}
-          value={params.negativePrompt}
+          value={model.params.negativePrompt}
           label={t('prompt.negative')}
           placeholder={t('prompt.negativePlaceholder')}
           onChange={(negativePrompt) => setParams({ negativePrompt })}
@@ -156,69 +163,76 @@ export function PromptBar() {
       )}
       <GrowingField
         className={styles.field}
-        value={params.prompt}
+        value={prompt}
         label={t('prompt.placeholder')}
         placeholder={t('prompt.placeholder')}
-        onChange={(prompt) => setParams({ prompt })}
+        onChange={(value) => setParams({ prompt: value })}
         onKeyDown={onPromptKeyDown}
       />
       <div className={styles.row}>
-        <Select
-          grow
-          label={t('params.model')}
-          value={params.checkpoint}
-          options={checkpointOptions(catalog.checkpoints)}
-          onChange={(title) => void selectCheckpoint(title)}
-        />
-        <div className={styles.controls}>
+        {model ? (
           <Select
-            label={t('prompt.ratio')}
-            value={ratio}
-            options={ratioOptions}
-            onChange={(value) => {
-              const picked = RATIOS.find((r) => ratioValue(r) === value)
-              if (picked) setParams(dimsForRatio(picked, area))
-            }}
+            grow
+            label={t('params.model')}
+            value={model.params.checkpoint}
+            options={checkpointOptions(model.catalog.checkpoints)}
+            onChange={(title) => void selectCheckpoint(title)}
           />
-          <Slider
-            inline
-            label={t('prompt.steps')}
-            value={params.steps}
-            min={1}
-            max={150}
-            step={1}
-            onCommit={(steps) => setParams({ steps })}
-          />
-          <NumberField
-            inline
-            label={t('prompt.images')}
-            value={params.count}
-            min={1}
-            max={8}
-            onCommit={(count) => setParams({ count })}
-          />
-          {profile.negative && (
-            <Button
-              aria-expanded={negativeOpen}
-              aria-controls={negativeOpen ? negativeId : undefined}
-              onClick={() => setNegativeOpen((open) => !open)}
-            >
-              {t('prompt.negative')}
-            </Button>
+        ) : loading && <span role="status" className={styles.pending}>{t('prompt.loadingModels')}</span>}
+        <div className={styles.controls}>
+          {model && (
+            <>
+              <Select
+                label={t('prompt.ratio')}
+                value={ratio}
+                options={ratioOptions}
+                onChange={(value) => {
+                  const picked = RATIOS.find((r) => ratioValue(r) === value)
+                  if (picked) setParams(dimsForRatio(picked, area))
+                }}
+              />
+              <Slider
+                inline
+                label={t('prompt.steps')}
+                value={model.params.steps}
+                min={1}
+                max={150}
+                step={1}
+                onCommit={(steps) => setParams({ steps })}
+              />
+              <NumberField
+                inline
+                label={t('prompt.images')}
+                value={model.params.count}
+                min={1}
+                max={8}
+                onCommit={(count) => setParams({ count })}
+              />
+              {model.profile.negative && (
+                <Button
+                  aria-expanded={negativeOpen}
+                  aria-controls={negativeOpen ? negativeId : undefined}
+                  onClick={() => setNegativeOpen((open) => !open)}
+                >
+                  {t('prompt.negative')}
+                </Button>
+              )}
+              <IconButton
+                id={PARAMS_TOGGLE_ID}
+                label={t('prompt.allParams')}
+                icon={<SlidersHorizontal size={20} />}
+                aria-expanded={panelOpen}
+                aria-controls={PARAMS_PANEL_ID}
+                onClick={togglePanel}
+              />
+            </>
           )}
-          <IconButton
-            id={PARAMS_TOGGLE_ID}
-            label={t('prompt.allParams')}
-            icon={<SlidersHorizontal size={20} />}
-            aria-expanded={panelOpen}
-            aria-controls={PARAMS_PANEL_ID}
-            onClick={togglePanel}
-          />
           <Button
             variant="primary"
             className={styles.generate}
             aria-label={t('prompt.generate')}
-            aria-disabled={blank}
+            disabled={model === null}
+            aria-disabled={model ? blank : undefined}
             icon={<ArrowUp size={16} />}
             onClick={submit}
           />

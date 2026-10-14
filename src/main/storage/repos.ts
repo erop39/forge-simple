@@ -1,13 +1,23 @@
-import type { GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType } from '@shared/types'
+import type { GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType, ServerInfo } from '@shared/types'
 import type { Db } from './db'
 
-export interface Server { id: number; name: string; url: string; active: boolean; lastConnectedAt: number | null }
+export interface Server extends ServerInfo { lastConnectedAt: number | null }
 export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl'> { filePath: string; thumbPath: string }
 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
 type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'>
 
-interface ServerSql { id: number; name: string; url: string; active: number; last_connected_at: number | null }
+/** Another saved (not removed) server already has that address. */
+export class DuplicateServerError extends Error {
+  constructor() {
+    super('A saved server already has this address')
+    this.name = 'DuplicateServerError'
+  }
+}
+
+interface ServerSql {
+  id: number; name: string; url: string; active: number; last_connected_at: number | null; removed_at: number | null
+}
 interface JobSql {
   id: number; server_id: number; type: JobType; status: JobStatus; params: string; error: string | null
   created_at: number; finished_at: number | null; duration_ms: number | null
@@ -21,6 +31,7 @@ interface ImageSql {
 
 const FINISHED: readonly JobStatus[] = ['done', 'failed', 'interrupted', 'cancelled']
 
+/** The SQL row maps to the domain type; `removed_at` stays inside the repo. */
 const toServer = (r: ServerSql): Server => ({
   id: r.id, name: r.name, url: r.url, active: r.active === 1, lastConnectedAt: r.last_connected_at,
 })
@@ -68,7 +79,7 @@ const toImage = (r: ImageSql): ImageRow => ({
   hidden: r.hidden === 1, sourceImageId: r.source_image_id,
 })
 
-function hostOf(url: string): string {
+export function hostOf(url: string): string {
   try {
     return new URL(url).hostname || url
   } catch {
@@ -86,22 +97,94 @@ export function createRepos(db: Db, now: () => number) {
     return r ? toJob(r) : null
   }
 
+  const liveById = db.prepare('SELECT * FROM servers WHERE id = ? AND removed_at IS NULL')
+  const getServer = (id: number): Server | null => {
+    const r = liveById.get(id) as ServerSql | undefined
+    return r ? toServer(r) : null
+  }
+  /** The row holding `url`, live or removed. */
+  const rowByUrl = (url: string): ServerSql | undefined => serverByUrl.get(url) as ServerSql | undefined
+
+  function activate(id: number): Server | null {
+    if (!getServer(id)) return null
+    db.prepare('UPDATE servers SET active = 0 WHERE active = 1').run()
+    db.prepare('UPDATE servers SET active = 1, last_connected_at = ? WHERE id = ?').run(now(), id)
+    return getServer(id)
+  }
+
+  // Removed servers keep their row (jobs and images reference it) and are invisible everywhere else.
+  // Their url still holds the UNIQUE slot: adding it again revives the row; another server taking it
+  // over moves the removed row's url aside.
   const servers = {
     active(): Server | null {
-      const r = db.prepare('SELECT * FROM servers WHERE active = 1').get() as ServerSql | undefined
+      const r = db.prepare('SELECT * FROM servers WHERE active = 1 AND removed_at IS NULL').get() as ServerSql | undefined
       return r ? toServer(r) : null
     },
+    /** A live (not removed) server, or null. */
+    get: getServer,
+    list(): Server[] {
+      const rows = db.prepare('SELECT * FROM servers WHERE removed_at IS NULL ORDER BY name COLLATE NOCASE, id')
+        .all() as ServerSql[]
+      return rows.map(toServer)
+    },
+    /** Adds an inactive server. Throws DuplicateServerError when a live server already has this url. */
+    add(name: string, url: string): Server {
+      return db.transaction((): Server => {
+        const existing = rowByUrl(url)
+        if (existing && existing.removed_at === null) throw new DuplicateServerError()
+        if (existing) {
+          db.prepare('UPDATE servers SET name = ?, active = 0, removed_at = NULL WHERE id = ?').run(name, existing.id)
+          return getServer(existing.id) as Server
+        }
+        const res = db.prepare('INSERT INTO servers (name, url, active) VALUES (?, ?, 0)').run(name, url)
+        return getServer(Number(res.lastInsertRowid)) as Server
+      })()
+    },
+    /** Null when there is no such live server; throws DuplicateServerError when another live server has the url. */
+    update(id: number, patch: { name: string; url: string }): Server | null {
+      return db.transaction((): Server | null => {
+        if (!getServer(id)) return null
+        const holder = rowByUrl(patch.url)
+        if (holder && holder.id !== id) {
+          if (holder.removed_at === null) throw new DuplicateServerError()
+          db.prepare('UPDATE servers SET url = ? WHERE id = ?').run(`${holder.url}#removed-${holder.id}`, holder.id)
+        }
+        db.prepare('UPDATE servers SET name = ?, url = ? WHERE id = ?').run(patch.name, patch.url, id)
+        return getServer(id)
+      })()
+    },
+    /** Makes `id` the only active server; null when there is no such live server. */
+    activate(id: number): Server | null {
+      return db.transaction(() => activate(id))()
+    },
+    /**
+     * Soft-deletes a server and deletes its queued jobs and stored checkpoint families; finished jobs
+     * and images stay. Null when there is no such live server.
+     */
+    remove(id: number): { server: Server; deletedJobIds: number[] } | null {
+      return db.transaction(() => {
+        const server = getServer(id)
+        if (!server) return null
+        const queued = db.prepare("SELECT id FROM jobs WHERE server_id = ? AND status = 'queued' ORDER BY id")
+          .all(id) as { id: number }[]
+        db.prepare("DELETE FROM jobs WHERE server_id = ? AND status = 'queued'").run(id)
+        db.prepare('DELETE FROM checkpoint_meta WHERE server_id = ?').run(id)
+        db.prepare('UPDATE servers SET active = 0, removed_at = ? WHERE id = ?').run(now(), id)
+        return { server, deletedJobIds: queued.map((r) => r.id) }
+      })()
+    },
+    /** Activates the server with `url`, adding it (named after its host) or reviving it as needed. */
     setActiveUrl(url: string): Server {
       return db.transaction((): Server => {
-        db.prepare('UPDATE servers SET active = 0 WHERE active = 1').run()
-        const existing = serverByUrl.get(url) as ServerSql | undefined
+        const existing = rowByUrl(url)
+        let id: number
         if (existing) {
-          db.prepare('UPDATE servers SET active = 1, last_connected_at = ? WHERE id = ?').run(now(), existing.id)
+          id = existing.id
+          db.prepare('UPDATE servers SET removed_at = NULL WHERE id = ?').run(id)
         } else {
-          db.prepare('INSERT INTO servers (name, url, active, last_connected_at) VALUES (?, ?, 1, ?)')
-            .run(hostOf(url), url, now())
+          id = Number(db.prepare('INSERT INTO servers (name, url, active) VALUES (?, ?, 0)').run(hostOf(url), url).lastInsertRowid)
         }
-        return toServer(serverByUrl.get(url) as ServerSql)
+        return activate(id) as Server
       })()
     },
   }
@@ -133,6 +216,9 @@ export function createRepos(db: Db, now: () => number) {
       if (res.changes === 0) throw new Error(`Job ${id} not found`)
       return getJob(id) as Job
     },
+    hasRunning(): boolean {
+      return db.prepare("SELECT 1 FROM jobs WHERE status = 'running' LIMIT 1").get() !== undefined
+    },
     listActive(): Job[] {
       const rows = db.prepare(
         "SELECT * FROM jobs WHERE status IN ('queued', 'running', 'failed', 'interrupted') ORDER BY id",
@@ -146,6 +232,10 @@ export function createRepos(db: Db, now: () => number) {
   }
 
   const images = {
+    get(id: number): ImageRow | null {
+      const row = imageById.get(id) as ImageSql | undefined
+      return row ? toImage(row) : null
+    },
     insert(row: NewImage): ImageRow {
       const res = db.prepare(
         `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms)

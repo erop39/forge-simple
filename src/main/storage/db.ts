@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 export type Db = Database.Database
 
 // Ordered migrations: index i upgrades user_version i to i + 1. Append new ones, never edit applied ones.
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: readonly string[] = [
   `
 CREATE TABLE servers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE,
   active INTEGER NOT NULL DEFAULT 0, last_connected_at INTEGER);
@@ -22,6 +22,8 @@ CREATE TABLE oplog (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, level TEXT NO
   message_key TEXT NOT NULL, duration_ms INTEGER, job_id INTEGER, details TEXT NOT NULL);
 CREATE INDEX oplog_time ON oplog(time);
 `,
+  // 2: saved servers are soft-deleted (jobs and images keep pointing at them).
+  `ALTER TABLE servers ADD COLUMN removed_at INTEGER;`,
 ]
 
 export function openDb(path: string): Db {

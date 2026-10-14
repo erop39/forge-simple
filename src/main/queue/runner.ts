@@ -164,7 +164,10 @@ export function createRunner(deps: RunnerDeps): {
     if (job.status !== 'failed' && job.status !== 'interrupted' && job.status !== 'cancelled') {
       throw new Error(`Job ${jobId} cannot be retried while ${job.status}`)
     }
-    const clone = repos.jobs.insert(job.serverId, job.type, job.params)
+    // A job keeps its server, unless that server was removed: then it goes to the active one.
+    const serverId = repos.servers.get(job.serverId)?.id ?? repos.servers.active()?.id
+    if (serverId === undefined) throw new Error('No active server')
+    const clone = repos.jobs.insert(serverId, job.type, job.params)
     log({ level: 'info', category: 'queue', messageKey: 'log.queue.retried', jobId: clone.id, details: { type: clone.type, originalJobId: jobId } })
     kick()
     return clone
@@ -230,6 +233,8 @@ export function createRunner(deps: RunnerDeps): {
       }
       resumeIfPaused() // both ping and catalog succeeded
       if (epoch !== stopEpoch) return 'idle'
+      // The active server changed while we were waiting: the job waits for its own server.
+      if (repos.servers.active()?.id !== server.id) return 'idle'
 
       // The job may have been cancelled while we were waiting for the network.
       const job = repos.jobs.get(queued.id)

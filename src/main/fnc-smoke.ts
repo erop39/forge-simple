@@ -6,7 +6,7 @@ import { app, net, type BrowserWindow } from 'electron'
 const SCRIPT = (server: string): string => `(async () => {
   const out = {}
   const step = async (name, fn) => { try { out[name] = await fn() } catch (e) { out[name] = { threw: e && e.message } } }
-  await step('setServerUrl', () => window.api.settings.setServerUrl(${JSON.stringify(server)}))
+  await step('addServer', () => window.api.servers.add({ name: 'smoke', url: ${JSON.stringify(server)} }))
   let catalog
   await step('catalog', async () => { catalog = await window.api.catalog.get(); return { checkpoints: catalog.checkpoints.length } })
   let params

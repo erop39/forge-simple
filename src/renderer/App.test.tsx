@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Api, ConnectionCheck } from '@shared/ipc'
 import { defaultParams } from '@shared/profiles'
-import type { Catalog } from '@shared/types'
+import type { Catalog, ServerInfo } from '@shared/types'
 import { App } from './App'
 import { en } from './locales/en'
 import { createAppStore } from './state/store'
@@ -13,11 +13,18 @@ const catalog: Catalog = {
   modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1, familyModules: {},
 }
 
-function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>, catalogFails = false, served: Catalog = catalog) {
+function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionCheck>, catalogFails = false, served: Catalog = catalog) {
+  const saved: ServerInfo[] = serverUrl ? [{ id: 1, name: 'Home', url: serverUrl, active: true }] : []
   const api = {
     settings: {
       get: vi.fn(async () => ({ serverUrl, imagesDir: '' })),
-      setServerUrl: vi.fn(setServerUrl ?? (async () => ({ ok: true, latencyMs: 5, errorKey: null }))),
+    },
+    servers: {
+      list: vi.fn(async () => saved),
+      add: vi.fn(addServer ?? (async () => ({ ok: true, latencyMs: 5, errorKey: null }))),
+      update: vi.fn(),
+      remove: vi.fn(),
+      activate: vi.fn(),
     },
     catalog: {
       get: vi.fn(async () => served),
@@ -76,10 +83,11 @@ test('a successful connect closes the dialog', async () => {
   const { api } = setup(null)
   const input = await screen.findByRole('textbox', { name: en['server.address'] })
   api.settings.get.mockResolvedValue({ serverUrl: 'http://127.0.0.1:7861', imagesDir: '' })
+  api.servers.list.mockResolvedValue([{ id: 1, name: '127.0.0.1', url: 'http://127.0.0.1:7861', active: true }])
   await userEvent.type(input, '127.0.0.1:7861')
   await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
   await waitFor(() => expect(dialog()).toBeNull())
-  expect(api.settings.setServerUrl).toHaveBeenCalledWith('127.0.0.1:7861')
+  expect(api.servers.add).toHaveBeenCalledWith({ name: '', url: '127.0.0.1:7861' })
 })
 
 test('a failed connect shows the mapped error under the field and refocuses it', async () => {
@@ -92,7 +100,7 @@ test('a failed connect shows the mapped error under the field and refocuses it',
   expect(document.activeElement).toBe(input)
   expect(input.getAttribute('aria-invalid')).toBe('true')
   expect(dialog()).not.toBeNull()
-  expect(api.settings.setServerUrl).toHaveBeenCalledTimes(1)
+  expect(api.servers.add).toHaveBeenCalledTimes(1)
 })
 
 test('a rejected connect is mapped through the catalog, never shown raw', async () => {
@@ -180,4 +188,10 @@ test('a catalog without checkpoints shows the no-models state; Refresh asks the 
 test('with a server and a model the empty gallery invites the first image', async () => {
   setup('http://127.0.0.1:7861')
   expect(await screen.findByText(en['empty.gallery.title'])).toBeDefined()
+})
+
+test('the chip shows the active server name', async () => {
+  setup('http://127.0.0.1:7861')
+  const chip = await screen.findByRole('button', { name: /Home/ })
+  expect(chip.textContent).toContain(en['connection.connected'])
 })

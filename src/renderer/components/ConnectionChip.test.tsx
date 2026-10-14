@@ -56,3 +56,13 @@ test('without a server the chip is neutral, says so, and still opens the dialog'
   await userEvent.click(chip)
   expect(onClick).toHaveBeenCalledTimes(1)
 })
+
+test('the active server name sits next to the status and the full name is its tooltip', () => {
+  const name = 'A very long server name that will not fit'
+  render(<ConnectionChip status={status('connected', 38)} serverName={name} onClick={() => {}} />)
+  const chip = screen.getByRole('button', { name: new RegExp(t('connection.connected')) })
+  const label = screen.getByText(name)
+  expect(chip.contains(label)).toBe(true)
+  expect(label.getAttribute('title')).toBe(name)
+  expect(chip.textContent).toContain('Connected')
+})

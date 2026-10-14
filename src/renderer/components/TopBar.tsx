@@ -8,9 +8,15 @@ import styles from './TopBar.module.css'
 export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
   const connection = useAppStore((s) => s.connection)
   const noServer = useAppStore((s) => s.settings !== null && !s.settings.serverUrl)
+  const serverName = useAppStore((s) => s.servers.find((server) => server.active)?.name ?? null)
   return (
     <header className={styles.bar}>
-      <ConnectionChip status={noServer ? null : connection} onClick={onOpenServer} className={styles.noDrag} />
+      <ConnectionChip
+        status={noServer ? null : connection}
+        serverName={noServer ? null : serverName}
+        onClick={onOpenServer}
+        className={styles.noDrag}
+      />
       <IconButton
         label={t('topbar.settings')}
         icon={<GearSix size={20} />}

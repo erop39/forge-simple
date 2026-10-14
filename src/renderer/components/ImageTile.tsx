@@ -5,20 +5,26 @@ import { t } from '../i18n/t'
 import { IconButton } from './ui/IconButton'
 import styles from './ImageTile.module.css'
 
-type ImageTileProps = { image: ImageRecord; onDelete(id: number): void }
+type ImageTileProps = { image: ImageRecord; onOpen(image: ImageRecord, trigger: HTMLButtonElement): void; onDelete(id: number): void }
 
 /** A finished image: only the picture; the frame marking and the delete button show on hover and focus. */
-export function ImageTile({ image, onDelete }: ImageTileProps) {
+export function ImageTile({ image, onOpen, onDelete }: ImageTileProps) {
   const caption = frameCaption(image)
   return (
     <div
       role="group"
-      tabIndex={0}
       aria-label={caption}
       className={styles.tile}
       style={{ aspectRatio: `${image.width} / ${image.height}` }}
     >
-      <img src={image.thumbUrl} loading="lazy" decoding="async" alt="" className={styles.image} />
+      <button
+        type="button"
+        className={styles.open}
+        aria-label={t('image.open', { n: image.id })}
+        onClick={(event) => onOpen(image, event.currentTarget)}
+      >
+        <img src={image.thumbUrl} loading="lazy" decoding="async" alt="" className={styles.image} />
+      </button>
       <span className={`mono ${styles.caption}`} aria-hidden="true">
         {caption}
       </span>

@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type { Api, AppSettings, ConnectionCheck, IpcErrorKey } from '@shared/ipc'
+import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, GenerationParams, ImageRecord, Job, JobProgress, PartStatus,
+  Catalog, ConnectionStatus, GenerationParams, ImageRecord, Job, JobProgress, PartStatus, ServerInfo,
 } from '@shared/types'
 import { errorKeyOf } from '../i18n/error-text'
 
@@ -10,12 +10,16 @@ const IMAGE_PAGE = 100
 export interface AppState {
   connection: ConnectionStatus
   settings: AppSettings | null
+  /** Saved servers, ordered by name; at most one is active. */
+  servers: ServerInfo[]
   catalog: Catalog | null
   /** Why the catalog could not be loaded, as an error key; null when it loaded or was not requested. */
   catalogError: IpcErrorKey | null
   /** The latest failed user action, as an error key, until dismissed. */
   lastError: IpcErrorKey | null
   params: GenerationParams | null
+  /** Text entered before the model catalog has supplied generation parameters. */
+  draftPrompt: string
   parts: PartStatus[]
   jobs: Record<number, Job>
   progress: Record<number, JobProgress>
@@ -26,7 +30,7 @@ export interface AppState {
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
   setParams(patch: Partial<GenerationParams>): void
-  /** Takes the family defaults for a checkpoint, keeping the prompt and the negative prompt. */
+  /** Takes the family defaults for a checkpoint, keeping the prompt, negative prompt and image size. */
   selectCheckpoint(title: string): Promise<void>
   /** Reloads the catalog from the server (refresh) after a failed or stale load. */
   retryCatalog(): Promise<void>
@@ -38,7 +42,13 @@ export interface AppState {
   dismissJob(id: number): void
   /** Appends the next page of older images; concurrent calls share one request. */
   loadMoreImages(): Promise<void>
-  setServerUrl(url: string): Promise<ConnectionCheck>
+  /** Tests and saves a server; resolves the check (a failed refresh afterwards counts as a failure). */
+  addServer(input: ServerInput): Promise<ConnectionCheck>
+  updateServer(id: number, input: ServerInput): Promise<ConnectionCheck>
+  /** Rejects with the error key when main refuses (e.g. error.jobRunning). */
+  removeServer(id: number): Promise<void>
+  /** Rejects with the error key when main refuses (e.g. error.jobRunning). */
+  activateServer(id: number): Promise<void>
   dismissError(): void
   togglePanel(): void
 }
@@ -51,6 +61,9 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean =>
 export function createAppStore(api: Api): StoreApi<AppState> {
   let initPromise: Promise<void> | null = null
   let partsSeq = 0
+  // Bumped by every checkpoint selection and catalog load; a response from an older one is dropped.
+  let selectSeq = 0
+  let catalogSeq = 0
   let morePromise: Promise<void> | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -81,26 +94,38 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     }
 
     async function useCheckpoint(title: string): Promise<void> {
-      const defaults = await api.catalog.defaults(title)
+      const seq = ++selectSeq
+      let defaults: GenerationParams
+      try {
+        defaults = await api.catalog.defaults(title)
+      } catch (e) {
+        if (seq === selectSeq) throw e
+        return // a newer choice replaced this one; its failure no longer matters
+      }
+      if (seq !== selectSeq) return
       const current = get().params
       const params: GenerationParams = {
         ...defaults,
-        prompt: current?.prompt ?? defaults.prompt,
+        prompt: current?.prompt ?? get().draftPrompt,
         negativePrompt: current?.negativePrompt ?? defaults.negativePrompt,
+        width: current?.width ?? defaults.width,
+        height: current?.height ?? defaults.height,
       }
-      set({ params })
+      set({ params, draftPrompt: params.prompt })
       await refreshParts(params)
     }
 
     /** Loads the catalog and selects the loaded checkpoint, else the first one. */
     async function loadCatalog(refresh = false): Promise<void> {
+      const seq = ++catalogSeq
       let catalog: Catalog
       try {
         catalog = await (refresh ? api.catalog.get(true) : api.catalog.get())
       } catch (e) {
-        set({ catalog: null, catalogError: errorKeyOf(e) })
+        if (seq === catalogSeq) set({ catalog: null, catalogError: errorKeyOf(e) })
         return
       }
+      if (seq !== catalogSeq) return
       set({ catalog, catalogError: null })
       const { checkpoints, loadedCheckpoint } = catalog
       const pick = checkpoints.find((c) => c.title === loadedCheckpoint) ?? checkpoints[0]
@@ -114,6 +139,52 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       } catch (e) {
         fail(e)
       }
+    }
+
+    /**
+     * Re-reads settings and the server list after a server change. When the active address changed,
+     * the catalog of the new server is loaded, or everything tied to a server is cleared when none is left.
+     */
+    async function syncServers(): Promise<void> {
+      const before = get().settings?.serverUrl ?? null
+      const [settings, servers] = await Promise.all([api.settings.get(), api.servers.list()])
+      set({ settings, servers })
+      if (settings.serverUrl === before) return
+      // Everything tied to the old server goes at once, so Generate cannot submit its checkpoint to the
+      // new one while the new catalog loads; pending selections of the old server are dropped. The prompt stays.
+      partsSeq++
+      selectSeq++
+      catalogSeq++
+      set((s) => ({
+        catalog: null, catalogError: null, params: null, parts: [], draftPrompt: s.params?.prompt ?? s.draftPrompt,
+      }))
+      // The new catalog loads in the background (its LoRA list can take a minute); the prompt bar shows
+      // that models are loading, and the server dialog is free again at once.
+      if (settings.serverUrl) void loadCatalog()
+    }
+
+    /** Runs a server call that resolves a check; an ok check is followed by a refresh. */
+    async function checked(call: () => Promise<ConnectionCheck>): Promise<ConnectionCheck> {
+      const check = await call()
+      if (!check.ok) return check
+      try {
+        await syncServers()
+      } catch (e) {
+        // Saved, but the app cannot see it: report a failure rather than a stuck success.
+        return { ok: false, latencyMs: null, errorKey: errorKeyOf(e) }
+      }
+      return check
+    }
+
+    function forgetJob(id: number): void {
+      finished.add(id)
+      set((s) => {
+        const jobs = { ...s.jobs }
+        const progress = { ...s.progress }
+        delete jobs[id]
+        delete progress[id]
+        return { jobs, progress }
+      })
     }
 
     function subscribe(): void {
@@ -135,18 +206,22 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       )
       api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id) })))
       api.on('connection', (connection) => set({ connection }))
+      api.on('job:removed', ({ id }) => forgetJob(id))
+      api.on('servers', (servers) => set({ servers }))
     }
 
     async function load(): Promise<void> {
       subscribe()
-      const [settings, connection, active, images] = await Promise.all([
+      const [settings, servers, connection, active, images] = await Promise.all([
         attempt(() => api.settings.get()),
+        attempt(() => api.servers.list()),
         attempt(() => api.connection.get()),
         attempt(() => api.jobs.listActive()),
         attempt(() => api.images.list({ limit: IMAGE_PAGE })),
       ])
       set((s) => ({
         settings: settings ?? s.settings,
+        servers: servers ?? s.servers,
         connection: connection ?? s.connection,
         jobs: active ? { ...Object.fromEntries(fresh(active)), ...s.jobs } : s.jobs,
         images: images
@@ -160,10 +235,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     return {
       connection: OFFLINE,
       settings: null,
+      servers: [],
       catalog: null,
       catalogError: null,
       lastError: null,
       params: null,
+      draftPrompt: '',
       parts: [],
       jobs: {},
       progress: {},
@@ -178,9 +255,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       setParams(patch) {
         const before = get().params
-        if (!before) return
+        if (!before) {
+          if (patch.prompt !== undefined) set({ draftPrompt: patch.prompt })
+          return
+        }
         const params = { ...before, ...patch }
-        set({ params })
+        set({ params, draftPrompt: params.prompt })
         if (params.checkpoint !== before.checkpoint || !sameList(params.modules, before.modules)) {
           void refreshParts(params)
         }
@@ -224,12 +304,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       },
 
       dismissJob(id) {
-        finished.add(id)
-        set((s) => {
-          const jobs = { ...s.jobs }
-          delete jobs[id]
-          return { jobs }
-        })
+        forgetJob(id)
       },
 
       loadMoreImages() {
@@ -251,17 +326,22 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return morePromise
       },
 
-      async setServerUrl(url) {
-        const check = await api.settings.setServerUrl(url)
-        if (!check.ok) return check
-        try {
-          set({ settings: await api.settings.get() })
-        } catch (e) {
-          // The address was accepted but the app cannot see it: report a failure rather than a stuck success.
-          return { ok: false, latencyMs: null, errorKey: errorKeyOf(e) }
-        }
-        await loadCatalog()
-        return check
+      addServer(input) {
+        return checked(() => api.servers.add(input))
+      },
+
+      updateServer(id, input) {
+        return checked(() => api.servers.update(id, input))
+      },
+
+      async removeServer(id) {
+        await api.servers.remove(id)
+        await syncServers()
+      },
+
+      async activateServer(id) {
+        await api.servers.activate(id)
+        await syncServers()
       },
 
       dismissError() {

@@ -1,8 +1,9 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { defaultParams } from '@shared/profiles'
 import { en } from '../locales/en'
 import { PromptBar } from './PromptBar'
-import { renderWithStore } from './test-store'
+import { catalog, renderWithStore } from './test-store'
 
 const promptField = () => screen.getByRole('textbox', { name: en['prompt.placeholder'] })
 const generateButton = () => screen.getByRole('button', { name: en['prompt.generate'] })
@@ -16,6 +17,23 @@ test('Ctrl+Enter in the prompt field calls generate', async () => {
   await userEvent.keyboard('{Control>}{Enter}{/Control}')
   expect(generate).toHaveBeenCalledTimes(1)
   expect((promptField() as HTMLTextAreaElement).value).toBe('a fox')
+})
+
+test('the prompt field appears before models load and keeps early typing', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { catalog: null, params: null })
+  const field = promptField() as HTMLTextAreaElement
+  expect(screen.getByRole('status').textContent).toBe(en['prompt.loadingModels'])
+  expect((generateButton() as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.type(field, 'a fox')
+  expect(field.value).toBe('a fox')
+  expect(store.getState().draftPrompt).toBe('a fox')
+  store.setState({
+    catalog,
+    params: { ...defaultParams('sdxl', 'sdxl.safetensors', catalog), prompt: store.getState().draftPrompt },
+  })
+  expect(promptField()).toBe(field)
+  expect(document.activeElement).toBe(field)
+  expect(field.value).toBe('a fox')
 })
 
 test('plain Enter inserts a newline and does not generate', async () => {
@@ -141,9 +159,11 @@ test('All parameters toggles the panel and reflects it in aria-expanded', async 
   expect(button.getAttribute('aria-expanded')).toBe('true')
 })
 
-test('the bar is not rendered without parameters', () => {
-  const { container } = renderWithStore(<PromptBar />, 'sdxl', { params: null })
-  expect(container.textContent).toBe('')
+test('without parameters the prompt stays available and model controls wait', () => {
+  renderWithStore(<PromptBar />, 'sdxl', { params: null })
+  expect(promptField()).toBeDefined()
+  expect((generateButton() as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: en['prompt.allParams'] })).toBeNull()
 })
 
 test('a whitespace-only prompt keeps Generate inert', async () => {

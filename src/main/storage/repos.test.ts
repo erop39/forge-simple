@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { GenerationParams, JobError } from '@shared/types'
-import { openDb } from './db'
-import { createRepos } from './repos'
+import Database from 'better-sqlite3'
+import { MIGRATIONS, openDb } from './db'
+import { createRepos, DuplicateServerError } from './repos'
 
 const params = (over: Partial<GenerationParams> = {}): GenerationParams => ({
   family: 'sdxl', checkpoint: 'model.safetensors [abc]', modules: [], prompt: 'p', negativePrompt: 'n',
@@ -135,10 +136,10 @@ test('openDb is idempotent on an existing file', () => {
   try {
     const db1 = openDb(file)
     createRepos(db1, () => 1).settings.set('k', 'v')
-    expect(db1.pragma('user_version', { simple: true })).toBe(1)
+    expect(db1.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length)
     db1.close()
     const db2 = openDb(file)
-    expect(db2.pragma('user_version', { simple: true })).toBe(1)
+    expect(db2.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length)
     expect(createRepos(db2, () => 1).settings.get('k')).toBe('v')
     expect(db2.pragma('foreign_keys', { simple: true })).toBe(1)
     db2.close()
@@ -191,4 +192,152 @@ test('markRunningInterrupted stores the stopped error code', () => {
   repos.jobs.setStatus(j.id, 'running')
   expect(repos.jobs.markRunningInterrupted()).toBe(1)
   expect(repos.jobs.get(j.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
+})
+
+describe('saved servers', () => {
+  test('list is ordered by name, case-insensitive, and add returns the new row', () => {
+    const { repos } = setup(100)
+    const b = repos.servers.add('beta', 'http://b:7860')
+    repos.servers.add('Alpha', 'http://a:7860')
+    repos.servers.add('gamma', 'http://c:7860')
+    expect(b).toMatchObject({ name: 'beta', url: 'http://b:7860', active: false, lastConnectedAt: null })
+    expect(repos.servers.list().map((s) => s.name)).toEqual(['Alpha', 'beta', 'gamma'])
+    expect(repos.servers.active()).toBeNull()
+  })
+
+  test('add rejects a url that a live server already has', () => {
+    const { repos } = setup()
+    repos.servers.add('a', 'http://a:7860')
+    expect(() => repos.servers.add('other', 'http://a:7860')).toThrow(DuplicateServerError)
+    expect(repos.servers.list()).toHaveLength(1)
+  })
+
+  test('update renames and changes the url; a url held by another live server is refused', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    repos.servers.add('b', 'http://b:7860')
+    expect(repos.servers.update(a.id, { name: 'Home', url: 'http://home:7860' }))
+      .toMatchObject({ id: a.id, name: 'Home', url: 'http://home:7860' })
+    expect(() => repos.servers.update(a.id, { name: 'Home', url: 'http://b:7860' })).toThrow(DuplicateServerError)
+    expect(repos.servers.update(a.id, { name: 'Home 2', url: 'http://home:7860' })?.name).toBe('Home 2')
+    expect(repos.servers.update(999, { name: 'x', url: 'http://x' })).toBeNull()
+  })
+
+  test('activate makes exactly one server active and stamps lastConnectedAt', () => {
+    const { repos } = setup(300)
+    const a = repos.servers.add('a', 'http://a:7860')
+    const b = repos.servers.add('b', 'http://b:7860')
+    repos.servers.activate(a.id)
+    expect(repos.servers.activate(b.id)).toMatchObject({ id: b.id, active: true, lastConnectedAt: 300 })
+    expect(repos.servers.list().filter((s) => s.active).map((s) => s.id)).toEqual([b.id])
+    expect(repos.servers.activate(999)).toBeNull()
+    expect(repos.servers.active()?.id).toBe(b.id)
+  })
+
+  test('remove is soft: queued jobs go, finished jobs and images stay, the server leaves list and get', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    const b = repos.servers.add('b', 'http://b:7860')
+    const done = repos.jobs.insert(a.id, 'txt2img', params())
+    repos.jobs.setStatus(done.id, 'done')
+    const img = repos.images.insert(imageRow(done.id))
+    const failed = repos.jobs.insert(a.id, 'txt2img', params())
+    repos.jobs.setStatus(failed.id, 'failed')
+    const q1 = repos.jobs.insert(a.id, 'txt2img', params())
+    const q2 = repos.jobs.insert(a.id, 'txt2img', params())
+    const other = repos.jobs.insert(b.id, 'txt2img', params())
+
+    expect(repos.servers.remove(a.id)).toEqual({ server: expect.objectContaining({ id: a.id }), deletedJobIds: [q1.id, q2.id] })
+    expect(repos.jobs.get(q1.id)).toBeNull()
+    expect(repos.jobs.get(q2.id)).toBeNull()
+    expect(repos.jobs.get(done.id)?.status).toBe('done')
+    expect(repos.jobs.get(failed.id)?.status).toBe('failed')
+    expect(repos.jobs.get(other.id)?.status).toBe('queued')
+    expect(repos.images.list({ limit: 10 }).map((i) => i.id)).toEqual([img.id])
+    expect(repos.servers.list().map((s) => s.id)).toEqual([b.id])
+    expect(repos.servers.get(a.id)).toBeNull()
+    expect(repos.servers.get(b.id)?.name).toBe('b')
+    expect(repos.servers.remove(a.id)).toBeNull()
+  })
+
+  test('removing the active server leaves no active server', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    repos.servers.activate(a.id)
+    repos.servers.remove(a.id)
+    expect(repos.servers.active()).toBeNull()
+    expect(repos.servers.activate(a.id)).toBeNull()
+  })
+
+  test('removing a server drops its stored checkpoint families', () => {
+    const { db, repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    const b = repos.servers.add('b', 'http://b:7860')
+    const meta = db.prepare("INSERT INTO checkpoint_meta (server_id, filename, family) VALUES (?, 'm.safetensors', 'sdxl')")
+    meta.run(a.id)
+    meta.run(b.id)
+    repos.servers.remove(a.id)
+    expect(db.prepare('SELECT server_id FROM checkpoint_meta').all()).toEqual([{ server_id: b.id }])
+  })
+
+  test('adding a removed url again revives that row under the new name', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('old', 'http://a:7860')
+    const done = repos.jobs.insert(a.id, 'txt2img', params())
+    repos.jobs.setStatus(done.id, 'done')
+    repos.servers.activate(a.id)
+    repos.servers.remove(a.id)
+    const again = repos.servers.add('new', 'http://a:7860')
+    expect(again).toMatchObject({ id: a.id, name: 'new', url: 'http://a:7860', active: false })
+    expect(repos.servers.list().map((s) => s.name)).toEqual(['new'])
+  })
+
+  test('setActiveUrl revives a removed url instead of failing on it', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    repos.servers.remove(a.id)
+    expect(repos.servers.setActiveUrl('http://a:7860')).toMatchObject({ id: a.id, active: true })
+    expect(repos.servers.list()).toHaveLength(1)
+  })
+
+  test('changing a url to one a removed server held frees it from the removed row', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    const b = repos.servers.add('b', 'http://b:7860')
+    repos.servers.remove(a.id)
+    expect(repos.servers.update(b.id, { name: 'b', url: 'http://a:7860' })).toMatchObject({ id: b.id, url: 'http://a:7860' })
+    expect(repos.servers.list().map((s) => s.id)).toEqual([b.id])
+  })
+
+  test('hasRunning tells whether any job is running', () => {
+    const { repos } = setup()
+    const a = repos.servers.add('a', 'http://a:7860')
+    const j = repos.jobs.insert(a.id, 'txt2img', params())
+    expect(repos.jobs.hasRunning()).toBe(false)
+    repos.jobs.setStatus(j.id, 'running')
+    expect(repos.jobs.hasRunning()).toBe(true)
+  })
+})
+
+test('a database at user_version 1 upgrades and keeps its active server and jobs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fnc-db-'))
+  const file = join(dir, 'app.db')
+  try {
+    const old = new Database(file)
+    old.exec(MIGRATIONS[0]!)
+    old.pragma('user_version = 1')
+    old.prepare("INSERT INTO servers (name, url, active, last_connected_at) VALUES ('home', 'http://home:7860', 1, 5)").run()
+    old.prepare("INSERT INTO jobs (server_id, type, status, params, created_at) VALUES (1, 'txt2img', 'queued', '{}', 1)").run()
+    old.close()
+
+    const db = openDb(file)
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length)
+    const repos = createRepos(db, () => 1)
+    expect(repos.servers.active()).toEqual({ id: 1, name: 'home', url: 'http://home:7860', active: true, lastConnectedAt: 5 })
+    expect(repos.servers.list()).toHaveLength(1)
+    expect(repos.jobs.nextQueued(1)?.id).toBe(1)
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

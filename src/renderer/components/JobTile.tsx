@@ -7,7 +7,8 @@ import { Button } from './ui/Button'
 import { Tooltip } from './ui/Tooltip'
 import styles from './JobTile.module.css'
 
-type JobTileProps = { job: Job; progress: JobProgress | null; queuePosition: number | null }
+/** waitingFor: the name of the (inactive) server a queued job waits for; null when it is in the active queue. */
+type JobTileProps = { job: Job; progress: JobProgress | null; queuePosition: number | null; waitingFor?: string | null }
 
 const STAGE_KEYS: Record<JobProgress['stage'], MessageKey> = {
   sampling: 'job.stage.sampling',
@@ -15,11 +16,18 @@ const STAGE_KEYS: Record<JobProgress['stage'], MessageKey> = {
   upscaling: 'job.stage.upscaling',
 }
 
-function QueuedBody({ job, queuePosition }: { job: Job; queuePosition: number | null }) {
+function QueuedBody({ job, queuePosition, waitingFor }: { job: Job; queuePosition: number | null; waitingFor: string | null }) {
   const cancelJob = useAppStore((s) => s.cancelJob)
+  const waiting = waitingFor === null ? null : t('job.waitingFor', { name: waitingFor })
   return (
     <>
-      <span className={`mono ${styles.queued}`}>{t('job.queued', { n: queuePosition ?? 1 })}</span>
+      {waiting === null ? (
+        <span className={`mono ${styles.queued}`}>{t('job.queued', { n: queuePosition ?? 1 })}</span>
+      ) : (
+        <span className={`${styles.queued} ${styles.waitingFor}`} title={waiting}>
+          {waiting}
+        </span>
+      )}
       <Button className={styles.corner} onClick={() => void cancelJob(job.id)}>
         {t('job.cancel')}
       </Button>
@@ -93,7 +101,7 @@ function FailedBody({ job }: { job: Job }) {
 }
 
 /** A job that has not produced an image yet: waiting, running, failed or interrupted. */
-export function JobTile({ job, progress, queuePosition }: JobTileProps) {
+export function JobTile({ job, progress, queuePosition, waitingFor = null }: JobTileProps) {
   const failed = job.status === 'failed' || job.status === 'interrupted'
   const stateClass = failed
     ? job.status === 'interrupted'
@@ -111,7 +119,7 @@ export function JobTile({ job, progress, queuePosition }: JobTileProps) {
       {failed ? (
         <FailedBody job={job} />
       ) : job.status === 'queued' ? (
-        <QueuedBody job={job} queuePosition={queuePosition} />
+        <QueuedBody job={job} queuePosition={queuePosition} waitingFor={waitingFor} />
       ) : (
         <RunningBody job={job} progress={progress} />
       )}

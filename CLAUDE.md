@@ -10,9 +10,11 @@ UI strings, README and CHANGELOG are English.
 ## Documents
 
 - Spec (approved, the binding authority): `docs/superpowers/specs/2026-10-13-forge-neo-client-design.md`
-- Plans: `docs/superpowers/plans/` — plan 1 (core) is being executed; plans 2 (gallery features) and 3 (server tools, upscale) are not written yet.
+- Plans: `docs/superpowers/plans/` — plan 1 (core) is being executed; plan 2 (gallery features) is written and its requested image-viewer slice has been implemented ahead of schedule; plan 3 (server tools, upscale) is not written yet.
 - Real-server facts from the probe: `docs/forge-api-notes.md`
 - Status, decisions, open items: `docs/STATUS.md`
+- Startup prompt delay and implementation handoff: `docs/prompt-startup-fix.md`
+- Image viewer implementation handoff: `docs/image-viewer.md`
 
 ## Commands
 
@@ -38,10 +40,14 @@ UI strings, README and CHANGELOG are English.
 ## Layout
 
 - `src/main/` — owns all state. `forge/` (HTTP client, catalog, connection monitor, active-server holder, probe findings), `generation/payload.ts` (params → txt2img body), `queue/` (runner, speed), `storage/` (SQLite, repos, image files, `fnc-img://` resolver), `oplog/` (operation log), `ipc/register.ts` (every IPC handler), `index.ts` (Electron wiring, protocol, window).
+- Servers: saved in `servers`; removal is soft (`removed_at`), and `repos.servers.get/list/active` never return removed rows (jobs and images keep pointing at them). IPC `servers:list/add/update/remove/activate` (the old `settings:setServerUrl` is gone); main pushes `servers` and `job:removed` events. Every change of the active server goes through `activeServerChanged` in `ipc/register.ts`. In the renderer, async results carry a revision (`partsSeq`, `selectSeq`, `catalogSeq` in `store.ts`) so a late response can never overwrite a newer choice — keep that pattern for new async state.
 - `src/preload/index.ts` — exposes exactly the `Api` from `src/shared/ipc.ts` as `window.api`.
 - `src/shared/` — `types.ts`, `ipc.ts` (Api, channels, `IpcErrorKey`), `profiles.ts` (model families; imported by main and renderer, no Node imports).
 - `src/renderer/` — React. `state/store.ts` (zustand, provided via `StoreProvider`; `state/gallery-items.ts` merges jobs and images and lays out columns; `state/checkpoint-options.ts` builds the family-grouped Model menu), `components/` (+ `ui/` primitives — `Select` takes `grow` and grouped options, `Slider` wraps Radix Slider; `use-pending-delete.ts` drives delete-with-undo), `format.ts` (shared display formatters such as `baseName`), `locales/en.ts`, `i18n/`, `styles/` (`tokens.css`, `base.css`, `motion.module.css`). The prompt bar publishes its height as the root CSS variable `--prompt-bar-h`; floating content pads by it.
 - `tools/mock-forge/server.ts`, `tools/probe/probe.mjs`.
+- The prompt field renders before the model catalog arrives. `state/store.ts` keeps early text in `draftPrompt` and transfers it into the first selected model's parameters; model controls and Generate wait for that model.
+- A finished image opens `ImageViewer` from `Gallery`. `images:details` reads the persisted image and job parameters; `clipboard:writeText` copies via Electron main. See `docs/image-viewer.md`.
+- The viewer and top bar reserve `--w-caption-controls` on the right for Electron's Windows title-bar overlay; interactive controls inside that area look visible but do not receive real clicks. The viewer's `.actions` also needs `-webkit-app-region: no-drag` because the draggable top bar underneath otherwise swallows physical mouse clicks on the arrows. DevTools clicks do not catch this.
 
 ## Rules
 

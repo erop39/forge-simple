@@ -30,6 +30,15 @@
   color: var(--text-2);
 }
 
+/* A long server name stays on one line; the full caption is the tooltip. */
+.waitingFor {
+  overflow: hidden;
+  max-width: 100%;
+  padding: 0 var(--sp-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .corner {
   position: absolute;
   z-index: 1;

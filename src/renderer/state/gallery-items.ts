@@ -1,25 +1,33 @@
 import type { ImageRecord, Job, JobProgress } from '@shared/types'
 
 export type GalleryItem =
-  | { kind: 'job'; job: Job; progress: JobProgress | null; queuePosition: number | null }
+  /** waiting: a queued job of a server that is not active; it has no place in the queue. */
+  | { kind: 'job'; job: Job; progress: JobProgress | null; queuePosition: number | null; waiting: boolean }
   | { kind: 'image'; image: ImageRecord }
 
 const byId = (a: Job, b: Job): number => a.id - b.id
 
-/** Running job, queued jobs oldest first, failed and interrupted jobs, then images newest first. */
+/**
+ * Running job, the active server's queued jobs oldest first, other servers' queued jobs, failed and
+ * interrupted jobs, then images newest first. `activeServerId` null means no server is active (every
+ * queued job waits); left out, every queued job counts as the active server's.
+ */
 export function galleryItems(
   jobs: Record<number, Job>,
   progress: Record<number, JobProgress>,
   images: readonly ImageRecord[],
+  activeServerId?: number | null,
 ): GalleryItem[] {
   const all = Object.values(jobs).sort(byId)
   const queued = all.filter((j) => j.status === 'queued')
-  const jobItem = (job: Job, queuePosition: number | null): GalleryItem => ({
-    kind: 'job', job, progress: progress[job.id] ?? null, queuePosition,
+  const waits = (j: Job): boolean => activeServerId !== undefined && j.serverId !== activeServerId
+  const jobItem = (job: Job, queuePosition: number | null, waiting = false): GalleryItem => ({
+    kind: 'job', job, progress: progress[job.id] ?? null, queuePosition, waiting,
   })
   return [
     ...all.filter((j) => j.status === 'running').map((j) => jobItem(j, null)),
-    ...queued.map((j, i) => jobItem(j, i + 1)),
+    ...queued.filter((j) => !waits(j)).map((j, i) => jobItem(j, i + 1)),
+    ...queued.filter(waits).map((j) => jobItem(j, null, true)),
     ...all.filter((j) => j.status === 'failed' || j.status === 'interrupted').map((j) => jobItem(j, null)),
     ...[...images].sort((a, b) => b.id - a.id).map((image): GalleryItem => ({ kind: 'image', image })),
   ]

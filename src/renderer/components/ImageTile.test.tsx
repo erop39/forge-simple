@@ -11,7 +11,7 @@ const image = (over: Partial<ImageRecord> = {}): ImageRecord => ({
 })
 
 test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', () => {
-  const { container } = render(<ImageTile image={image()} onDelete={() => {}} />)
+  const { container } = render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} />)
   const img = container.querySelector('img')!
   expect(img.getAttribute('src')).toBe('fnc-img://local/thumbs/a.jpg')
   expect(img.getAttribute('loading')).toBe('lazy')
@@ -21,7 +21,7 @@ test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', 
 })
 
 test('frame caption formats id, seconds and size', () => {
-  render(<ImageTile image={image()} onDelete={() => {}} />)
+  render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} />)
   expect(screen.getByText('№ 0412 · 41 s · 832×1216')).toBeDefined()
   expect(screen.getByRole('group', { name: '№ 0412 · 41 s · 832×1216' })).toBeDefined()
 })
@@ -31,13 +31,17 @@ test('the caption pads the id and omits the seconds when the duration is unknown
   expect(frameCaption(image({ id: 12345, durationMs: null }))).toBe('№ 12345 · 832×1216')
 })
 
-test('the tile and its Delete button are reachable by keyboard; Delete reports the id', async () => {
+test('the image opens by keyboard and Delete remains separate', async () => {
+  const onOpen = vi.fn()
   const onDelete = vi.fn()
-  render(<ImageTile image={image()} onDelete={onDelete} />)
+  render(<ImageTile image={image()} onOpen={onOpen} onDelete={onDelete} />)
   await userEvent.tab()
-  expect(document.activeElement).toBe(screen.getByRole('group'))
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open image 412' }))
+  await userEvent.keyboard('{Enter}')
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 412 }), document.activeElement)
   await userEvent.tab()
   expect(document.activeElement).toBe(screen.getByRole('button', { name: en['image.delete'] }))
   await userEvent.keyboard('{Enter}')
   expect(onDelete).toHaveBeenCalledWith(412)
+  expect(onOpen).toHaveBeenCalledTimes(1)
 })

@@ -7,6 +7,11 @@ taken, or something starts waiting on the user.
 
 - Branch `feature/core` (local only, never pushed). `main` holds only the spec and plan docs.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
+- Startup prompt delay: fixed (committed with the servers work). The field now renders while the catalog loads and preserves early typing; see `docs/prompt-startup-fix.md` for cause, implementation, checks and the remaining catalog wait. A live-window check has not been done for this fix.
+- Image viewer: implemented ahead of plan 2 (another session, reviewed and committed here). Click or Enter opens the full image, with saved job settings and Copy prompt below it. X closes the dialog; icons and Left/Right keys navigate the gallery, loading older pages as needed. The header reserves space for native Windows caption buttons. Checkpoint changes retain the selected width and height. See `docs/image-viewer.md` for the file map, behavior, checks and open work.
+- Viewer verification on 2026-10-14: full suite (then 516 tests; 521 after the review fixes), typecheck and build passed before the mouse-click follow-up. A later physical-mouse check exposed that the arrows still sat in the top bar's draggable region; `.actions` now opts out with `-webkit-app-region: no-drag`. Physical Next and Previous clicks were reproduced failing before the CSS fix and confirmed working after it in an isolated Electron window against mock Forge. The selected 16:9 ratio also remained after a checkpoint switch in the earlier live run. Plan 2's remaining viewer actions and animation are still open.
+- Review of that code: `docs/code-review-2026-10-14.md` — one server-switch gate, two async races and a PromptBar duplication. All four are fixed with tests (see its Resolution section).
+- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done and reviewed, live two-server window check still to do; U3 (negative-prompt presets) next.
 
 | Task | State |
 |---|---|
@@ -15,6 +20,9 @@ taken, or something starts waiting on the user.
 | P Probe findings | done, reviewed |
 | 16 Gallery (job and image tiles, delete with undo, paging) | done, reviewed |
 | 17 End-to-end check and release 0.1.0 | e2e tests + README done and reviewed (4d1eac7). Open: manual walkthrough (only partly done), the user's real-Forge check, then release (CHANGELOG `[0.1.0]`, version, tag `v0.1.0`) |
+| U1 Prompt bar fit, sliders, grouped scrollable menus | done, reviewed |
+| U2 Saved servers list | done, reviewed; live two-server window check pending |
+| U3 Negative-prompt presets | next (brief in the ledger) |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -22,14 +30,15 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. If `.superpowers/sdd/2026-10-13-plan-1-core/progress.md` exists, it is the detailed ledger (task briefs, review reports, every fix round). Resume at the first task without a `complete` line.
 3. Without the ledger: use `git log` and the table above; regenerate a task brief with the subagent-driven-development `task-brief` script from the plan file.
-4. After plan 1: write plan 2 (gallery features) and plan 3 (server tools, upscale) with superpowers:writing-plans from the spec, then execute them the same way.
+4. After plan 1: review the written plan 2 (gallery features), write plan 3 (server tools, upscale) from the spec, then execute them the same way.
 
 ## Waiting on the user
 
+- The mock-only temporary profiles used for viewer checks could not be deleted: automatic command review blocked cleanup. All test processes are stopped. The first profile is under the user's system temp directory; the physical-click check's profile is under the ignored `out/viewer-click-profile` directory.
 - Real-Forge check in Task 17: one generation per model family over VPN, cancel mid-generation, drop the VPN mid-queue. It also confirms that shift really travels in `distilled_cfg_scale` (look for "Shift" in the image's infotext).
 - Rest of the Task 17 manual walkthrough (on the mock or during the real-Forge session): cancel a waiting job, delete with Undo, images still there after restart, Tab order with visible focus, 1100×700 window, "Slow" state, animations, failed and interrupted tiles, native caption buttons. Already seen on 2026-10-14: connect, model pick, Ctrl+Enter with Images 2, live preview and progress, queued tile, finished tiles. The walkthrough stopped when someone at the desktop took over the test window and pointed it at the real Forge.
 - That test window ran from a throwaway profile in the controller's temp scratchpad (it now holds real model names and images); close it and delete that profile when the user is done with it.
-- Small UI issues seen in the window: Ctrl+Enter does nothing in the Negative field; the running-tile caption wraps to two lines at 1280 px.
+- Small UI issues seen in that window (Ctrl+Enter in the Negative field and the running-tile caption wrapping) were fixed after the walkthrough; they still need a live-window recheck.
 - Before anything is pushed: commit `d84ab06` on this branch contains the user's real model names and paths (HEAD is clean). Offer to squash or rewrite the branch so they never leave the machine.
 
 ## Decisions taken during plan 1

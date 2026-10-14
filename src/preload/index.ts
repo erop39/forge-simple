@@ -14,7 +14,13 @@ const invoke = async <T>(channel: Channel, ...args: unknown[]): Promise<T> => {
 const api: Api = {
   settings: {
     get: () => invoke('settings:get'),
-    setServerUrl: (url) => invoke('settings:setServerUrl', url),
+  },
+  servers: {
+    list: () => invoke('servers:list'),
+    add: (input) => invoke('servers:add', input),
+    update: (id, input) => invoke('servers:update', id, input),
+    remove: (id) => invoke('servers:remove', id),
+    activate: (id) => invoke('servers:activate', id),
   },
   catalog: {
     get: (refresh) => invoke('catalog:get', refresh),
@@ -29,8 +35,10 @@ const api: Api = {
   },
   images: {
     list: (opts) => invoke('images:list', opts),
+    details: (id) => invoke('images:details', id),
     delete: (id) => invoke('images:delete', id),
   },
+  clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },
   on<K extends keyof AppEvents>(event: K, cb: (payload: AppEvents[K]) => void): () => void {
     if (!isEventName(event)) return () => undefined

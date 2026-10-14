@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job } from '@shared/types'
@@ -19,7 +19,7 @@ const frame = (id: number) => `№ ${String(id).padStart(4, '0')} · 41 s · 832
 
 /** The Delete button inside the tile with the given caption. */
 function deleteButtonOf(caption: string): HTMLElement {
-  return screen.getByRole('group', { name: caption }).querySelector('button') as HTMLElement
+  return screen.getByRole('group', { name: caption }).querySelector('button[aria-label="Delete"]') as HTMLElement
 }
 
 afterEach(() => {
@@ -147,4 +147,94 @@ test('the end sentinel pages in older images and goes away when they run out', (
   expect(loadMoreImages).toHaveBeenCalledTimes(1)
   act(() => store.setState({ imagesExhausted: true }))
   expect(document.querySelector('[class*="sentinel"]')).toBeNull()
+})
+
+test('a queued job of a server that is not active shows "Waiting for <name>"', () => {
+  const servers = [
+    { id: 1, name: 'Home', url: 'http://home.test', active: true },
+    { id: 2, name: 'Studio', url: 'http://studio.test', active: false },
+  ]
+  const jobs = { 1: job(1, 'queued'), 2: { ...job(2, 'queued'), serverId: 2 } }
+  renderWithStore(<Gallery />, 'sdxl', { servers, jobs })
+  expect(screen.getByText('queued · 1')).toBeDefined()
+  expect(screen.getByText('Waiting for Studio')).toBeDefined()
+})
+
+test('clicking an image opens the full file, saved settings and Copy prompt; Escape returns focus', async () => {
+  const copy = vi.fn(async () => {})
+  const details = vi.fn(async () => ({ image: image(7), params: { ...params, prompt: 'evening light', scheduler: 'Karras' }, jobType: 'txt2img' }))
+  vi.stubGlobal('api', { images: { details }, clipboard: { writeText: copy } })
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)] })
+  const trigger = screen.getByRole('button', { name: 'Open image 7' })
+  await userEvent.click(trigger)
+  expect(details).toHaveBeenCalledWith(7)
+  expect(screen.getByRole('img', { name: 'Generated image 7' }).getAttribute('src')).toBe(image(7).url)
+  await waitFor(() => expect(screen.getByText('evening light')).toBeDefined())
+  expect(screen.getByText('Karras')).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.copyPrompt'] }))
+  expect(copy).toHaveBeenCalledWith('evening light')
+  expect(screen.getByRole('button', { name: en['viewer.copied'] })).toBeDefined()
+  expect(screen.getByRole('button', { name: en['viewer.close'] }).querySelector('svg')).not.toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.close'] }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  await userEvent.click(trigger)
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+})
+
+test('a copy that settles after moving to another image does not mark that image as copied', async () => {
+  let finish!: () => void
+  const copy = vi.fn(() => new Promise<void>((r) => { finish = r }))
+  vi.stubGlobal('api', {
+    images: { details: vi.fn(async (id: number) => ({ image: image(id), params: { ...params, prompt: `prompt ${id}` }, jobType: 'txt2img' })) },
+    clipboard: { writeText: copy },
+  })
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(9), image(7)], imagesExhausted: true })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 9' }))
+  await waitFor(() => expect(screen.getByText('prompt 9')).toBeDefined())
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.copyPrompt'] }))
+  await userEvent.keyboard('{ArrowRight}')
+  await waitFor(() => expect(screen.getByText('prompt 7')).toBeDefined())
+  await act(async () => { finish() })
+  expect(screen.queryByRole('button', { name: en['viewer.copied'] })).toBeNull()
+  expect(screen.getByRole('button', { name: en['viewer.copyPrompt'] })).toBeDefined()
+})
+
+test('viewer arrows and keyboard follow the gallery order and stop at the ends', async () => {
+  vi.stubGlobal('api', {
+    images: { details: vi.fn(async (id: number) => ({ image: image(id), params: { ...params, prompt: `prompt ${id}` }, jobType: 'txt2img' })) },
+    clipboard: { writeText: vi.fn(async () => {}) },
+  })
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(9), image(7), image(3)], imagesExhausted: true })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await waitFor(() => expect(screen.getByText('prompt 7')).toBeDefined())
+  expect(screen.getByText('2 / 3')).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.previous'] }))
+  await waitFor(() => expect(screen.getByRole('img', { name: 'Generated image 9' })).toBeDefined())
+  expect((screen.getByRole('button', { name: en['viewer.previous'] }) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.keyboard('{ArrowRight}')
+  expect(screen.getByRole('img', { name: 'Generated image 7' })).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.next'] }))
+  expect(screen.getByRole('img', { name: 'Generated image 3' })).toBeDefined()
+  expect((screen.getByRole('button', { name: en['viewer.next'] }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('Next loads the next gallery page when the oldest loaded image is open', async () => {
+  vi.stubGlobal('api', {
+    images: { details: vi.fn(async (id: number) => ({ image: image(id), params: { ...params, prompt: `prompt ${id}` }, jobType: 'txt2img' })) },
+    clipboard: { writeText: vi.fn(async () => {}) },
+  })
+  let appendOlder = () => {}
+  const loadMoreImages = vi.fn(async () => appendOlder())
+  const { store } = renderWithStore(<Gallery />, 'sdxl', {
+    images: [image(4), image(3)], imagesExhausted: false, loadMoreImages,
+  })
+  appendOlder = () => store.setState({ images: [image(4), image(3), image(2)], imagesExhausted: true })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 3' }))
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.next'] }))
+  expect(loadMoreImages).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(screen.getByRole('img', { name: 'Generated image 2' })).toBeDefined())
+  expect((screen.getByRole('button', { name: en['viewer.next'] }) as HTMLButtonElement).disabled).toBe(true)
 })

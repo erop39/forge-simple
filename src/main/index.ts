@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { extname, join } from 'node:path'
-import { app, BrowserWindow, ipcMain, nativeImage, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, protocol } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
 import { createForgeClient } from './forge/client'
@@ -146,6 +146,7 @@ async function boot(): Promise<void> {
     oplog,
     imagesDir,
     createClient: (url) => createForgeClient(url),
+    copyToClipboard: (value) => clipboard.writeText(value),
     onServerChanged: syncMonitor,
   }, send)
 

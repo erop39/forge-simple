@@ -6,7 +6,7 @@ Forge's HTTP API. One user, no login.
 
 ## What version 0.1.0 does
 
-- Connects to one Forge Neo server and shows whether the link is connected, slow, reconnecting or offline.
+- Keeps a list of Forge Neo servers and switches between them; shows whether the link is connected, slow, reconnecting or offline.
 - Loads the server's checkpoints, VAE and text-encoder modules, samplers and schedulers, and detects
   each checkpoint's model family (SDXL, Z-Image, Qwen, Lumina, Krea 2, Anima) to pick sensible
   defaults and show only the parameters that family uses.
@@ -59,11 +59,13 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 ## Screens
 
-- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button; both open the server dialog.
-- **Server dialog** - the address of the PC that runs Forge Neo (started with `--api --listen`). It opens by itself until an address is set and cannot be dismissed before then. A wrong address shows what to check under the field.
-- **Prompt bar** - floats at the bottom centre. The prompt field grows to six lines; `Ctrl+Enter` generates (from the prompt or the negative prompt) and `Up Arrow` in an empty prompt field brings back the last prompt. The row below holds the checkpoint (grouped by model family in its menu), aspect ratio, a steps slider, image count, a Negative toggle (not offered for families without a negative prompt), the All parameters button and Generate; in a narrow window the controls move to a second line under the checkpoint.
+- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button; both open the server dialog.
+- **Server dialog** - the saved Forge Neo servers (each started with `--api --listen`), each with a name and address; the active one is marked. Add, edit, delete (with confirmation) or Use a server. A new or changed address is tested before it is saved, and a wrong one shows what to check under the field. Switching is refused while a job runs. Queued jobs stay with the server they were queued on: those of an inactive server show "Waiting for <name>" and run once it is active again. Deleting a server removes its queued jobs; its images stay. With no saved server the dialog opens by itself on the add form.
+- **Prompt bar** - floats at the bottom centre. The prompt field grows to six lines; `Ctrl+Enter` generates (from the prompt or the negative prompt) and `Up Arrow` in an empty prompt field brings back the last prompt. The row below holds the checkpoint (grouped by model family in its menu), aspect ratio, a steps slider, image count, a Negative toggle (not offered for families without a negative prompt), the All parameters button and Generate; in a narrow window the controls move to a second line under the checkpoint. Switching checkpoints keeps the selected image dimensions and proportions.
+- The prompt field appears as soon as the window opens. You can type while models load; Generate becomes available once a model is ready.
 - **Parameters panel** - slides in from the right over the canvas (`Esc` closes it). It shows the model card (checkpoint and modules, each marked found or not found), the sampling parameters of the model family (CFG, Distilled CFG and Shift as sliders), seed, size, and the list of VAE and text encoder modules.
 - **Gallery** - the canvas. Tiles sit in columns (at least two, about one per 226 px) and new ones appear at the top-left. A waiting job has a dashed border and its place in the queue; the running one shows the live preview, stage, step count, speed and elapsed time with a progress line, and both have Cancel. A failed or interrupted job shows what happened, with Retry and Dismiss. A finished image shows its frame marking (number, seconds, size) and a Delete button on hover or keyboard focus; deleting hides the image and Undo stays available for 5 seconds. Older images load as you scroll.
+- **Image viewer** - click a finished image or focus it and press Enter to see the full-size file. The panel below shows the saved prompt, negative prompt when present, model, scheduler, sampler, steps, dimensions, actual seed, relevant guidance settings, generation time and enabled LoRAs. Copy prompt writes the saved positive prompt to the system clipboard. The arrow icons or Left/Right keys move through gallery images, loading older images as needed. The X icon or Escape closes the viewer and returns focus to the opening tile.
 
 ## Known limitations
 
@@ -71,8 +73,8 @@ Version 0.1.0 is the core: connect, generate, queue, gallery. Not in it yet (pla
 
 - img2img, hires fix and upscaling of a finished image.
 - LoRA selection in the interface (the request builder supports LoRAs, the screens do not).
-- Tags, search, a full-screen viewer, "Reuse settings" and "Save as" for an image.
+- Tags, search, "Reuse settings" and "Save as" for an image.
 - Presets.
 - A checkpoint gallery with previews.
-- A server status panel (VRAM, resources), several servers in the interface, restarting Forge or unloading a model.
+- A server status panel (VRAM, resources), restarting Forge or unloading a model.
 - Export and import.

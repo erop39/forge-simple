@@ -425,6 +425,29 @@ test('cancel while the job is still being checked does not let it start', async 
   expect(h.repos.jobs.get(job.id)?.status).toBe('cancelled')
 })
 
+test('a switch to another server while the job is being checked leaves the job queued for its own server', async () => {
+  const h = setup()
+  const [job] = h.runner.enqueue(params()) as [Job]
+  const ping = deferred<number>()
+  h.client.ping.mockReturnValueOnce(ping.promise)
+  const t = h.runner.tick()
+  h.repos.servers.activate(h.repos.servers.add('other', 'http://other.test').id)
+  ping.resolve(1)
+  expect(await t).toBe('idle')
+  expect(h.client.txt2img).not.toHaveBeenCalled()
+  expect(h.repos.jobs.get(job.id)?.status).toBe('queued')
+})
+
+test('retry of a job whose server was removed queues the clone on the active server', async () => {
+  const h = setup()
+  const [job] = h.runner.enqueue(params()) as [Job]
+  h.repos.jobs.setStatus(job.id, 'failed', { error: { code: 'unexpected' } })
+  const other = h.repos.servers.add('other', 'http://other.test')
+  h.repos.servers.activate(other.id)
+  h.repos.servers.remove(job.serverId)
+  expect(h.runner.retry(job.id).serverId).toBe(other.id)
+})
+
 test('retry clones params into a new queued job; the original stays as it was', async () => {
   const h = setup()
   const [job] = h.runner.enqueue(params({ seed: 7 })) as [Job]

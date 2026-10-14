@@ -11,7 +11,7 @@
   z-index: var(--z-dialog);
   top: 50%;
   left: 50%;
-  width: min(440px, calc(100vw - var(--sp-8)));
+  width: min(520px, calc(100vw - var(--sp-8)));
   transform: translate(-50%, -50%);
   padding: var(--sp-6);
   border-radius: var(--r-panel);
@@ -95,7 +95,72 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--sp-2);
   margin-top: var(--sp-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--h-topbar);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Name over address; both are cut with an ellipsis and carry the full text as a tooltip. */
+.rowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name,
+.url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  font-weight: 500;
+}
+
+.url {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.rowActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.active {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  color: var(--ok);
+}
+
+.confirmText {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 
 /* Both labels share one grid cell so the button keeps the width of the longer one. */

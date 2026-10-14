@@ -4,10 +4,12 @@ import { aspectOfItem, galleryItems, itemKey, layoutColumns, type GalleryItem } 
 import { useAppStore } from '../state/StoreProvider'
 import { GalleryEmpty } from './EmptyState'
 import { ImageTile } from './ImageTile'
+import { ImageViewer } from './ImageViewer'
 import { JobTile } from './JobTile'
 import { Button } from './ui/Button'
 import { usePendingDelete } from './use-pending-delete'
 import styles from './Gallery.module.css'
+import type { ImageRecord } from '@shared/types'
 
 /** Minimum tile width of 220 px plus the 6 px gap. */
 const COLUMN_WIDTH = 226
@@ -55,28 +57,87 @@ export function Gallery() {
   const jobs = useAppStore((s) => s.jobs)
   const progress = useAppStore((s) => s.progress)
   const images = useAppStore((s) => s.images)
+  const servers = useAppStore((s) => s.servers)
   const exhausted = useAppStore((s) => s.imagesExhausted)
   const hasParams = useAppStore((s) => s.params !== null)
   const deleteImage = useAppStore((s) => s.deleteImage)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
   const [columnsRef, columnCount] = useColumnCount()
   const { hidden, toastOpen, request, undo } = usePendingDelete(deleteImage)
+  const [viewerImage, setViewerImage] = useState<ImageRecord | null>(null)
+  const opener = useRef<HTMLButtonElement | null>(null)
+  const [pendingNextId, setPendingNextId] = useState<number | null>(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const openViewer = (image: ImageRecord, trigger: HTMLButtonElement): void => {
+    opener.current = trigger
+    setViewerImage(image)
+  }
 
   const loadMore = useCallback(() => void loadMoreImages(), [loadMoreImages])
   const sentinel = useNearEnd(images.length > 0 && !exhausted, images.length, loadMore)
 
+  // Without a loaded server list every queued job counts as the active server's.
+  const activeServerId = servers.length === 0 ? undefined : (servers.find((s) => s.active)?.id ?? null)
   const items = useMemo(
-    () => galleryItems(jobs, progress, images).filter((i) => i.kind !== 'image' || !hidden.has(i.image.id)),
-    [jobs, progress, images, hidden],
+    () => galleryItems(jobs, progress, images, activeServerId)
+      .filter((i) => i.kind !== 'image' || !hidden.has(i.image.id)),
+    [jobs, progress, images, activeServerId, hidden],
   )
+  const visibleImages = useMemo(
+    () => items.flatMap((item) => item.kind === 'image' ? [item.image] : []),
+    [items],
+  )
+  const viewerIndex = visibleImages.findIndex((image) => image.id === viewerImage?.id)
+  const hasPrevious = viewerIndex > 0
+  const hasNext = viewerIndex >= 0 && (viewerIndex < visibleImages.length - 1 || (!exhausted && !loadingOlder))
+
+  useEffect(() => {
+    if (pendingNextId === null) return
+    const index = visibleImages.findIndex((image) => image.id === pendingNextId)
+    const next = visibleImages[index + 1]
+    if (index >= 0 && next) {
+      setViewerImage(next)
+      setPendingNextId(null)
+    } else if (!loadingOlder) {
+      setPendingNextId(null)
+    }
+  }, [pendingNextId, visibleImages, loadingOlder])
+
+  const closeViewer = (): void => {
+    setPendingNextId(null)
+    setViewerImage(null)
+  }
+  const previousImage = (): void => {
+    if (!hasPrevious) return
+    setPendingNextId(null)
+    setViewerImage(visibleImages[viewerIndex - 1]!)
+  }
+  const nextImage = (): void => {
+    if (!hasNext) return
+    const next = visibleImages[viewerIndex + 1]
+    if (next) {
+      setViewerImage(next)
+      return
+    }
+    setPendingNextId(viewerImage!.id)
+    setLoadingOlder(true)
+    void loadMoreImages().finally(() => setLoadingOlder(false))
+  }
+  const serverName = (id: number): string | null => servers.find((s) => s.id === id)?.name ?? null
   const columns = useMemo(() => layoutColumns(items, columnCount, aspectOfItem), [items, columnCount])
 
   const empty = items.length === 0 && hasParams && hidden.size === 0
   const renderItem = (item: GalleryItem) =>
     item.kind === 'job' ? (
-      <JobTile key={itemKey(item)} job={item.job} progress={item.progress} queuePosition={item.queuePosition} />
+      <JobTile
+        key={itemKey(item)}
+        job={item.job}
+        progress={item.progress}
+        queuePosition={item.queuePosition}
+        waitingFor={item.waiting ? serverName(item.job.serverId) : null}
+      />
     ) : (
-      <ImageTile key={itemKey(item)} image={item.image} onDelete={request} />
+      <ImageTile key={itemKey(item)} image={item.image} onOpen={openViewer} onDelete={request} />
     )
 
   return (
@@ -95,6 +156,17 @@ export function Gallery() {
         )}
         {images.length > 0 && !exhausted && <div ref={sentinel} className={styles.sentinel} aria-hidden="true" />}
       </div>
+      <ImageViewer
+        image={viewerImage}
+        opener={opener}
+        onClose={closeViewer}
+        onPrevious={previousImage}
+        onNext={nextImage}
+        hasPrevious={hasPrevious}
+        hasNext={hasNext}
+        position={viewerIndex + 1}
+        loadedCount={visibleImages.length}
+      />
       <div role="status" aria-live="polite" className={styles.toastHost}>
         {toastOpen && (
           <div className={styles.toast}>
