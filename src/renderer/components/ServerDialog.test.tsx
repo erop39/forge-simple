@@ -127,3 +127,42 @@ test('with saved servers but none active, the list shows and cannot be dismissed
   expect(screen.queryByRole('button', { name: en['server.close'] })).toBeNull()
   expect(within(row('Home')).getByRole('button', { name: en['server.use'] })).toBeDefined()
 })
+
+describe('Forge actions', () => {
+  const section = () => screen.getByRole('region', { name: 'Forge on Home' })
+
+  test('without --api-server-stop Restart is disabled and the hint says which flag to add', () => {
+    setup()
+    const restart = within(section()).getByRole('button', { name: en['forge.restart'] })
+    expect((restart as HTMLButtonElement).disabled).toBe(true)
+    const hint = within(section()).getByText(en['forge.restartHint'])
+    expect(restart.getAttribute('aria-describedby')).toBe(hint.id)
+  })
+
+  test('Restart asks first; Restart in the confirmation restarts and reports it', async () => {
+    const restartForge = vi.fn(async () => 'restarting' as const)
+    setup({ capabilities: { canRestart: true }, restartForge })
+    await userEvent.click(within(section()).getByRole('button', { name: en['forge.restart'] }))
+    expect(within(section()).getByText(en['forge.restartBody'])).toBeDefined()
+    expect(restartForge).not.toHaveBeenCalled()
+    await userEvent.click(within(section()).getByRole('button', { name: en['forge.restartYes'] }))
+    expect(restartForge).toHaveBeenCalledTimes(1)
+    expect((await within(section()).findByRole('status')).textContent).toBe(en['forge.restartStarted'])
+  })
+
+  test('Unload model unloads and confirms; a refusal shows the error; disabled while a job runs', async () => {
+    const unloadModel = vi.fn(async () => {})
+    setup({ unloadModel })
+    await userEvent.click(within(section()).getByRole('button', { name: en['forge.unload'] }))
+    expect(unloadModel).toHaveBeenCalledTimes(1)
+    expect((await within(section()).findByRole('status')).textContent).toBe(en['forge.unloaded'])
+    unloadModel.mockRejectedValueOnce(new Error('error.network'))
+    await userEvent.click(within(section()).getByRole('button', { name: en['forge.unload'] }))
+    expect((await within(section()).findByRole('alert')).textContent).toBe(en['error.network'])
+  })
+
+  test('Unload is disabled while a job runs', () => {
+    setup({ jobs: { 9: runningJob } })
+    expect((within(section()).getByRole('button', { name: en['forge.unload'] }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})

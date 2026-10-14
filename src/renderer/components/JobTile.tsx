@@ -77,6 +77,10 @@ function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null
 function FailedBody({ job }: { job: Job }) {
   const retryJob = useAppStore((s) => s.retryJob)
   const dismissJob = useAppStore((s) => s.dismissJob)
+  const askRestart = useAppStore((s) => s.askRestart)
+  // A Forge 500 often means its model state broke; a restart is the cure when Forge allows it.
+  const offerRestart = useAppStore((s) => s.capabilities.canRestart)
+    && job.error?.code === 'forgeHttp' && job.error.status === 500
   const { message, detail } = jobErrorText(job.error ?? { code: 'unexpected' })
   return (
     <div className={styles.failed}>
@@ -94,6 +98,7 @@ function FailedBody({ job }: { job: Job }) {
       )}
       <div className={styles.actions}>
         <Button onClick={() => void retryJob(job.id)}>{t('job.retry')}</Button>
+        {offerRestart && <Button onClick={askRestart}>{t('job.restartForge')}</Button>}
         <Button onClick={() => dismissJob(job.id)}>{t('job.dismiss')}</Button>
       </div>
     </div>

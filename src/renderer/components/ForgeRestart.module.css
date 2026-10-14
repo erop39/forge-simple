@@ -1,0 +1,52 @@
+.overlay {
+  composes: fadeIn from '../styles/motion.module.css';
+  position: fixed;
+  z-index: var(--z-dialog);
+  inset: 0;
+  background: var(--scrim);
+}
+
+.content {
+  position: fixed;
+  z-index: var(--z-dialog);
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(440px, calc(100vw - var(--sp-8)));
+  transform: translate(-50%, -50%);
+  padding: var(--sp-6);
+  border-radius: var(--r-panel);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-float);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.body {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.error {
+  margin: 0;
+  color: var(--blocked);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}

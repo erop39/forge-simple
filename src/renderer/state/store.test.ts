@@ -1,6 +1,6 @@
 import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
-  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, ServerInfo,
+  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { createAppStore } from './store'
 
@@ -69,6 +69,12 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
     },
     images: { list: vi.fn(async (): Promise<ImageRecord[]> => [image(5), image(4)]), delete: vi.fn(async () => {}) },
     connection: { get: vi.fn(async () => connected) },
+    forge: {
+      capabilities: vi.fn(async () => ({ canRestart: true })),
+      health: vi.fn(async () => ({ unhealthy: false })),
+      restart: vi.fn(async (): Promise<RestartOutcome> => 'restarting'),
+      unload: vi.fn(async () => {}),
+    },
     on: vi.fn((event: string, cb: (payload: never) => void) => {
       handlers.set(event, [...(handlers.get(event) ?? []), cb])
       return () => {}
@@ -131,7 +137,7 @@ test('init is safe to call twice: one load, one set of subscriptions', async () 
   const { api, store } = await ready()
   await store.getState().init()
   expect(api.settings.get).toHaveBeenCalledTimes(1)
-  expect(api.on).toHaveBeenCalledTimes(7)
+  expect(api.on).toHaveBeenCalledTimes(9)
 })
 
 test('params stay null when the catalog has no checkpoints', async () => {
@@ -583,5 +589,62 @@ describe('negative presets', () => {
     releaseOld([])
     await first
     expect(store.getState().negativePresets).toEqual([blurry, hands])
+  })
+})
+
+describe('forge control', () => {
+  test('init loads capabilities and health; events replace them', async () => {
+    const { store, emit } = await ready()
+    expect(store.getState().capabilities).toEqual({ canRestart: true })
+    expect(store.getState().forgeUnhealthy).toBe(false)
+    emit('forge:health', { unhealthy: true })
+    expect(store.getState().forgeUnhealthy).toBe(true)
+    emit('forge:capabilities', { canRestart: false })
+    expect(store.getState().capabilities).toEqual({ canRestart: false })
+  })
+
+  test('an event that arrives while init loads wins over the older load result', async () => {
+    const fake = fakeApi()
+    let release!: () => void
+    fake.api.forge.health.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ unhealthy: false }) }))
+    const store = createAppStore(fake.api)
+    const init = store.getState().init()
+    await vi.waitFor(() => expect(fake.api.forge.health).toHaveBeenCalled())
+    fake.emit('forge:health', { unhealthy: true })
+    release()
+    await init
+    expect(store.getState().forgeUnhealthy).toBe(true)
+  })
+
+  test('restartForge clears the unhealthy flag on restarting and returns the outcome', async () => {
+    const { store, emit, api } = await ready()
+    emit('forge:health', { unhealthy: true })
+    expect(await store.getState().restartForge()).toBe('restarting')
+    expect(store.getState().forgeUnhealthy).toBe(false)
+    emit('forge:health', { unhealthy: true })
+    api.forge.restart.mockResolvedValueOnce('notAllowed')
+    expect(await store.getState().restartForge()).toBe('notAllowed')
+    expect(store.getState().forgeUnhealthy).toBe(true)
+  })
+
+  test('restartForge and unloadModel reject with the key; the confirmation flag opens and closes', async () => {
+    const { store, api } = await ready()
+    api.forge.restart.mockRejectedValueOnce(new Error('error.network'))
+    await expect(store.getState().restartForge()).rejects.toThrow('error.network')
+    api.forge.unload.mockRejectedValueOnce(new Error('error.jobRunning'))
+    await expect(store.getState().unloadModel()).rejects.toThrow('error.jobRunning')
+    store.getState().askRestart()
+    expect(store.getState().restartAsked).toBe(true)
+    store.getState().closeRestart()
+    expect(store.getState().restartAsked).toBe(false)
+  })
+
+  test('dismissUnhealthy hides the notice until the next report', async () => {
+    const { store, emit } = await ready()
+    emit('forge:health', { unhealthy: true })
+    store.getState().dismissUnhealthy()
+    expect(store.getState().forgeUnhealthy).toBe(false)
+    emit('forge:health', { unhealthy: true })
+    expect(store.getState().forgeUnhealthy).toBe(true)
   })
 })

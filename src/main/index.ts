@@ -3,6 +3,7 @@ import { extname, join } from 'node:path'
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, protocol } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
+import { createCapabilities } from './forge/capabilities'
 import { createForgeClient } from './forge/client'
 import { createConnectionMonitor } from './forge/connection'
 import { FINDINGS } from './forge/findings'
@@ -122,9 +123,13 @@ async function boot(): Promise<void> {
     now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   })
+  const capabilities = createCapabilities({ client: forge.client, emit: events.capabilities })
   const monitor = createConnectionMonitor({
     ping: () => forge.client().ping(),
-    emit: events.connection,
+    emit: (status) => {
+      events.connection(status)
+      capabilities.onConnection(status)
+    },
     now,
     oplog,
     address: forge.address,
@@ -148,6 +153,7 @@ async function boot(): Promise<void> {
     createClient: (url) => createForgeClient(url),
     copyToClipboard: (value) => clipboard.writeText(value),
     onServerChanged: syncMonitor,
+    capabilities,
   }, send)
 
   protocol.handle('fnc-img', async (request) => {

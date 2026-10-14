@@ -1,6 +1,9 @@
+import type { RestartOutcome } from '@shared/types'
+
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
 export const DEFAULT_LORAS_TIMEOUT_MS = 60_000
+export const DEFAULT_CONTROL_TIMEOUT_MS = 60_000
 
 export type ForgeErrorKind = 'network' | 'timeout' | 'http' | 'invalid'
 
@@ -84,6 +87,11 @@ export interface LoraItem {
   metadata: Record<string, unknown>
 }
 
+export type { RestartOutcome }
+
+/** Connection errors that mean Forge dropped a request it had received (rather than never getting it). */
+const DROPPED = /other side closed|socket hang up|ECONNRESET|EPIPE|terminated|UND_ERR_SOCKET/i
+
 export interface ForgeClient {
   ping(): Promise<number>
   txt2img(body: Txt2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
@@ -97,6 +105,12 @@ export interface ForgeClient {
   schedulers(): Promise<string[]>
   upscalers(): Promise<string[]>
   options(): Promise<Record<string, unknown>>
+  /** Forge's launch flags (`/cmd-flags`), e.g. `api_server_stop`. */
+  cmdFlags(): Promise<Record<string, unknown>>
+  /** Unloads the current checkpoint; the next generation loads it afresh. */
+  unloadCheckpoint(): Promise<void>
+  /** Asks Forge to restart itself; throws a ForgeError only when the request could not be sent or failed otherwise. */
+  restartServer(): Promise<RestartOutcome>
 }
 
 const API = '/sdapi/v1'
@@ -172,12 +186,13 @@ function parseProgress(value: unknown): ProgressResponse {
 
 export function createForgeClient(
   baseUrl: string,
-  opts: { listTimeoutMs?: number; pingTimeoutMs?: number; lorasTimeoutMs?: number } = {},
+  opts: { listTimeoutMs?: number; pingTimeoutMs?: number; lorasTimeoutMs?: number; controlTimeoutMs?: number } = {},
 ): ForgeClient {
   const base = normalizeBaseUrl(baseUrl)
   const listTimeoutMs = opts.listTimeoutMs ?? DEFAULT_LIST_TIMEOUT_MS
   const pingTimeoutMs = opts.pingTimeoutMs ?? DEFAULT_PING_TIMEOUT_MS
   const lorasTimeoutMs = opts.lorasTimeoutMs ?? DEFAULT_LORAS_TIMEOUT_MS
+  const controlTimeoutMs = opts.controlTimeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS
 
   async function request(
     method: 'GET' | 'POST',
@@ -301,6 +316,30 @@ export function createForgeClient(
 
     async options() {
       return asObj(await request('GET', `${API}/options`, { timeoutMs: listTimeoutMs }), 'options')
+    },
+
+    async cmdFlags() {
+      return asObj(await request('GET', `${API}/cmd-flags`, { timeoutMs: listTimeoutMs }), 'cmd-flags')
+    },
+
+    async unloadCheckpoint() {
+      await request('POST', `${API}/unload-checkpoint`, { timeoutMs: controlTimeoutMs })
+    },
+
+    async restartServer() {
+      try {
+        await request('POST', `${API}/server-restart`, { timeoutMs: controlTimeoutMs })
+        return 'restarting'
+      } catch (err) {
+        if (!(err instanceof ForgeError)) throw err
+        if (err.kind === 'http' && (err.status === 404 || err.status === 403)) return 'notAllowed'
+        if (err.kind === 'http' && err.status === 501) return 'notRestartable'
+        // A 2xx body that is not JSON is still an accepted restart.
+        if (err.kind === 'invalid' && err.status !== undefined && err.status < 300) return 'restarting'
+        // The process exits while answering: the connection drops after the request was sent.
+        if (err.kind === 'network' && DROPPED.test(err.detail ?? '')) return 'restarting'
+        throw err
+      }
     },
   }
 }

@@ -1,7 +1,8 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus, ServerInfo,
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
+  RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { errorKeyOf } from '../i18n/error-text'
 
@@ -29,6 +30,12 @@ export interface AppState {
   /** True once a page came back short: there are no older images to load. */
   imagesExhausted: boolean
   panelOpen: boolean
+  /** What the active Forge allows; restart needs --api-server-stop. */
+  capabilities: ForgeCapabilities
+  /** Generations keep failing with HTTP 500; false again after a success, a restart, a switch or a dismissal. */
+  forgeUnhealthy: boolean
+  /** The restart confirmation opened from a job tile or the unhealthy notice. */
+  restartAsked: boolean
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
   setParams(patch: Partial<GenerationParams>): void
@@ -57,6 +64,14 @@ export interface AppState {
   removeNegativePreset(id: number): Promise<void>
   dismissError(): void
   togglePanel(): void
+  askRestart(): void
+  closeRestart(): void
+  /** Rejects with the error key when the request fails (e.g. error.network). */
+  restartForge(): Promise<RestartOutcome>
+  /** Rejects with the error key when main refuses (e.g. error.jobRunning). */
+  unloadModel(): Promise<void>
+  /** Hides the unhealthy notice until Forge is reported unhealthy again. */
+  dismissUnhealthy(): void
 }
 
 const OFFLINE: ConnectionStatus = { state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }
@@ -71,6 +86,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   let selectSeq = 0
   let catalogSeq = 0
   let presetsSeq = 0
+  // Bumped by each forge:capabilities / forge:health event: a load that started earlier is older.
+  let capabilitiesSeq = 0
+  let healthSeq = 0
   let morePromise: Promise<void> | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -228,6 +246,25 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       api.on('connection', (connection) => set({ connection }))
       api.on('job:removed', ({ id }) => forgetJob(id))
       api.on('servers', (servers) => set({ servers }))
+      api.on('forge:capabilities', (capabilities) => {
+        capabilitiesSeq++
+        set({ capabilities })
+      })
+      api.on('forge:health', ({ unhealthy }) => {
+        healthSeq++
+        set({ forgeUnhealthy: unhealthy })
+      })
+    }
+
+    /** Loads what the active Forge allows and its health; an event that arrived meanwhile is newer. */
+    async function loadForgeState(): Promise<void> {
+      const [caps, health] = [capabilitiesSeq, healthSeq]
+      const [capabilities, state] = await Promise.all([
+        attempt(() => api.forge.capabilities()),
+        attempt(() => api.forge.health()),
+      ])
+      if (capabilities && caps === capabilitiesSeq) set({ capabilities })
+      if (state && health === healthSeq) set({ forgeUnhealthy: state.unhealthy })
     }
 
     async function load(): Promise<void> {
@@ -249,7 +286,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           : s.images,
         imagesExhausted: images ? images.length < IMAGE_PAGE : s.imagesExhausted,
       }))
-      await Promise.all([loadPresets(), settings?.serverUrl ? loadCatalog() : undefined])
+      await Promise.all([loadPresets(), loadForgeState(), settings?.serverUrl ? loadCatalog() : undefined])
     }
 
     return {
@@ -268,6 +305,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       images: [],
       imagesExhausted: false,
       panelOpen: false,
+      capabilities: { canRestart: false },
+      forgeUnhealthy: false,
+      restartAsked: false,
 
       init() {
         initPromise ??= load()
@@ -383,6 +423,31 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       togglePanel() {
         set((s) => ({ panelOpen: !s.panelOpen }))
+      },
+
+      askRestart() {
+        set({ restartAsked: true })
+      },
+
+      closeRestart() {
+        set({ restartAsked: false })
+      },
+
+      async restartForge() {
+        const outcome = await api.forge.restart()
+        if (outcome === 'restarting') {
+          healthSeq++
+          set({ forgeUnhealthy: false })
+        }
+        return outcome
+      },
+
+      async unloadModel() {
+        await api.forge.unload()
+      },
+
+      dismissUnhealthy() {
+        set({ forgeUnhealthy: false })
       },
     }
   })

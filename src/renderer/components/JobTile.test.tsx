@@ -93,3 +93,24 @@ test('an interrupted tile uses its own heading and offers the same actions', () 
   expect(screen.getByRole('button', { name: en['job.dismiss'] })).toBeDefined()
   expect(tile(container).dataset['status']).toBe('interrupted')
 })
+
+describe('Restart Forge on a failed tile', () => {
+  const failed500 = job('failed', { error: { code: 'forgeHttp', status: 500, detail: 'TypeError: boom' } })
+
+  test('a Forge 500 offers Restart Forge when Forge allows restarts; it opens the confirmation', async () => {
+    const { store } = renderWithStore(<JobTile job={failed500} progress={null} queuePosition={null} />, 'sdxl', {
+      capabilities: { canRestart: true },
+    })
+    await userEvent.click(screen.getByRole('button', { name: en['job.restartForge'] }))
+    expect(store.getState().restartAsked).toBe(true)
+  })
+
+  test('no Restart Forge without the flag, nor for other errors', () => {
+    const { unmount } = renderWithStore(<JobTile job={failed500} progress={null} queuePosition={null} />)
+    expect(screen.queryByRole('button', { name: en['job.restartForge'] })).toBeNull()
+    unmount()
+    const failed422 = job('failed', { error: { code: 'forgeHttp', status: 422 } })
+    renderWithStore(<JobTile job={failed422} progress={null} queuePosition={null} />, 'sdxl', { capabilities: { canRestart: true } })
+    expect(screen.queryByRole('button', { name: en['job.restartForge'] })).toBeNull()
+  })
+})

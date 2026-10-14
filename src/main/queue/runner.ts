@@ -1,5 +1,5 @@
 import type { Catalog, GenerationParams, Job, JobError, JobProgress } from '@shared/types'
-import { ForgeError, type ForgeClient, type GenerationResponse } from '../forge/client'
+import { ForgeError, type ForgeClient, type GenerationResponse, type RestartOutcome } from '../forge/client'
 import { checkParts } from '../forge/catalog'
 import type { ProbeFindings } from '../forge/findings'
 import { buildTxt2ImgBody } from '../generation/payload'
@@ -12,6 +12,8 @@ export interface RunnerEvents {
   jobUpdate(job: Job): void
   jobProgress(p: JobProgress): void
   imageAdded(row: ImageRow): void
+  /** The unhealthy flag changed: generations keep failing with HTTP 500 and a restart is advised. */
+  forgeHealth?(unhealthy: boolean): void
 }
 
 export interface RunnerDeps {
@@ -33,6 +35,8 @@ export const PAUSE_INTERVAL_MS = 5000
 /** Consecutive failed progress polls after which a silent link drop ends the job. */
 export const PROGRESS_FAILURE_LIMIT = 15
 export const MAX_COUNT = 8
+/** Consecutive generation 500s on one server after which Forge counts as unhealthy. */
+export const UNHEALTHY_AFTER = 2
 
 interface ActiveJob {
   jobId: number
@@ -77,6 +81,15 @@ export function createRunner(deps: RunnerDeps): {
   start(): void
   stop(): Promise<void>
   kick(): void
+  /** True after UNHEALTHY_AFTER generation 500s in a row on the active server. */
+  unhealthy(): boolean
+  /** Clears the 500 count and the unhealthy flag (server switch, restart). */
+  resetHealth(): void
+  /**
+   * Asks Forge to restart. When it accepts, the running job is interrupted (code stopped), the
+   * queue pauses until Forge answers again and the unhealthy flag clears. Throws what the client throws.
+   */
+  restartForge(): Promise<RestartOutcome>
 } {
   const { repos, oplog, events } = deps
 
@@ -85,6 +98,11 @@ export function createRunner(deps: RunnerDeps): {
   let tickEpoch = 0
   let lastDone: { checkpoint: string; modules: string[] } | null = null
   let queuePaused = false
+  /** Generation 500s in a row, per server; any success or resetHealth() clears it. */
+  let failStreak: { serverId: number; count: number } | null = null
+  let isUnhealthy = false
+  /** Set while a restart request is out: a dropped generation request is then a stop, not a lost link. */
+  let restartPending = false
 
   // Every stop() bumps `stopEpoch`: a tick that began earlier backs off, a tick that begins later
   // is a normal pass. Every start()/stop() bumps `runGen`: only the newest loop keeps running.
@@ -273,15 +291,16 @@ export function createRunner(deps: RunnerDeps): {
     }
   }
 
-  function markPaused(): 'paused' {
+  function markPaused(reason: 'unreachable' | 'restart' = 'unreachable'): 'paused' {
     if (!queuePaused) {
       queuePaused = true
-      log({ level: 'warn', category: 'queue', messageKey: 'log.queue.paused', details: { reason: 'unreachable' } })
+      log({ level: 'warn', category: 'queue', messageKey: 'log.queue.paused', details: { reason } })
     }
     return 'paused'
   }
 
   function resumeIfPaused(): void {
+    restartPending = false
     if (queuePaused) {
       queuePaused = false
       log({ level: 'info', category: 'queue', messageKey: 'log.queue.resumed' })
@@ -389,9 +408,15 @@ export function createRunner(deps: RunnerDeps): {
         interrupted(job, { code: 'network' }, 'log.error.connectionLost', { kind: 'watchdog' })
         return markPaused()
       }
-      if (a.stopping) {
+      if (a.stopping || (restartPending && err instanceof ForgeError && err.kind === 'network')) {
         interrupted(job, { code: 'stopped' })
         return 'paused'
+      }
+      if (err instanceof ForgeError && err.kind === 'http' && err.status === 500) {
+        failForgeError(job, err, 'forgeHttp')
+        noteServerError(job)
+        await unloadAfterError(job, a.client)
+        return 'ran'
       }
       if (err instanceof ForgeError && err.kind === 'http') return failForgeError(job, err, 'forgeHttp')
       if (err instanceof ForgeError && err.kind === 'invalid') return failForgeError(job, err, 'forgeInvalid')
@@ -462,6 +487,7 @@ export function createRunner(deps: RunnerDeps): {
 
     for (const row of saved) emitSafely(() => events.imageAdded(row))
     setStatus(job.id, 'done', { durationMs, stepsPerSec: speed })
+    resetHealth()
     lastDone = { checkpoint: params.checkpoint, modules: [...params.modules] }
     log({
       level: 'info', category: 'generation', messageKey: 'log.generation.finished', jobId: job.id, durationMs,
@@ -471,6 +497,67 @@ export function createRunner(deps: RunnerDeps): {
       },
     })
     return 'ran'
+  }
+
+  // ---- recovery ----------------------------------------------------------
+
+  function setUnhealthy(next: boolean): void {
+    if (isUnhealthy === next) return
+    isUnhealthy = next
+    emitSafely(() => events.forgeHealth?.(next))
+  }
+
+  function resetHealth(): void {
+    failStreak = null
+    setUnhealthy(false)
+  }
+
+  /** Counts a generation 500; after UNHEALTHY_AFTER in a row on one server, Forge counts as unhealthy. */
+  function noteServerError(job: Job): void {
+    const count = failStreak?.serverId === job.serverId ? failStreak.count + 1 : 1
+    failStreak = { serverId: job.serverId, count }
+    if (count >= UNHEALTHY_AFTER && !isUnhealthy) {
+      log({ level: 'warn', category: 'server', messageKey: 'log.recovery.unhealthy', jobId: job.id, details: { count } })
+      setUnhealthy(true)
+    }
+  }
+
+  /**
+   * After a 500 Forge's model state may be broken (a failed load leaves the old checkpoint named but
+   * nothing loaded). Unloading makes the next job load its model afresh. Best effort: a failure is logged only.
+   */
+  async function unloadAfterError(job: Job, client: ForgeClient): Promise<void> {
+    try {
+      await client.unloadCheckpoint()
+      log({ level: 'info', category: 'checkpoint', messageKey: 'log.recovery.unloaded', jobId: job.id })
+    } catch (err) {
+      log({
+        level: 'warn', category: 'checkpoint', messageKey: 'log.recovery.unloadFailed', jobId: job.id,
+        details: err instanceof ForgeError ? { kind: err.kind, status: err.status ?? null } : { kind: 'unknown', status: null },
+      })
+    }
+  }
+
+  async function restartForge(): Promise<RestartOutcome> {
+    restartPending = true
+    let outcome: RestartOutcome
+    try {
+      outcome = await deps.client().restartServer()
+    } catch (err) {
+      restartPending = false
+      throw err
+    }
+    if (outcome !== 'restarting') {
+      restartPending = false
+      return outcome
+    }
+    if (active && !active.cancelling) {
+      active.stopping = true
+      active.controller.abort()
+    }
+    markPaused('restart')
+    resetHealth()
+    return outcome
   }
 
   // ---- loop --------------------------------------------------------------
@@ -536,5 +623,5 @@ export function createRunner(deps: RunnerDeps): {
     return Promise.allSettled(pending).then(() => undefined)
   }
 
-  return { enqueue, cancel, retry, recover, tick, start, stop, kick }
+  return { enqueue, cancel, retry, recover, tick, start, stop, kick, unhealthy: () => isUnhealthy, resetHealth, restartForge }
 }

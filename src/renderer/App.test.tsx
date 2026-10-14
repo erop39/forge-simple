@@ -35,6 +35,12 @@ function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionChe
     jobs: { enqueue: vi.fn(), cancel: vi.fn(), retry: vi.fn(), listActive: vi.fn(async () => []) },
     images: { list: vi.fn(async () => []), delete: vi.fn() },
     connection: { get: vi.fn(async () => ({ state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 })) },
+    forge: {
+      capabilities: vi.fn(async () => ({ canRestart: false })),
+      health: vi.fn(async () => ({ unhealthy: false })),
+      restart: vi.fn(),
+      unload: vi.fn(),
+    },
     on: vi.fn(() => () => {}),
   }
   if (catalogFails) api.catalog.get.mockRejectedValueOnce(new Error('error.network'))

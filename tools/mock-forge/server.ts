@@ -10,6 +10,15 @@ export interface MockForge {
     path: string,
     r: { status?: number; json?: unknown; text?: string; delayMs?: number; hang?: boolean },
   ): void
+  /**
+   * Makes the next generations fail with a Forge-shaped HTTP 500 (as after a failed model load):
+   * `count` times, or every time until `unload-checkpoint` or a restart (`'untilUnload'`). 0 stops it.
+   */
+  failGenerations(mode: number | 'untilUnload'): void
+  /** Sets the `api_server_stop` launch flag that `cmd-flags` reports and `server-restart` checks. */
+  setApiServerStop(on: boolean): void
+  /** Completed restarts and unloads so far. */
+  stats(): { restarts: number; unloads: number }
   close(): Promise<void>
 }
 
@@ -161,11 +170,23 @@ const MEMORY = {
 
 const NOT_FOUND = { detail: 'Not Found' }
 
+/** The body Forge's exception handler sends with a 500 (fictional message). */
+/** Sentinel: the route asked for a simulated restart. */
+const RESTART = { restart: true }
+
+const FORGE_500 = { error: 'TypeError', detail: '', body: '', errors: "'NoneType' object is not callable" }
+
 export interface MockForgeOptions {
   port?: number
   stepMs?: number
   /** 'many': a long mixed-family checkpoint list (MOCK_CATALOG=many from the command line). */
   catalog?: 'default' | 'many'
+  /** Whether Forge was started with --api-server-stop (API_SERVER_STOP=1). Default false. */
+  apiServerStop?: boolean
+  /** How long a simulated restart refuses connections (RESTART_MS). Default 1500. */
+  restartMs?: number
+  /** Initial generation failures (FAIL_500=<n>|until-unload). */
+  failGenerations?: number | 'untilUnload'
 }
 
 export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> {
@@ -175,6 +196,13 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
   const overrides = new Map<string, Override>()
   const sockets = new Set<Socket>()
   const life = new AbortController()
+  let apiServerStop = opts.apiServerStop ?? false
+  const restartMs = opts.restartMs ?? 1500
+  let failing: number | 'untilUnload' = opts.failGenerations ?? 0
+  let restarts = 0
+  let unloads = 0
+  let restartTimer: ReturnType<typeof setTimeout> | null = null
+  let port = opts.port ?? 0
 
   interface Generation {
     step: number
@@ -272,12 +300,27 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
             zit_show_shift: true,
             CLIP_stop_at_last_layers: 1,
           })
-        case '/sdapi/v1/cmd-flags': return ok({ api: true, api_server_stop: false })
+        case '/sdapi/v1/cmd-flags': return ok({ api: true, api_server_stop: apiServerStop })
         case '/sdapi/v1/memory': return ok(MEMORY)
         case '/sdapi/v1/progress': return ok(progress(query.get('skip_current_image') === 'true'))
       }
     } else if (method === 'POST') {
-      if (path === '/sdapi/v1/txt2img') return ok(await enqueue(body))
+      if (path === '/sdapi/v1/txt2img') {
+        if (failing === 'untilUnload' || failing > 0) {
+          if (failing !== 'untilUnload') failing--
+          return { status: 500, json: FORGE_500 }
+        }
+        return ok(await enqueue(body))
+      }
+      if (path === '/sdapi/v1/unload-checkpoint') {
+        if (failing === 'untilUnload') failing = 0
+        unloads++
+        return ok({})
+      }
+      if (path === '/sdapi/v1/server-restart') {
+        // Real Forge registers the route only with --api-server-stop.
+        return apiServerStop ? { status: 200, json: RESTART } : { status: 404, json: NOT_FOUND }
+      }
       if (path === '/sdapi/v1/interrupt') {
         if (current) {
           current.interrupted = true
@@ -320,7 +363,29 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
       return send(res, status, 'application/json', JSON.stringify(override.json ?? {}))
     }
     const out = await route(method, url.pathname, url.searchParams, body)
+    if (out.json === RESTART) {
+      // The process exits while answering: the client sees the connection drop.
+      req.socket.destroy()
+      simulateRestart()
+      return
+    }
     send(res, out.status, 'application/json', JSON.stringify(out.json))
+  }
+
+  /** Drops every connection, refuses new ones for restartMs, then listens again with a fresh model state. */
+  function simulateRestart(): void {
+    if (current) {
+      current.interrupted = true
+      current.wake.abort()
+    }
+    failing = 0
+    server.close()
+    for (const socket of sockets) socket.destroy()
+    restartTimer = setTimeout(() => {
+      restartTimer = null
+      if (life.signal.aborted) return
+      server.listen(port, '127.0.0.1', () => { restarts++ })
+    }, restartMs)
   }
 
   const server = createServer((req, res) => {
@@ -338,15 +403,27 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
     server.listen(opts.port ?? 0, '127.0.0.1', () => {
       const address = server.address()
       if (address === null || typeof address === 'string') return reject(new Error('no address'))
+      port = address.port
+      server.off('error', reject)
+      server.on('error', (err) => console.error('mock-forge:', err))
       resolve({
         url: `http://127.0.0.1:${address.port}`,
         requests,
         respond(path, r) {
           overrides.set(path, r)
         },
+        failGenerations(mode) {
+          failing = mode
+        },
+        setApiServerStop(on) {
+          apiServerStop = on
+        },
+        stats: () => ({ restarts, unloads }),
         close() {
           life.abort()
+          if (restartTimer) clearTimeout(restartTimer)
           return new Promise<void>((done) => {
+            if (!server.listening) return done()
             server.close(() => done())
             for (const socket of sockets) socket.destroy()
           })
@@ -364,6 +441,11 @@ if (isMain) {
     port,
     ...(stepMs !== undefined ? { stepMs } : {}),
     catalog: process.env.MOCK_CATALOG === 'many' ? 'many' : 'default',
+    apiServerStop: process.env.API_SERVER_STOP === '1',
+    ...(process.env.RESTART_MS !== undefined ? { restartMs: Number(process.env.RESTART_MS) } : {}),
+    ...(process.env.FAIL_500 !== undefined
+      ? { failGenerations: process.env.FAIL_500 === 'until-unload' ? ('untilUnload' as const) : Number(process.env.FAIL_500) }
+      : {}),
   })
     .then((mock) => {
       console.log(`Mock Forge listening on ${mock.url}`)

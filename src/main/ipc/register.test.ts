@@ -6,6 +6,7 @@ import type { AppEvents } from '@shared/ipc'
 import type { GenerationParams } from '@shared/types'
 import { startMockForge, type MockForge } from '../../../tools/mock-forge/server'
 import { createActiveForge } from '../forge/active-forge'
+import { createCapabilities } from '../forge/capabilities'
 import { createForgeClient } from '../forge/client'
 import { createConnectionMonitor } from '../forge/connection'
 import { FINDINGS } from '../forge/findings'
@@ -78,6 +79,7 @@ beforeEach(async () => {
       runner, monitor, images, oplog, imagesDir: () => dir,
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
+      capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
     },
     send,
   )
@@ -413,6 +415,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
     monitor: { sampleOnce: () => Promise.reject(new Error('x')), current: () => ({ state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }) },
     images: imageStore, oplog, imagesDir: () => dir, createClient: () => { throw boom },
     copyToClipboard: () => undefined,
+    capabilities: { current: () => ({ canRestart: false }), refresh: async () => ({ canRestart: false }), reset: () => undefined },
   }, () => undefined)
   const err = await h.get('jobs:listActive')!({}).catch((e: Error) => e)
   expect((err as Error).message).toBe('error.unexpected')
@@ -513,5 +516,79 @@ describe('negative presets', () => {
     await expect(call('negativePresets:remove', 'one')).rejects.toThrow('error.invalidParams')
     await expect(call('negativePresets:remove', 999)).rejects.toThrow('error.notFound')
     expect(presetLog().every((e) => e.messageKey === 'log.preset.created')).toBe(true)
+  })
+})
+
+describe('forge control', () => {
+  test('capabilities follow api_server_stop of the active server and are re-read on a switch', async () => {
+    expect(await call('forge:capabilities')).toEqual({ canRestart: false })
+    const restartable = await startMockForge({ stepMs: 5, apiServerStop: true })
+    try {
+      await addServer(restartable.url)
+      await vi.waitFor(async () => expect(await call('forge:capabilities')).toEqual({ canRestart: true }))
+      expect(sentOf('forge:capabilities')).toEqual([{ canRestart: true }])
+      const other = repos.servers.add('plain', mock.url)
+      await call('servers:activate', other.id)
+      expect(await call('forge:capabilities')).toEqual({ canRestart: false })
+      expect(sentOf('forge:capabilities').at(-1)).toEqual({ canRestart: false })
+    } finally {
+      await restartable.close()
+    }
+  })
+
+  test('restart and unload need an active server', async () => {
+    await expect(call('forge:restart')).rejects.toThrow('error.noServer')
+    await expect(call('forge:unload')).rejects.toThrow('error.noServer')
+  })
+
+  test('restart without the flag answers notAllowed, logs it, and leaves the queue alone', async () => {
+    repos.servers.setActiveUrl(mock.url)
+    expect(await call('forge:restart')).toBe('notAllowed')
+    expect(oplog.list({ category: 'server' })[0]).toMatchObject({
+      level: 'warn', messageKey: 'log.server.restartRequested', details: { url: mock.url, outcome: 'notAllowed' },
+    })
+    expect(logKeys()).not.toContain('log.queue.paused')
+  })
+
+  test('restart of an unreachable server rejects with error.network', async () => {
+    repos.servers.setActiveUrl(DEAD)
+    await expect(call('forge:restart')).rejects.toThrow('error.network')
+  })
+
+  test('restart interrupts the running job (stopped), pauses the queue, and the queue resumes when Forge is back', async () => {
+    const forge = await startMockForge({ stepMs: 100, apiServerStop: true, restartMs: 300 })
+    try {
+      repos.servers.setActiveUrl(forge.url)
+      runner.start()
+      const [job, next] = runner.enqueue(goodParams({ steps: 200, count: 2 }))
+      await vi.waitFor(() => expect(repos.jobs.get(job!.id)?.status).toBe('running'), { timeout: 5000 })
+      expect(await call('forge:restart')).toBe('restarting')
+      await vi.waitFor(() => expect(repos.jobs.get(job!.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } }))
+      expect(oplog.list().find((e) => e.messageKey === 'log.queue.paused')?.details).toEqual({ reason: 'restart' })
+      expect(oplog.list({ category: 'server' })[0]).toMatchObject({
+        level: 'info', messageKey: 'log.server.restartRequested', details: { url: forge.url, outcome: 'restarting' },
+      })
+      await vi.waitFor(() => expect(forge.stats().restarts).toBe(1), { timeout: 5000 })
+      await vi.waitFor(() => expect(repos.jobs.get(next!.id)?.status).toBe('running'), { timeout: 10_000 })
+    } finally {
+      await runner.stop()
+      await forge.close()
+    }
+  }, 20_000)
+
+  test('unload posts to Forge and logs the server; refused while a job runs', async () => {
+    const s = repos.servers.setActiveUrl(mock.url)
+    await call('forge:unload')
+    expect(mock.stats().unloads).toBe(1)
+    expect(oplog.list({ category: 'server' })[0]).toMatchObject({
+      messageKey: 'log.server.unloaded', details: { name: s.name, url: mock.url },
+    })
+    const job = repos.jobs.insert(s.id, 'txt2img', goodParams())
+    repos.jobs.setStatus(job.id, 'running')
+    await expect(call('forge:unload')).rejects.toThrow('error.jobRunning')
+  })
+
+  test('health reports the runner flag', async () => {
+    expect(await call('forge:health')).toEqual({ unhealthy: false })
   })
 })

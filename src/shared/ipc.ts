@@ -1,6 +1,6 @@
 import type {
-  Catalog, ConnectionStatus, GenerationParams, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
-  ServerInfo,
+  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
+  RestartOutcome, ServerInfo,
 } from './types'
 
 /**
@@ -40,6 +40,10 @@ export interface AppEvents {
   'connection': ConnectionStatus
   /** The saved servers after any change to them, a switch included. */
   'servers': ServerInfo[]
+  /** What the active Forge allows changed (read on connect and after a server switch). */
+  'forge:capabilities': ForgeCapabilities
+  /** Generations keep failing with HTTP 500 (unhealthy), or that ended. */
+  'forge:health': ForgeHealth
 }
 
 export interface Api {
@@ -81,6 +85,18 @@ export interface Api {
   }
   clipboard: { writeText(text: string): Promise<void> }
   connection: { get(): Promise<ConnectionStatus> }
+  /** Control of the active Forge. Both actions reject with error.noServer without one. */
+  forge: {
+    capabilities(): Promise<ForgeCapabilities>
+    health(): Promise<ForgeHealth>
+    /**
+     * Asks Forge to restart. On `restarting` the running job is interrupted and the queue pauses until
+     * Forge answers again. Rejects with error.network or error.notForge when the request fails otherwise.
+     */
+    restart(): Promise<RestartOutcome>
+    /** Frees the loaded checkpoint. Refused with error.jobRunning while a job runs. */
+    unload(): Promise<void>
+  }
   on<K extends keyof AppEvents>(event: K, cb: (payload: AppEvents[K]) => void): () => void
 }
 
@@ -95,11 +111,13 @@ export const CHANNELS = [
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive',
   'images:list', 'images:details', 'images:delete', 'clipboard:writeText',
   'connection:get',
+  'forge:capabilities', 'forge:health', 'forge:restart', 'forge:unload',
 ] as const
 export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'servers',
+  'forge:capabilities', 'forge:health',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

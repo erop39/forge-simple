@@ -46,6 +46,12 @@ const api: Api = {
   },
   clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },
+  forge: {
+    capabilities: () => invoke('forge:capabilities'),
+    health: () => invoke('forge:health'),
+    restart: () => invoke('forge:restart'),
+    unload: () => invoke('forge:unload'),
+  },
   on<K extends keyof AppEvents>(event: K, cb: (payload: AppEvents[K]) => void): () => void {
     if (!isEventName(event)) return () => undefined
     const channel = eventChannel(event)

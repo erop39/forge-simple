@@ -287,3 +287,49 @@ describe('generation', () => {
     }
   })
 })
+
+describe('server control', () => {
+  test('cmdFlags() reads the launch flags', async () => {
+    expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: false })
+    mock.setApiServerStop(true)
+    expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: true })
+  })
+
+  test('unloadCheckpoint() posts to unload-checkpoint; an HTTP error is a ForgeError', async () => {
+    await createForgeClient(mock.url).unloadCheckpoint()
+    expect(mock.requests.at(-1)).toMatchObject({ method: 'POST', path: '/sdapi/v1/unload-checkpoint' })
+    expect(mock.stats().unloads).toBe(1)
+    mock.respond('/sdapi/v1/unload-checkpoint', { status: 500, json: { detail: 'nope' } })
+    await expectForgeError(createForgeClient(mock.url).unloadCheckpoint(), { kind: 'http', status: 500 })
+  })
+
+  test('restartServer(): a dropped connection after sending means restarting', async () => {
+    const restarting = await startMockForge({ apiServerStop: true, restartMs: 100 })
+    try {
+      expect(await createForgeClient(restarting.url).restartServer()).toBe('restarting')
+      await vi.waitFor(() => expect(restarting.stats().restarts).toBe(1))
+      expect(await createForgeClient(restarting.url).ping()).toBeGreaterThanOrEqual(0)
+    } finally {
+      await restarting.close()
+    }
+  })
+
+  test('restartServer(): a 200 answer means restarting', async () => {
+    mock.respond('/sdapi/v1/server-restart', { json: {} })
+    expect(await createForgeClient(mock.url).restartServer()).toBe('restarting')
+  })
+
+  test('restartServer(): 404 and 403 mean the flag is missing, 501 a launcher that cannot restart', async () => {
+    expect(await createForgeClient(mock.url).restartServer()).toBe('notAllowed')
+    mock.respond('/sdapi/v1/server-restart', { status: 403, json: { detail: 'Server stop not enabled' } })
+    expect(await createForgeClient(mock.url).restartServer()).toBe('notAllowed')
+    mock.respond('/sdapi/v1/server-restart', { status: 501, text: '' })
+    expect(await createForgeClient(mock.url).restartServer()).toBe('notRestartable')
+  })
+
+  test('restartServer(): a refused connection or another HTTP error rejects', async () => {
+    await expectForgeError(createForgeClient(await closedPortUrl()).restartServer(), { kind: 'network' })
+    mock.respond('/sdapi/v1/server-restart', { status: 500, json: { detail: 'boom' } })
+    await expectForgeError(createForgeClient(mock.url).restartServer(), { kind: 'http', status: 500 })
+  })
+})

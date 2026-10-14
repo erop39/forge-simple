@@ -1,6 +1,8 @@
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
-import type { Catalog, ConnectionStatus, GenerationParams, ImageRecord, ServerInfo } from '@shared/types'
+import type {
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, RestartOutcome, ServerInfo,
+} from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
@@ -26,6 +28,8 @@ export interface IpcDeps {
   copyToClipboard(text: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
   onServerChanged?(): void
+  /** What the active Forge allows (see forge/capabilities.ts). */
+  capabilities: { current(): ForgeCapabilities; refresh(): Promise<ForgeCapabilities>; reset(): void }
 }
 
 type Send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]) => void
@@ -178,8 +182,13 @@ export function registerIpc(
       details: { key: 'serverUrl', old, new: next },
     })
     deps.onServerChanged?.()
+    runner.resetHealth()
+    deps.capabilities.reset()
     runner.kick()
-    if (next !== null) void deps.monitor.sampleOnce()
+    if (next !== null) {
+      void deps.monitor.sampleOnce()
+      void deps.capabilities.refresh()
+    }
   }
 
   /** Normalises and pings an address; a failure is a ConnectionCheck, not a rejection. */
@@ -423,6 +432,47 @@ export function registerIpc(
   })
 
   handle('connection:get', () => deps.monitor.current())
+
+  // ---- control of the active Forge ---------------------------------------
+  // The log carries the server's name and address only.
+
+  const activeServer = (): Server => repos.servers.active() ?? fail('error.noServer')
+
+  handle('forge:capabilities', () => deps.capabilities.current())
+
+  handle('forge:health', () => ({ unhealthy: runner.unhealthy() }))
+
+  handle('forge:restart', async (): Promise<RestartOutcome> => {
+    const server = activeServer()
+    let outcome: RestartOutcome
+    try {
+      outcome = await runner.restartForge()
+    } catch (err) {
+      if (err instanceof ForgeError) return fail(forgeErrorKey(err))
+      throw err
+    }
+    oplog.write({
+      level: outcome === 'restarting' ? 'info' : 'warn', category: 'server', messageKey: 'log.server.restartRequested',
+      details: { name: server.name, url: server.url, outcome },
+    })
+    // Reconnecting shows at once instead of on the monitor's next sample.
+    if (outcome === 'restarting') void deps.monitor.sampleOnce()
+    return outcome
+  })
+
+  handle('forge:unload', async () => {
+    const server = activeServer()
+    if (repos.jobs.hasRunning()) return fail('error.jobRunning')
+    try {
+      await deps.createClient(server.url).unloadCheckpoint()
+    } catch (err) {
+      if (err instanceof ForgeError) return fail(forgeErrorKey(err))
+      throw err
+    }
+    oplog.write({
+      level: 'info', category: 'server', messageKey: 'log.server.unloaded', details: { name: server.name, url: server.url },
+    })
+  })
 }
 
 /** Listeners that forward runner and monitor events to the renderer through `send`. */
@@ -432,7 +482,9 @@ export function forwardEvents(imagesDir: () => string, send: Send) {
       jobUpdate: (job: AppEvents['job:update']) => send('job:update', job),
       jobProgress: (p: AppEvents['job:progress']) => send('job:progress', p),
       imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row, imagesDir())),
+      forgeHealth: (unhealthy: boolean) => send('forge:health', { unhealthy }),
     },
+    capabilities: (c: ForgeCapabilities) => send('forge:capabilities', c),
     connection: (s: ConnectionStatus) => send('connection', s),
   }
 }

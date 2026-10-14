@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Recovery from a broken Forge model state: after a generation fails with HTTP 500 the app unloads the checkpoint (best effort) before the next job, so that job loads its model afresh. Two 500s in a row on one server show a notice above the prompt bar suggesting a restart; a success, a restart or a server switch clears it.
+- Restart Forge and Unload model in the server dialog. Restart asks first, interrupts the running job, pauses the queue and lets the connection monitor bring the app back to Connected; it is offered only when Forge runs with `--api-server-stop` (read from `/cmd-flags` on connect), otherwise the button is disabled with a hint. A job that failed with a Forge 500 also offers Restart Forge. The mock Forge gained `unload-checkpoint`, `server-restart` (drops connections and refuses them for `RESTART_MS`), a configurable `api_server_stop` (`API_SERVER_STOP=1`) and Forge-shaped 500s (`FAIL_500=<n>|until-unload`).
+
 - Negative-prompt presets: a menu next to the Negative toggle puts a saved negative into the field (replacing its text), saves the current negative under a name, and opens a dialog to rename or delete presets. Names are unique regardless of case; the operation log records preset names only, never their text.
 - Saved Forge servers: the server dialog lists them with a name and address, adds, edits and deletes them, and switches the active one with one click (not while a job runs). The connection chip shows the active server's name. Queued jobs stay with their server; those of an inactive server show "Waiting for <name>". Deleting a server removes its queued jobs and keeps its images.
 - Full-window image viewer opened from a finished gallery tile, with the saved full-resolution PNG, generation settings below it, and a Copy prompt button backed by the system clipboard.
@@ -39,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - README: what version 0.1.0 does, where the database, images and operation log live, how to run the probe, and the known limitations.
 
 ### Changed
+
+- The message of a job stopped mid-run now covers both causes: the app closed or Forge restarted.
 
 - The negative-prompt field no longer clips by one pixel, an empty model card renders nothing, and the top bar height and the panel slide-out time come from design tokens.
 - Probe findings from a real Forge Neo server: shift is sent in the `distilled_cfg_scale` field instead of an option, checkpoint previews are requested from `/sd_extra_networks/thumb`, and a checkpoint's family is detected from its whole title, folders included. New parameter sets start with the default module list the server keeps for the family.

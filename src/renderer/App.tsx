@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { t } from './i18n/t'
 import { useAppStore } from './state/StoreProvider'
 import { EmptyState, NoModelsState } from './components/EmptyState'
+import { RestartDialog } from './components/ForgeRestart'
 import { Gallery } from './components/Gallery'
 import { Notice } from './components/ui/Notice'
 import { ParamsPanel } from './components/ParamsPanel'
@@ -42,6 +43,7 @@ export function App() {
       <PromptBar />
       <ParamsPanel />
       <ServerDialog open={dialogOpen || noServer} onOpenChange={setDialogOpen} />
+      <RestartDialog />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type { ServerInfo } from '@shared/types'
 import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
+import { RestartConfirm } from './ForgeRestart'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import styles from './ServerDialog.module.css'
@@ -123,6 +124,7 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
           {t('server.busy')}
         </p>
       )}
+      <ForgeActions running={running} busyId={busyId} />
       {error !== null && (
         <p role="alert" className={styles.error}>
           {error}
@@ -135,6 +137,80 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
         </Button>
       </div>
     </div>
+  )
+}
+
+/** Unload model and Restart Forge for the active server. Restart asks first and needs --api-server-stop. */
+function ForgeActions({ running, busyId }: { running: boolean; busyId: string }) {
+  const server = useAppStore((s) => s.servers.find((x) => x.active) ?? null)
+  const canRestart = useAppStore((s) => s.capabilities.canRestart)
+  const unloadModel = useAppStore((s) => s.unloadModel)
+  const [confirming, setConfirming] = useState(false)
+  const [unloading, setUnloading] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const hintId = useId()
+  if (!server) return null
+  const heading = t('forge.heading', { name: server.name })
+
+  async function unload(): Promise<void> {
+    setUnloading(true)
+    setStatus(null)
+    setError(null)
+    try {
+      await unloadModel()
+      setStatus(t('forge.unloaded'))
+    } catch (e) {
+      setError(errorText(e))
+    }
+    setUnloading(false)
+  }
+
+  return (
+    <section aria-label={heading} className={styles.forge}>
+      <h3 className={styles.forgeHeading}>{heading}</h3>
+      {confirming ? (
+        <RestartConfirm
+          onCancel={() => setConfirming(false)}
+          onRestarting={() => {
+            setConfirming(false)
+            setStatus(t('forge.restartStarted'))
+          }}
+        />
+      ) : (
+        <div className={styles.forgeActions}>
+          <Button disabled={unloading || running} aria-describedby={running ? busyId : undefined} onClick={() => void unload()}>
+            {unloading ? t('forge.unloading') : t('forge.unload')}
+          </Button>
+          <Button
+            disabled={!canRestart}
+            aria-describedby={canRestart ? undefined : hintId}
+            onClick={() => {
+              setStatus(null)
+              setError(null)
+              setConfirming(true)
+            }}
+          >
+            {t('forge.restart')}
+          </Button>
+        </div>
+      )}
+      {!canRestart && (
+        <p id={hintId} className={styles.hint}>
+          {t('forge.restartHint')}
+        </p>
+      )}
+      {status !== null && (
+        <p role="status" className={styles.hint}>
+          {status}
+        </p>
+      )}
+      {error !== null && (
+        <p role="alert" className={styles.error}>
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 

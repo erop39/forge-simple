@@ -107,3 +107,37 @@ test('the default catalog has two checkpoints; catalog many serves a long mixed 
   expect(many.some((c) => c.title.includes('exampleSemiRealisticMix_v20LittleDetailer'))).toBe(true)
   expect((await getJson('/sdapi/v1/options')).sd_model_checkpoint).toBe(many[0]?.title)
 })
+
+test('failGenerations(n) answers txt2img with Forge-shaped 500s n times', async () => {
+  mock = await startMockForge({ stepMs: 1 })
+  mock.failGenerations(2)
+  for (let i = 0; i < 2; i++) {
+    const res = await post('/sdapi/v1/txt2img', { steps: 1 })
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: 'TypeError', detail: '', body: '', errors: expect.any(String) })
+  }
+  expect((await post('/sdapi/v1/txt2img', { steps: 1 })).status).toBe(200)
+})
+
+test("failGenerations('untilUnload') fails until unload-checkpoint", async () => {
+  mock = await startMockForge({ stepMs: 1, failGenerations: 'untilUnload' })
+  expect((await post('/sdapi/v1/txt2img', { steps: 1 })).status).toBe(500)
+  expect((await post('/sdapi/v1/txt2img', { steps: 1 })).status).toBe(500)
+  expect((await post('/sdapi/v1/unload-checkpoint')).status).toBe(200)
+  expect((await post('/sdapi/v1/txt2img', { steps: 1 })).status).toBe(200)
+  expect(mock.stats().unloads).toBe(1)
+})
+
+test('server-restart is 404 without the flag; with it the mock drops connections, refuses, then comes back healed', async () => {
+  mock = await startMockForge({ stepMs: 1, restartMs: 150 })
+  expect((await post('/sdapi/v1/server-restart')).status).toBe(404)
+  mock.setApiServerStop(true)
+  expect(await getJson('/sdapi/v1/cmd-flags')).toMatchObject({ api_server_stop: true })
+  mock.failGenerations(5)
+  const dropped = await post('/sdapi/v1/server-restart').then(() => 'answered', () => 'dropped')
+  expect(dropped).toBe('dropped')
+  const refused = await fetch(`${mock.url}/sdapi/v1/progress`).then(() => 'answered', () => 'refused')
+  expect(refused).toBe('refused')
+  await vi.waitFor(() => expect(mock.stats().restarts).toBe(1))
+  expect((await post('/sdapi/v1/txt2img', { steps: 1 })).status).toBe(200)
+})

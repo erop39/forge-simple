@@ -1,6 +1,8 @@
 import { defaultParams } from '@shared/profiles'
 import type { Catalog, GenerationParams, Job, JobProgress } from '@shared/types'
-import { ForgeError, type ForgeClient, type GenerationResponse, type ProgressResponse } from '../forge/client'
+import {
+  ForgeError, type ForgeClient, type GenerationResponse, type ProgressResponse, type RestartOutcome,
+} from '../forge/client'
 import type { ProbeFindings } from '../forge/findings'
 import { createOplog, type Oplog } from '../oplog/oplog'
 import { openDb, type Db } from '../storage/db'
@@ -58,7 +60,8 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
 
   const gens: Deferred<GenerationResponse>[] = []
   const signals: AbortSignal[] = []
-  const state = { clientOverride: null as unknown, pingOk: true, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
+  const health: boolean[] = []
+  const state = { unloadFails: false, restart: 'restarting' as RestartOutcome | Error, clientOverride: null as unknown, pingOk: true, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
   const client = {
     ping: vi.fn(async () => {
       if (!state.pingOk) throw new ForgeError('network', 'down')
@@ -82,6 +85,13 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
       return state.progress
     }),
     interrupt: vi.fn(async () => undefined),
+    unloadCheckpoint: vi.fn(async () => {
+      if (state.unloadFails) throw new ForgeError('network', 'down')
+    }),
+    restartServer: vi.fn(async (): Promise<RestartOutcome> => {
+      if (state.restart instanceof Error) throw state.restart
+      return state.restart
+    }),
   }
 
   const sleeps: { ms: number; d: Deferred<void>; used: boolean }[] = []
@@ -106,6 +116,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
       jobUpdate: (j) => { updates.push(j); events.push(`update:${j.status}`) },
       jobProgress: (p) => { progress.push(p); events.push('progress') },
       imageAdded: (r) => { added.push(r); events.push('image') },
+      forgeHealth: (unhealthy) => { health.push(unhealthy); events.push(`health:${unhealthy}`) },
     },
     now,
     sleep: (ms) => { const d = deferred<void>(); sleeps.push({ ms, d, used: false }); return d.promise },
@@ -125,7 +136,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
   }
   const started = (n = 1) => vi.waitFor(() => expect(client.txt2img).toHaveBeenCalledTimes(n))
 
-  return { repos, oplog, client, gens, signals, sleeps, images, runner, events, updates, progress, added, state, at, poll, started }
+  return { health, repos, oplog, client, gens, signals, sleeps, images, runner, events, updates, progress, added, state, at, poll, started }
 }
 
 
@@ -844,5 +855,167 @@ line`).join(' ')
     h.state.pingOk = true
     expect(await h.runner.tick()).toBe('idle')
     expect(logKeys(h)).toContain('log.queue.resumed')
+  })
+})
+
+describe('recovery after Forge 500s', () => {
+  const http500 = () => new ForgeError('http', 'HTTP 500', { status: 500, detail: 'TypeError: NoneType object is not callable' })
+
+  /** Runs the next queued job and settles its request with `outcome`. */
+  async function runOne(h: ReturnType<typeof setup>, outcome: Error | GenerationResponse) {
+    const n = h.gens.length
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(n + 1))
+    if (outcome instanceof Error) h.gens[n]!.reject(outcome)
+    else h.gens[n]!.resolve(outcome)
+    return t
+  }
+
+  test('a 500 fails the job, unloads the checkpoint before the next job, and the next job runs', async () => {
+    const h = setup()
+    const [a, b] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
+    expect(await runOne(h, http500())).toBe('ran')
+    expect(h.repos.jobs.get(a.id)).toMatchObject({ status: 'failed', error: { code: 'forgeHttp', status: 500 } })
+    expect(h.client.unloadCheckpoint).toHaveBeenCalledTimes(1)
+    const unloaded = h.oplog.list().find((e) => e.messageKey === 'log.recovery.unloaded')
+    expect(unloaded).toMatchObject({ level: 'info', category: 'checkpoint', jobId: a.id })
+    expect(JSON.stringify(unloaded?.details)).not.toContain('NoneType')
+    await runOne(h, response())
+    expect(h.repos.jobs.get(b.id)?.status).toBe('done')
+    expect(h.client.unloadCheckpoint).toHaveBeenCalledTimes(1)
+  })
+
+  test('other HTTP errors do not unload', async () => {
+    const h = setup()
+    h.runner.enqueue(params())
+    await runOne(h, new ForgeError('http', 'HTTP 422', { status: 422 }))
+    expect(h.client.unloadCheckpoint).not.toHaveBeenCalled()
+  })
+
+  test('a failed unload is logged and does not block the queue', async () => {
+    const h = setup()
+    h.state.unloadFails = true
+    const [, b] = h.runner.enqueue(params({ count: 2 })) as [Job, Job]
+    expect(await runOne(h, http500())).toBe('ran')
+    expect(h.oplog.list().find((e) => e.messageKey === 'log.recovery.unloadFailed'))
+      .toMatchObject({ level: 'warn', details: { kind: 'network' } })
+    await runOne(h, response())
+    expect(h.repos.jobs.get(b.id)?.status).toBe('done')
+  })
+
+  test('two 500s in a row raise the unhealthy flag once; a success clears it', async () => {
+    const h = setup()
+    h.runner.enqueue(params({ count: 4 }))
+    await runOne(h, http500())
+    expect(h.runner.unhealthy()).toBe(false)
+    expect(h.health).toEqual([])
+    await runOne(h, http500())
+    expect(h.runner.unhealthy()).toBe(true)
+    expect(h.health).toEqual([true])
+    expect(h.oplog.list().find((e) => e.messageKey === 'log.recovery.unhealthy'))
+      .toMatchObject({ level: 'warn', category: 'server', details: { count: 2 } })
+    await runOne(h, http500())
+    expect(h.health).toEqual([true])
+    await runOne(h, response())
+    expect(h.runner.unhealthy()).toBe(false)
+    expect(h.health).toEqual([true, false])
+  })
+
+  test('a success between two 500s resets the count', async () => {
+    const h = setup()
+    h.runner.enqueue(params({ count: 3 }))
+    await runOne(h, http500())
+    await runOne(h, response())
+    await runOne(h, http500())
+    expect(h.runner.unhealthy()).toBe(false)
+  })
+
+  test('resetHealth() (server switch, restart) clears the flag and the count', async () => {
+    const h = setup()
+    h.runner.enqueue(params({ count: 3 }))
+    await runOne(h, http500())
+    await runOne(h, http500())
+    h.runner.resetHealth()
+    expect(h.runner.unhealthy()).toBe(false)
+    expect(h.health).toEqual([true, false])
+    await runOne(h, http500())
+    expect(h.runner.unhealthy()).toBe(false)
+  })
+
+  test('500s on another server do not add up with this one', async () => {
+    const h = setup()
+    h.runner.enqueue(params())
+    await runOne(h, http500())
+    h.repos.servers.activate(h.repos.servers.add('other', 'http://other.test').id)
+    h.runner.enqueue(params())
+    await runOne(h, http500())
+    expect(h.runner.unhealthy()).toBe(false)
+  })
+})
+
+describe('restartForge', () => {
+  test('interrupts the running job with code stopped, pauses the queue', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await h.started()
+    expect(await h.runner.restartForge()).toBe('restarting')
+    expect(await t).toBe('paused')
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
+    expect(h.oplog.list().find((e) => e.messageKey === 'log.queue.paused')?.details).toEqual({ reason: 'restart' })
+    expect(logKeys(h)).not.toContain('log.error.connectionLost')
+  })
+
+  test('a job whose request drops while the restart is being sent is still interrupted as stopped', async () => {
+    const h = setup()
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await h.started()
+    h.client.restartServer.mockImplementationOnce(async () => {
+      h.gens[0]!.reject(new ForgeError('network', 'Could not reach Forge', { detail: 'other side closed' }))
+      await new Promise((r) => setTimeout(r, 0))
+      return 'restarting'
+    })
+    await h.runner.restartForge()
+    await t
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'stopped' } })
+    expect(logKeys(h)).not.toContain('log.error.connectionLost')
+  })
+
+  test('a refused restart leaves the job running and the queue as it was', async () => {
+    const h = setup()
+    h.state.restart = 'notAllowed'
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await h.started()
+    expect(await h.runner.restartForge()).toBe('notAllowed')
+    expect(h.repos.jobs.get(job.id)?.status).toBe('running')
+    h.gens[0]!.resolve(response())
+    expect(await t).toBe('ran')
+    expect(h.repos.jobs.get(job.id)?.status).toBe('done')
+    expect(logKeys(h)).not.toContain('log.queue.paused')
+  })
+
+  test('a restart that could not be sent rejects and changes nothing', async () => {
+    const h = setup()
+    h.state.restart = new ForgeError('network', 'Could not reach Forge', { detail: 'connect ECONNREFUSED' })
+    await expect(h.runner.restartForge()).rejects.toBeInstanceOf(ForgeError)
+    expect(logKeys(h)).not.toContain('log.queue.paused')
+  })
+
+  test('a restart clears the unhealthy flag', async () => {
+    const h = setup()
+    h.runner.enqueue(params({ count: 2 }))
+    for (let i = 0; i < 2; i++) {
+      const n = h.gens.length
+      const t = h.runner.tick()
+      await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalledTimes(n + 1))
+      h.gens[n]!.reject(new ForgeError('http', 'HTTP 500', { status: 500 }))
+      await t
+    }
+    expect(h.runner.unhealthy()).toBe(true)
+    await h.runner.restartForge()
+    expect(h.runner.unhealthy()).toBe(false)
+    expect(h.health).toEqual([true, false])
   })
 })

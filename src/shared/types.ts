@@ -61,3 +61,12 @@ export interface PartStatus { role: 'model' | 'module'; value: string; found: bo
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }
 /** A saved negative prompt; its text replaces the Negative field when applied. */
 export interface NegativePreset { id: number; name: string; text: string; createdAt: number }
+/** What the active Forge allows: restart needs it to run with --api-server-stop. */
+export interface ForgeCapabilities { canRestart: boolean }
+/** Unhealthy: generations failed with HTTP 500 several times in a row; a restart is advised. */
+export interface ForgeHealth { unhealthy: boolean }
+/**
+ * Result of a restart request. `restarting`: Forge accepted (or dropped the connection while exiting).
+ * `notAllowed`: Forge runs without --api-server-stop. `notRestartable`: its launcher cannot restart it.
+ */
+export type RestartOutcome = 'restarting' | 'notAllowed' | 'notRestartable'

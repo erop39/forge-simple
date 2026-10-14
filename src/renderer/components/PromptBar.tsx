@@ -6,6 +6,7 @@ import { t } from '../i18n/t'
 import { checkpointOptions } from '../state/checkpoint-options'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
+import { Notice } from './ui/Notice'
 import { NegativePresetMenu } from './NegativePresetMenu'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
@@ -57,6 +58,20 @@ type GrowingFieldProps = {
 }
 
 /** A textarea that grows with its content; CSS caps the height at six lines and then it scrolls. */
+/** Shown after repeated Forge 500s: offers the restart, or explains how to allow it. */
+function UnhealthyNotice() {
+  const unhealthy = useAppStore((s) => s.forgeUnhealthy)
+  const canRestart = useAppStore((s) => s.capabilities.canRestart)
+  const askRestart = useAppStore((s) => s.askRestart)
+  const dismiss = useAppStore((s) => s.dismissUnhealthy)
+  if (!unhealthy) return null
+  return canRestart ? (
+    <Notice text={t('forge.unhealthy')} action={{ label: t('forge.restart'), onClick: askRestart }} onDismiss={dismiss} />
+  ) : (
+    <Notice text={t('forge.unhealthyNoRestart')} onDismiss={dismiss} />
+  )
+}
+
 function GrowingField({ id, value, label, placeholder, className, onChange, onKeyDown }: GrowingFieldProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
@@ -151,6 +166,7 @@ export function PromptBar() {
 
   return (
     <div ref={publishHeight} className={`${styles.bar} ${panelOpen ? styles.shifted : ''}`}>
+      <UnhealthyNotice />
       {model?.profile.negative && negativeOpen && (
         <GrowingField
           id={negativeId}
