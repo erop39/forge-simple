@@ -23,8 +23,8 @@ export const en = {
   'job.error.corruptJob': "This job's settings are damaged. Start a new one.",
   'job.error.unexpected': 'Something went wrong. Try again.',
 
-  'image.frame': '№ {n} · {s} s · {w}×{h}',
-  'image.frameNoTime': '№ {n} · {w}×{h}',
+  'image.frame': '№ {n} · {s} s · {w}×{h} · {time}',
+  'image.frameNoTime': '№ {n} · {w}×{h} · {time}',
   'image.delete': 'Delete',
   'image.open': 'Open image {n}',
   'image.deleted': 'Image deleted',
@@ -44,6 +44,7 @@ export const en = {
   'viewer.copied': 'Copied',
   'viewer.copyFailed': 'Could not copy the prompt.',
   'viewer.time': 'Time',
+  'viewer.created': 'Created',
   'viewer.seconds': '{n} s',
   'viewer.loras': 'LoRAs',
 

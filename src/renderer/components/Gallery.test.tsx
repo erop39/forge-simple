@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job } from '@shared/types'
 import { en } from '../locales/en'
+import { frameCaption, fullTime } from '../format'
 import { Gallery, columnCountFor } from './Gallery'
 import { renderWithStore } from './test-store'
 
@@ -15,7 +16,7 @@ const image = (id: number): ImageRecord => ({
   id, jobId: id, url: `fnc-img://local/${id}.png`, thumbUrl: `fnc-img://local/t${id}.jpg`, width: 832, height: 1216,
   seed: 1, infotext: '', createdAt: id, durationMs: 41000, hidden: false, sourceImageId: null,
 })
-const frame = (id: number) => `№ ${String(id).padStart(4, '0')} · 41 s · 832×1216`
+const frame = (id: number) => frameCaption(image(id))
 
 /** The Delete button inside the tile with the given caption. */
 function deleteButtonOf(caption: string): HTMLElement {
@@ -171,6 +172,7 @@ test('clicking an image opens the full file, saved settings and Copy prompt; Esc
   expect(screen.getByRole('img', { name: 'Generated image 7' }).getAttribute('src')).toBe(image(7).url)
   await waitFor(() => expect(screen.getByText('evening light')).toBeDefined())
   expect(screen.getByText('Karras')).toBeDefined()
+  expect(screen.getByText(en['viewer.created']).nextElementSibling?.textContent).toBe(fullTime(image(7).createdAt))
   await userEvent.click(screen.getByRole('button', { name: en['viewer.copyPrompt'] }))
   expect(copy).toHaveBeenCalledWith('evening light')
   expect(screen.getByRole('button', { name: en['viewer.copied'] })).toBeDefined()

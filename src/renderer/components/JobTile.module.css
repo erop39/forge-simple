@@ -112,6 +112,14 @@
   margin: 0;
 }
 
+/* When the job failed: local time, today's without a date. */
+.when {
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .detail {
   display: -webkit-box;
   max-width: 100%;
@@ -125,6 +133,12 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   margin-top: auto;
+}
+
+/* A narrow tile wraps whole buttons onto a second line instead of breaking their labels. */
+.actions > button {
+  white-space: nowrap;
 }

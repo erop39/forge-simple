@@ -4,7 +4,7 @@ import { OPLOG_CATEGORIES, OPLOG_LEVELS, type Job, type OplogEntry, type OplogLe
 import { errorText } from '../i18n/error-text'
 import { jobErrorText } from '../i18n/job-error-text'
 import { logText } from '../i18n/log-text'
-import { t, type MessageKey } from '../i18n/t'
+import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import type { LogFilters, LogPeriod } from '../state/store'
 import { Button } from './ui/Button'
@@ -27,7 +27,7 @@ const RETENTION_SAVE_DELAY_MS = 600
 const levelKey = (level: OplogLevel): MessageKey => `logPanel.level.${level}`
 const categoryKey = (category: OplogEntry['category']): MessageKey => `logPanel.category.${category}`
 
-const timeFormat = new Intl.DateTimeFormat(undefined, {
+const timeFormat = new Intl.DateTimeFormat(LOCALE, {
   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
 })
 

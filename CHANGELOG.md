@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Generation time on display: an image's frame marking ends with the local time it was made (the date too when not today), the image viewer lists the full date and time as Created, and failed or interrupted job tiles show when they ended.
+- Mouse-wheel adjustment: hovering a slider or number field (steps, images, CFG, Distilled CFG, Shift, clip skip, width, height, log retention) and turning the wheel steps its value up or down, Shift+wheel by ten steps, within its limits; the page does not scroll meanwhile, and trackpad scrolling needs a full notch's travel per step.
+
 - Activity log panel (the plan 2 log screen, done early): opened from the top bar, newest first, with time, level, category, catalog text and duration; filters by level, category and period, a search over the shown text, live updates, export of the filtered entries as JSON Lines through a save dialog, and the retention period (1 to 3650 days, default 90) used by the start-up purge. Clicking a failed job's entry shows that job's stored error; a finished job's entry opens its image. Every message key the main process writes now has a catalog string (checked by a test).
 - Recovery from a broken Forge model state: after a generation fails with HTTP 500 the app unloads the checkpoint (best effort) before the next job, so that job loads its model afresh. Two 500s in a row on one server show a notice above the prompt bar suggesting a restart; a success, a restart or a server switch clears it.
 - Restart Forge and Unload model in the server dialog. Restart asks first, interrupts the running job, pauses the queue and lets the connection monitor bring the app back to Connected; it is offered only when Forge runs with `--api-server-stop` (read from `/cmd-flags` on connect), otherwise the button is disabled with a hint. A job that failed with a Forge 500 also offers Restart Forge. The mock Forge gained `unload-checkpoint`, `server-restart` (drops connections and refuses them for `RESTART_MS`), a configurable `api_server_stop` (`API_SERVER_STOP=1`) and Forge-shaped 500s (`FAIL_500=<n>|until-unload`).
@@ -45,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The message of a job stopped mid-run now covers both causes: the app closed or Forge restarted.
+- The Restart Forge action on a failed job tile is a compact icon button (with a tooltip), and tile buttons wrap whole instead of breaking their labels.
 
 - The negative-prompt field no longer clips by one pixel, an empty model card renders nothing, and the top bar height and the panel slide-out time come from design tokens.
 - Probe findings from a real Forge Neo server: shift is sent in the `distilled_cfg_scale` field instead of an option, checkpoint previews are requested from `/sd_extra_networks/thumb`, and a checkpoint's family is detected from its whole title, folders included. New parameter sets start with the default module list the server keeps for the family.

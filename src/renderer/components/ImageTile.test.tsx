@@ -7,7 +7,7 @@ import { ImageTile } from './ImageTile'
 
 const image = (over: Partial<ImageRecord> = {}): ImageRecord => ({
   id: 412, jobId: 1, url: 'fnc-img://local/a.png', thumbUrl: 'fnc-img://local/thumbs/a.jpg', width: 832, height: 1216,
-  seed: 1, infotext: '', createdAt: 1, durationMs: 41400, hidden: false, sourceImageId: null, ...over,
+  seed: 1, infotext: '', createdAt: new Date().setHours(14, 3, 0, 0), durationMs: 41400, hidden: false, sourceImageId: null, ...over,
 })
 
 test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', () => {
@@ -20,15 +20,15 @@ test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', 
   expect((container.firstElementChild as HTMLElement).style.aspectRatio).toBe('832 / 1216')
 })
 
-test('frame caption formats id, seconds and size', () => {
+test("frame caption formats id, seconds, size and today's generation time", () => {
   render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} />)
-  expect(screen.getByText('№ 0412 · 41 s · 832×1216')).toBeDefined()
-  expect(screen.getByRole('group', { name: '№ 0412 · 41 s · 832×1216' })).toBeDefined()
+  expect(screen.getByText('№ 0412 · 41 s · 832×1216 · 14:03')).toBeDefined()
+  expect(screen.getByRole('group', { name: '№ 0412 · 41 s · 832×1216 · 14:03' })).toBeDefined()
 })
 
 test('the caption pads the id and omits the seconds when the duration is unknown', () => {
-  expect(frameCaption(image({ id: 7, durationMs: 1600 }))).toBe('№ 0007 · 2 s · 832×1216')
-  expect(frameCaption(image({ id: 12345, durationMs: null }))).toBe('№ 12345 · 832×1216')
+  expect(frameCaption(image({ id: 7, durationMs: 1600 }))).toBe('№ 0007 · 2 s · 832×1216 · 14:03')
+  expect(frameCaption(image({ id: 12345, durationMs: null }))).toBe('№ 12345 · 832×1216 · 14:03')
 })
 
 test('the image opens by keyboard and Delete remains separate', async () => {

@@ -94,14 +94,27 @@ test('an interrupted tile uses its own heading and offers the same actions', () 
   expect(tile(container).dataset['status']).toBe('interrupted')
 })
 
+test('a failed or interrupted tile shows when it ended, as local time', () => {
+  const finishedAt = new Date().setHours(14, 3, 0, 0)
+  const { unmount } = renderWithStore(<JobTile job={job('failed', { error: { code: 'noImages' }, finishedAt })} progress={null} queuePosition={null} />)
+  expect(screen.getByRole('heading', { name: new RegExp(`^${en['job.failed']}\\s*14:03$`) })).toBeDefined()
+  expect(screen.getByText('14:03').classList.contains('mono')).toBe(true)
+  unmount()
+  renderWithStore(<JobTile job={job('interrupted', { error: { code: 'stopped' }, finishedAt: null })} progress={null} queuePosition={null} />)
+  expect(screen.getByRole('heading', { name: en['job.interrupted'] })).toBeDefined()
+})
+
 describe('Restart Forge on a failed tile', () => {
   const failed500 = job('failed', { error: { code: 'forgeHttp', status: 500, detail: 'TypeError: boom' } })
 
-  test('a Forge 500 offers Restart Forge when Forge allows restarts; it opens the confirmation', async () => {
+  test('a Forge 500 offers a compact Restart Forge icon when Forge allows restarts; it opens the confirmation', async () => {
     const { store } = renderWithStore(<JobTile job={failed500} progress={null} queuePosition={null} />, 'sdxl', {
       capabilities: { canRestart: true },
     })
-    await userEvent.click(screen.getByRole('button', { name: en['job.restartForge'] }))
+    const restart = screen.getByRole('button', { name: en['job.restartForge'] })
+    expect(restart.textContent).toBe('')
+    expect(restart.querySelector('svg')).not.toBeNull()
+    await userEvent.click(restart)
     expect(store.getState().restartAsked).toBe(true)
   })
 

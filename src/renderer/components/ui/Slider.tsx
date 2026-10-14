@@ -1,4 +1,6 @@
 import * as RadixSlider from '@radix-ui/react-slider'
+import { useRef } from 'react'
+import { useWheelStep } from './use-wheel-step'
 import styles from './Slider.module.css'
 
 type SliderProps = {
@@ -13,8 +15,13 @@ type SliderProps = {
   inline?: boolean
 }
 
-/** A horizontal slider with the current value as a mono readout. Keyboard per Radix: arrows, PageUp/PageDown, Home/End. */
+/**
+ * A horizontal slider with the current value as a mono readout. Keyboard per Radix: arrows, PageUp/PageDown,
+ * Home/End; the mouse wheel over it steps the value (Shift: ten steps).
+ */
 export function Slider({ label, value, min, max, step, onCommit, inline = false }: SliderProps) {
+  const wrapper = useRef<HTMLSpanElement>(null)
+  useWheelStep(wrapper, { value, min, max, step, onCommit })
   const slider = (
     <>
       <RadixSlider.Root
@@ -38,9 +45,9 @@ export function Slider({ label, value, min, max, step, onCommit, inline = false 
       </span>
     </>
   )
-  if (!inline) return <span className={styles.plain}>{slider}</span>
+  if (!inline) return <span ref={wrapper} className={styles.plain}>{slider}</span>
   return (
-    <span className={styles.inline}>
+    <span ref={wrapper} className={styles.inline}>
       <span className={styles.label} aria-hidden="true">
         {label}
       </span>

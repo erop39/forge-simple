@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
+import { useWheelStep } from './use-wheel-step'
 import styles from './NumberField.module.css'
 
 type NumberFieldProps = {
@@ -19,11 +20,22 @@ type NumberFieldProps = {
 const INTEGER = /^\d+$/
 const DECIMAL = /^\d+(\.\d+)?$/
 
-/** Commits every valid edit at once; an invalid draft is never committed and is dropped on blur. */
+/**
+ * Commits every valid edit at once; an invalid draft is never committed and is dropped on blur.
+ * The mouse wheel over the field steps the value (Shift: ten steps), staying on `multipleOf`.
+ */
 export function NumberField({
   label, value, min, max, step = 1, integer = true, multipleOf, onCommit, inline = false,
 }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null)
+  const wrapper = useRef<HTMLElement>(null)
+  useWheelStep(wrapper, {
+    value, min, max, step, multipleOf,
+    onCommit: (next) => {
+      setDraft(null)
+      onCommit(next)
+    },
+  })
 
   const valid = (n: number): boolean =>
     n >= min && n <= max && (multipleOf === undefined || n % multipleOf === 0)
@@ -47,6 +59,7 @@ export function NumberField({
 
   const input = (
     <input
+      ref={inline ? undefined : (wrapper as React.RefObject<HTMLInputElement>)}
       type="text"
       inputMode={integer ? 'numeric' : 'decimal'}
       role="spinbutton"
@@ -65,7 +78,7 @@ export function NumberField({
   )
   if (!inline) return input
   return (
-    <label className={styles.inline}>
+    <label ref={wrapper as React.RefObject<HTMLLabelElement>} className={styles.inline}>
       <span className={styles.label}>{label}</span>
       {input}
     </label>

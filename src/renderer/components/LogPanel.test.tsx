@@ -74,7 +74,7 @@ test('the top bar button opens the panel; Escape and the close button close it',
 test('rows come newest first with time, level icon and word, category, catalog text and a mono duration', () => {
   setup()
   const [first, second, third] = rows() as [HTMLElement, HTMLElement, HTMLElement]
-  const time = new Intl.DateTimeFormat(undefined, {
+  const time = new Intl.DateTimeFormat('en', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
   expect(within(first).getByText(time.format(finished.time))).toBeDefined()

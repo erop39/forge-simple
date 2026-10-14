@@ -42,7 +42,10 @@
   right: 0;
   bottom: 0;
   left: 0;
+  overflow: hidden;
   padding: var(--sp-1) var(--sp-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: color-mix(in srgb, var(--canvas) 80%, transparent);
   color: var(--text-2);
 }

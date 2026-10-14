@@ -1,9 +1,11 @@
-import { WarningCircle } from '@phosphor-icons/react'
+import { ArrowClockwise, WarningCircle } from '@phosphor-icons/react'
 import type { Job, JobProgress } from '@shared/types'
+import { shortTime } from '../format'
 import { jobErrorText } from '../i18n/job-error-text'
 import { t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { Tooltip } from './ui/Tooltip'
 import styles from './JobTile.module.css'
 
@@ -87,6 +89,7 @@ function FailedBody({ job }: { job: Job }) {
       <h3 className={styles.heading}>
         <WarningCircle size={20} aria-hidden="true" />
         {t(job.status === 'interrupted' ? 'job.interrupted' : 'job.failed')}
+        {job.finishedAt !== null && <span className={`mono ${styles.when}`}>{shortTime(job.finishedAt)}</span>}
       </h3>
       <p className={styles.message}>{message}</p>
       {detail !== null && (
@@ -98,7 +101,9 @@ function FailedBody({ job }: { job: Job }) {
       )}
       <div className={styles.actions}>
         <Button onClick={() => void retryJob(job.id)}>{t('job.retry')}</Button>
-        {offerRestart && <Button onClick={askRestart}>{t('job.restartForge')}</Button>}
+        {offerRestart && (
+          <IconButton label={t('job.restartForge')} icon={<ArrowClockwise size={16} />} onClick={askRestart} />
+        )}
         <Button onClick={() => dismissJob(job.id)}>{t('job.dismiss')}</Button>
       </div>
     </div>

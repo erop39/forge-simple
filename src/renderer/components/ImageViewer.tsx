@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Copy, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { PROFILES } from '@shared/profiles'
 import type { ImageDetails, ImageRecord } from '@shared/types'
-import { baseName } from '../format'
+import { baseName, fullTime } from '../format'
 import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
 import { Button } from './ui/Button'
@@ -73,6 +73,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     ...(profile?.shift && params.shift !== null ? [[t('params.shift'), String(params.shift)]] : []),
     ...(profile?.clipSkip && params.clipSkip !== null ? [[t('params.clipSkip'), String(params.clipSkip)]] : []),
     ...(image.durationMs === null ? [] : [[t('viewer.time'), t('viewer.seconds', { n: Math.round(image.durationMs / 1000) })]]),
+    [t('viewer.created'), fullTime(image.createdAt)],
     ...(params.loras.filter((lora) => lora.enabled).length > 0
       ? [[t('viewer.loras'), params.loras.filter((lora) => lora.enabled).map((lora) => `${baseName(lora.name)} (${lora.weight})`).join(', ')]]
       : []),
