@@ -1,12 +1,13 @@
 export interface ProbeFindings {
-  shiftOptionKey: string | null
+  /** Request field that carries the shift value; null when the server has none. */
+  shiftField: 'distilled_cfg_scale' | null
   modulesAs: 'name' | 'path'
   thumbRoute: boolean
 }
 
-// Defaults until the probe has been run against a real Forge instance.
+// Confirmed by the probe against a real Forge Neo server.
 export const FINDINGS: ProbeFindings = {
-  shiftOptionKey: null,
+  shiftField: 'distilled_cfg_scale',
   modulesAs: 'path',
-  thumbRoute: false,
+  thumbRoute: true,
 }

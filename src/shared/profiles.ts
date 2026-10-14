@@ -55,14 +55,26 @@ export const PROFILES: Record<Family, FamilyProfile> = {
   },
 }
 
-/** Guesses the family from a checkpoint file name or path; unknown names are SDXL. */
-export function detectFamily(filename: string): Family {
-  const name = (filename.split(/[\\/]/).pop() ?? '').toLowerCase()
+function familyOfSegment(segment: string): Family | null {
+  const name = segment.toLowerCase()
   if (name.includes('krea')) return 'krea2'
   if (name.includes('anima')) return 'anima'
   if (/z_image|z-image|zimage/.test(name)) return 'zimage'
   if (name.includes('lumina')) return 'lumina'
   if (name.includes('qwen')) return 'qwen'
+  return null
+}
+
+/**
+ * Guesses the family from a checkpoint title or path: the base name first, then the folders from
+ * innermost to outermost; a trailing " [hash]" is ignored. Unknown names are SDXL.
+ */
+export function detectFamily(nameOrTitle: string): Family {
+  const segments = nameOrTitle.replace(/\s*\[[^\]]*\]\s*$/, '').split(/[\\/]/)
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const family = familyOfSegment(segments[i] ?? '')
+    if (family !== null) return family
+  }
   return 'sdxl'
 }
 
@@ -90,12 +102,13 @@ export function defaultParams(
   family: Family,
   checkpoint: string,
   available: { samplers: string[]; schedulers: string[] },
+  modules?: string[],
 ): GenerationParams {
   const d = PROFILES[family].defaults
   return {
     family,
     checkpoint,
-    modules: [],
+    modules: [...(modules ?? [])],
     prompt: '',
     negativePrompt: '',
     width: d.width,

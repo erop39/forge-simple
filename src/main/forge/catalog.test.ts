@@ -69,16 +69,54 @@ test('family comes from the override, else from detectFamily', async () => {
   const c = await cat.get()
   const byName = Object.fromEntries(c.checkpoints.map((x) => [x.name, x]))
   expect(byName['sd_xl_base']).toMatchObject({
-    title: 'sd_xl_base.safetensors [31e35c80fc]',
+    title: String.raw`sdxl\sd_xl_base.safetensors [31e35c80fc]`,
     filename: String.raw`C:\forge\models\Stable-diffusion\sd_xl_base.safetensors`,
     family: 'qwen',
   })
   expect(byName['krea2_turbo_fp8']?.family).toBe('krea2')
 })
 
+test('familyModules come from the per-preset options; non-string-array values are dropped', async () => {
+  const c = await make().get()
+  expect(c.familyModules).toEqual({ sdxl: [], krea2: [String.raw`C:\forge\models\VAE\ae.safetensors`, String.raw`C:\forge\models\text_encoder\clip_l.safetensors`] })
+  mock.respond('/sdapi/v1/options', {
+    json: { forge_additional_modules_zit: ['a'], forge_additional_modules_qwen: 'x', forge_additional_modules_lumina: [1], forge_additional_modules_anima: ['b', 'c'] },
+  })
+  expect((await make().get(true)).familyModules).toEqual({ zimage: ['a'], anima: ['b', 'c'] })
+})
+
+test('family is computed from the title, folders included', async () => {
+  const c = await make().get()
+  expect(c.checkpoints.map((x) => [x.title, x.family])).toEqual([
+    [String.raw`sdxl\sd_xl_base.safetensors [31e35c80fc]`, 'sdxl'],
+    [String.raw`krea2\krea2_turbo_fp8.safetensors [a1b2c3d4e5]`, 'krea2'],
+  ])
+})
+
+test('a failing loras() is non-fatal: empty list and a warn entry', async () => {
+  mock.respond('/sdapi/v1/loras', { status: 500, json: { detail: 'boom' } })
+  const c = await make().get()
+  expect(c.loras).toEqual([])
+  expect(c.checkpoints).toHaveLength(2)
+  const [w] = log.list({ category: 'catalog' }).filter((e) => e.level === 'warn')
+  expect(w).toMatchObject({ messageKey: 'log.catalog.lorasFailed', details: { kind: 'http', status: 500 } })
+})
+
+test('a hanging loras() times out without failing the catalog', async () => {
+  mock.respond('/sdapi/v1/loras', { hang: true })
+  const cat = createCatalog({
+    client: () => createForgeClient(mock.url, { lorasTimeoutMs: 50 }),
+    familyOverride: () => null, oplog: log, now: () => 1234,
+  })
+  const c = await cat.get()
+  expect(c.loras).toEqual([])
+  const [w] = log.list({ category: 'catalog' }).filter((e) => e.level === 'warn')
+  expect(w).toMatchObject({ messageKey: 'log.catalog.lorasFailed', details: { kind: 'timeout', status: null } })
+})
+
 test('loadedCheckpoint is read from options.sd_model_checkpoint', async () => {
   const c = await make().get()
-  expect(c.loadedCheckpoint).toBe('sd_xl_base.safetensors [31e35c80fc]')
+  expect(c.loadedCheckpoint).toBe(String.raw`sdxl\sd_xl_base.safetensors [31e35c80fc]`)
 })
 
 test('loadedCheckpoint is null when the option is missing or empty', async () => {
@@ -98,7 +136,7 @@ test('writes a catalog log entry with item counts and duration', async () => {
 })
 
 test('a failing list rejects and writes an error entry', async () => {
-  mock.respond('/sdapi/v1/loras', { status: 500, json: { detail: 'boom' } })
+  mock.respond('/sdapi/v1/samplers', { status: 500, json: { detail: 'boom' } })
   await expect(make().get()).rejects.toMatchObject({ name: 'ForgeError', kind: 'http', status: 500 })
   const [e] = log.list({ category: 'error' })
   expect(e).toMatchObject({ level: 'error', messageKey: 'log.catalog.failed' })
@@ -108,12 +146,12 @@ test('a failing list rejects and writes an error entry', async () => {
 test('a failed refresh keeps the cached catalog', async () => {
   const cat = make()
   const first = await cat.get()
-  mock.respond('/sdapi/v1/loras', { status: 500, json: { detail: 'boom' } })
+  mock.respond('/sdapi/v1/samplers', { status: 500, json: { detail: 'boom' } })
   await expect(cat.get(true)).rejects.toBeDefined()
   expect(await cat.get()).toBe(first)
 })
 
-const findings = (modulesAs: 'name' | 'path'): ProbeFindings => ({ shiftOptionKey: null, modulesAs, thumbRoute: false })
+const findings = (modulesAs: 'name' | 'path'): ProbeFindings => ({ shiftField: null, modulesAs, thumbRoute: false })
 
 const params = (checkpoint: string, modules: string[]): GenerationParams => ({
   family: 'sdxl', checkpoint, modules, prompt: '', negativePrompt: '', width: 512, height: 512, steps: 4,
@@ -124,7 +162,7 @@ const params = (checkpoint: string, modules: string[]): GenerationParams => ({
 const catalog: Catalog = {
   checkpoints: [{ title: 'a.safetensors [1]', name: 'a', filename: '/m/a.safetensors', family: 'sdxl' }],
   modules: [{ name: 'ae.safetensors', filename: '/m/ae.safetensors' }],
-  loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 0,
+  loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
 }
 
 test('moduleValue follows modulesAs', () => {

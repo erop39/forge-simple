@@ -18,7 +18,7 @@ const catalog = (over: Partial<Catalog> = {}): Catalog => ({
     { title: 'b.safetensors', name: 'b', filename: 'b.safetensors', family: 'zimage' },
   ],
   modules: [], loras: [], samplers: ['Euler'], schedulers: ['Simple'], upscalers: [],
-  loadedCheckpoint: 'b.safetensors', fetchedAt: 1, ...over,
+  loadedCheckpoint: 'b.safetensors', fetchedAt: 1, familyModules: {}, ...over,
 })
 
 const job = (id: number, status: Job['status'] = 'queued'): Job => ({

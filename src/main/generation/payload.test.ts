@@ -4,7 +4,7 @@ import { buildTxt2ImgBody } from './payload'
 
 const avail = { samplers: ['Euler a', 'Euler'], schedulers: ['Automatic', 'Simple'] }
 const base = defaultParams('sdxl', 'sd_xl_base.safetensors [abc]', avail)
-const F = { shiftOptionKey: 'some_shift', modulesAs: 'path', thumbRoute: false } as const
+const F = { shiftField: 'distilled_cfg_scale', modulesAs: 'path', thumbRoute: true } as const
 const forFamily = (family: Family): GenerationParams => defaultParams(family, `${family}.safetensors`, avail)
 
 test('sdxl: checkpoint, clip skip and fixed flags', () => {
@@ -35,24 +35,25 @@ test('clip skip is omitted when the profile has it but the value is null', () =>
   expect(b.override_settings).not.toHaveProperty('CLIP_stop_at_last_layers')
 })
 
-test('zimage: shift goes to the option named by findings', () => {
+test('zimage: shift travels in distilled_cfg_scale, not in override_settings', () => {
   const b = buildTxt2ImgBody(forFamily('zimage'), F)
-  expect(b.override_settings.some_shift).toBe(3)
+  expect(b.distilled_cfg_scale).toBe(3)
+  expect(Object.keys(b.override_settings).sort()).toEqual(['forge_additional_modules', 'sd_model_checkpoint'])
 })
 
-test('shift is omitted when findings.shiftOptionKey is null', () => {
-  const b = buildTxt2ImgBody(forFamily('zimage'), { ...F, shiftOptionKey: null })
-  expect(Object.keys(b.override_settings).sort()).toEqual(['forge_additional_modules', 'sd_model_checkpoint'])
+test('shift is omitted when findings.shiftField is null', () => {
+  const b = buildTxt2ImgBody(forFamily('zimage'), { ...F, shiftField: null })
+  expect(b).not.toHaveProperty('distilled_cfg_scale')
 })
 
 test('shift is omitted when the profile has no shift', () => {
   const b = buildTxt2ImgBody({ ...base, shift: 3 }, F)
-  expect(b.override_settings).not.toHaveProperty('some_shift')
+  expect(b).not.toHaveProperty('distilled_cfg_scale')
 })
 
 test('shift is omitted when the value is null', () => {
   const b = buildTxt2ImgBody({ ...forFamily('zimage'), shift: null }, F)
-  expect(b.override_settings).not.toHaveProperty('some_shift')
+  expect(b).not.toHaveProperty('distilled_cfg_scale')
 })
 
 test('modules are passed through in order', () => {

@@ -16,7 +16,7 @@ import { createImageStore } from '../storage/image-store'
 import { createRepos } from '../storage/repos'
 import { forwardEvents, registerIpc } from './register'
 
-const CKPT = 'sd_xl_base.safetensors [31e35c80fc]'
+const CKPT = String.raw`sdxl\sd_xl_base.safetensors [31e35c80fc]`
 const DEAD = 'http://127.0.0.1:1'
 
 let mock: MockForge
@@ -153,6 +153,10 @@ test('catalog:defaults and parts use the catalog; a dead server maps to error.ne
   const defaults = (await call('catalog:defaults', CKPT)) as GenerationParams
   expect(defaults.checkpoint).toBe(CKPT)
   expect(defaults.family).toBe('sdxl')
+  const krea = (await call('catalog:defaults', String.raw`krea2\krea2_turbo_fp8.safetensors [a1b2c3d4e5]`)) as GenerationParams
+  expect(krea.family).toBe('krea2')
+  expect(krea.modules).toEqual([String.raw`C:\forge\models\VAE\ae.safetensors`, String.raw`C:\forge\models\text_encoder\clip_l.safetensors`])
+  expect(defaults.modules).toEqual([])
   await expect(call('catalog:defaults', 'nope')).rejects.toThrow('error.notFound')
   expect(await call('catalog:parts', goodParams())).toEqual([{ role: 'model', value: CKPT, found: true }])
 

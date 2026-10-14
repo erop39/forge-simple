@@ -21,6 +21,7 @@ export const catalog: Catalog = {
   upscalers: [],
   loadedCheckpoint: null,
   fetchedAt: 1,
+  familyModules: {},
 }
 
 /** A store holding the given family's default parameters, rendered with `ui`. Actions can be replaced through `state`. */

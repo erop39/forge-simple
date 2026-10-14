@@ -17,9 +17,6 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
     forge_additional_modules: [...p.modules],
   }
   if (profile.clipSkip && p.clipSkip !== null) override_settings.CLIP_stop_at_last_layers = p.clipSkip
-  if (profile.shift && p.shift !== null && findings.shiftOptionKey !== null) {
-    override_settings[findings.shiftOptionKey] = p.shift
-  }
 
   const body: Txt2ImgBody = {
     prompt: p.prompt + loraTags,
@@ -39,5 +36,7 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
     override_settings_restore_afterwards: false,
   }
   if (profile.distilledCfg) body.distilled_cfg_scale = p.distilledCfg
+  // Forge Neo relabels the distilled-CFG slider as "Shift" for the shift families; no family has both.
+  if (profile.shift && p.shift !== null && findings.shiftField !== null) body[findings.shiftField] = p.shift
   return body
 }

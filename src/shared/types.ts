@@ -51,5 +51,7 @@ export interface OplogEntry {
 export interface CheckpointInfo { title: string; name: string; filename: string; family: Family }
 export interface ModuleInfo { name: string; filename: string }
 export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: { name: string; path: string }[];
-  samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number }
+  samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number
+  /** Per-preset default module lists from the server's options (full paths). */
+  familyModules: Partial<Record<Family, string[]>> }
 export interface PartStatus { role: 'model' | 'module'; value: string; found: boolean }

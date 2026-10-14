@@ -14,9 +14,30 @@ test.each<[string, Family]>([
 })
 
 test('detectFamily matches on the base name with either path separator', () => {
-  expect(detectFamily('C:\\models\\qwen\\mystery.safetensors')).toBe('sdxl')
+  expect(detectFamily('C:\\models\\qwen\\mystery.safetensors')).toBe('qwen')
   expect(detectFamily('models/krea/Qwen_Image.safetensors')).toBe('qwen')
   expect(detectFamily('C:\\models\\Lumina_2.safetensors')).toBe('lumina')
+})
+
+test.each<[string, Family]>([
+  ['krea2\\exampleKreaMix_v1.safetensors', 'krea2'],
+  ['IL\\exampleIllustrious_v3.safetensors', 'sdxl'],
+  ['anima 2026\\exampleAnimaMix_fp8.safetensors [0123abcd45]', 'anima'],
+  ['anima\\exampleWesternMix_v10.safetensors', 'anima'],
+  ['qwen\\krea2_x.safetensors', 'krea2'],
+  ['qwen/sub\\mystery.safetensors [abc]', 'qwen'],
+  ['krea2\\qwen\\mystery.safetensors', 'qwen'],
+])('detectFamily reads folders and strips the hash: %s -> %s', (title, family) => {
+  expect(detectFamily(title)).toBe(family)
+})
+
+test('no family has both shift and distilled CFG (shift travels in distilled_cfg_scale)', () => {
+  for (const p of Object.values(PROFILES)) expect(p.shift && p.distilledCfg).toBe(false)
+})
+
+test('defaultParams takes the given modules, else none', () => {
+  expect(defaultParams('krea2', 'k', none, ['a.safetensors']).modules).toEqual(['a.safetensors'])
+  expect(defaultParams('krea2', 'k', none).modules).toEqual([])
 })
 
 test('dimsForRatio keeps the area and snaps to 64', () => {

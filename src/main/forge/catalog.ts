@@ -1,7 +1,7 @@
 import { detectFamily } from '@shared/profiles'
 import type { Catalog, Family, GenerationParams, ModuleInfo, PartStatus } from '@shared/types'
 import type { Oplog } from '../oplog/oplog'
-import { ForgeError, type ForgeClient } from './client'
+import { ForgeError, type ForgeClient, type LoraItem } from './client'
 import type { ProbeFindings } from './findings'
 
 export interface CatalogDeps {
@@ -9,6 +9,24 @@ export interface CatalogDeps {
   familyOverride(filename: string): Family | null
   oplog: Oplog
   now(): number
+}
+
+const FAMILY_MODULE_OPTIONS: readonly (readonly [Family, string])[] = [
+  ['sdxl', 'forge_additional_modules_xl'],
+  ['zimage', 'forge_additional_modules_zit'],
+  ['qwen', 'forge_additional_modules_qwen'],
+  ['lumina', 'forge_additional_modules_lumina'],
+  ['krea2', 'forge_additional_modules_krea'],
+  ['anima', 'forge_additional_modules_anima'],
+]
+
+function familyModules(options: Record<string, unknown>): Partial<Record<Family, string[]>> {
+  const out: Partial<Record<Family, string[]>> = {}
+  for (const [family, key] of FAMILY_MODULE_OPTIONS) {
+    const v = options[key]
+    if (Array.isArray(v) && v.every((x): x is string => typeof x === 'string')) out[family] = [...v]
+  }
+  return out
 }
 
 export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Promise<Catalog> } {
@@ -19,8 +37,18 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
     const started = deps.now()
     try {
       const client = deps.client()
+      // The LoRA list can be slow on big libraries; its failure must not take the catalog down.
+      const lorasOrEmpty = client.loras().catch((err: unknown): LoraItem[] => {
+        deps.oplog.write({
+          level: 'warn', category: 'catalog', messageKey: 'log.catalog.lorasFailed',
+          details: err instanceof ForgeError
+            ? { kind: err.kind, status: err.status ?? null }
+            : { kind: 'unknown', status: null },
+        })
+        return []
+      })
       const [models, modules, loras, samplers, schedulers, upscalers, options] = await Promise.all([
-        client.models(), client.modules(), client.loras(), client.samplers(),
+        client.models(), client.modules(), lorasOrEmpty, client.samplers(),
         client.schedulers(), client.upscalers(), client.options(),
       ])
       const loaded = options['sd_model_checkpoint']
@@ -29,7 +57,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           title: m.title,
           name: m.model_name,
           filename: m.filename,
-          family: deps.familyOverride(m.filename) ?? detectFamily(m.filename),
+          family: deps.familyOverride(m.filename) ?? detectFamily(m.title),
         })),
         modules: modules.map((m) => ({ name: m.model_name, filename: m.filename })),
         loras: loras.map((l) => ({ name: l.name, path: l.path })),
@@ -38,6 +66,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         upscalers,
         loadedCheckpoint: typeof loaded === 'string' && loaded !== '' ? loaded : null,
         fetchedAt: deps.now(),
+        familyModules: familyModules(options),
       }
       deps.oplog.write({
         level: 'info', category: 'catalog', messageKey: 'log.catalog.loaded',

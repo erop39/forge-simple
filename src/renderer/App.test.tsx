@@ -10,7 +10,7 @@ import { StoreProvider } from './state/StoreProvider'
 
 const catalog: Catalog = {
   checkpoints: [{ title: 'a.safetensors', name: 'a', filename: 'a.safetensors', family: 'sdxl' }],
-  modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1,
+  modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1, familyModules: {},
 }
 
 function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>, catalogFails = false) {

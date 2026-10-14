@@ -1,5 +1,6 @@
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
+export const DEFAULT_LORAS_TIMEOUT_MS = 60_000
 
 export type ForgeErrorKind = 'network' | 'timeout' | 'http' | 'invalid'
 
@@ -167,11 +168,12 @@ function parseProgress(value: unknown): ProgressResponse {
 
 export function createForgeClient(
   baseUrl: string,
-  opts: { listTimeoutMs?: number; pingTimeoutMs?: number } = {},
+  opts: { listTimeoutMs?: number; pingTimeoutMs?: number; lorasTimeoutMs?: number } = {},
 ): ForgeClient {
   const base = normalizeBaseUrl(baseUrl)
   const listTimeoutMs = opts.listTimeoutMs ?? DEFAULT_LIST_TIMEOUT_MS
   const pingTimeoutMs = opts.pingTimeoutMs ?? DEFAULT_PING_TIMEOUT_MS
+  const lorasTimeoutMs = opts.lorasTimeoutMs ?? DEFAULT_LORAS_TIMEOUT_MS
 
   async function request(
     method: 'GET' | 'POST',
@@ -214,8 +216,8 @@ export function createForgeClient(
     }
   }
 
-  const list = async (path: string): Promise<unknown[]> =>
-    asArray(await request('GET', `${API}/${path}`, { timeoutMs: listTimeoutMs }), path)
+  const list = async (path: string, timeoutMs = listTimeoutMs): Promise<unknown[]> =>
+    asArray(await request('GET', `${API}/${path}`, { timeoutMs }), path)
 
   const names = (items: unknown[], what: string): string[] =>
     items.map((item) => (typeof item === 'string' ? item : str(asObj(item, what), 'name', what)))
@@ -267,7 +269,7 @@ export function createForgeClient(
     },
 
     async loras() {
-      return (await list('loras')).map((item) => {
+      return (await list('loras', lorasTimeoutMs)).map((item) => {
         const o = asObj(item, 'loras item')
         return {
           name: str(o, 'name', 'loras'),

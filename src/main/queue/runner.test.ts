@@ -8,14 +8,14 @@ import type { createImageStore } from '../storage/image-store'
 import { createRepos, type ImageRow } from '../storage/repos'
 import { createRunner } from './runner'
 
-const FINDINGS: ProbeFindings = { shiftOptionKey: 'some_shift', modulesAs: 'path', thumbRoute: false }
+const FINDINGS: ProbeFindings = { shiftField: 'distilled_cfg_scale', modulesAs: 'path', thumbRoute: true }
 const CKPT = 'sd_xl_base.safetensors [abc]'
 const CKPT2 = 'other.safetensors [def]'
 const avail = { samplers: ['Euler a'], schedulers: ['Automatic'] }
 
 const catalogWith = (titles: string[]): Catalog => ({
   checkpoints: titles.map((title) => ({ title, name: title, filename: title, family: 'sdxl' as const })),
-  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: [], loadedCheckpoint: null, fetchedAt: 0,
+  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: [], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
 })
 
 const SECRET = 'SECRET-PROMPT-TEXT'

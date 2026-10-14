@@ -65,7 +65,7 @@ function solidPng(size: number, [r, g, b]: [number, number, number]): string {
 
 const CHECKPOINTS = [
   {
-    title: 'sd_xl_base.safetensors [31e35c80fc]',
+    title: 'sdxl\\sd_xl_base.safetensors [31e35c80fc]',
     model_name: 'sd_xl_base',
     hash: '31e35c80fc',
     sha256: null,
@@ -73,7 +73,7 @@ const CHECKPOINTS = [
     config: null,
   },
   {
-    title: 'krea2_turbo_fp8.safetensors [a1b2c3d4e5]',
+    title: 'krea2\\krea2_turbo_fp8.safetensors [a1b2c3d4e5]',
     model_name: 'krea2_turbo_fp8',
     hash: 'a1b2c3d4e5',
     sha256: null,
@@ -217,6 +217,10 @@ export function startMockForge(opts: { port?: number; stepMs?: number } = {}): P
           return ok({
             sd_model_checkpoint: CHECKPOINTS[0]?.title,
             forge_additional_modules: [],
+            forge_additional_modules_xl: [],
+            forge_additional_modules_krea: MODULES.map((x) => x.filename),
+            krea_show_shift: false,
+            zit_show_shift: true,
             CLIP_stop_at_last_layers: 1,
           })
         case '/sdapi/v1/cmd-flags': return ok({ api: true, api_server_stop: false })

@@ -29,3 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed the build: the `animation: :global(fade-in)` declaration in the Select and Tooltip styles was a CSS syntax error; those styles, and the new dialog, now compose a shared fade-in from `styles/motion.module.css`.
 - Review fixes for the first screen: a connect that cannot refresh settings now fails visibly instead of leaving the dialog stuck, the chip reads "No server" until an address is set, a failed catalog load shows a notice with Retry (one shared `Notice` component), finished jobs are never re-added by stale responses, the dialog keeps its accessible description, and the main process samples the connection on show/restore and publishes it when the page loads.
 - Prompt bar and parameters panel: a floating prompt bar (growing prompt field, Ctrl+Enter to generate, ArrowUp to recall the last prompt, optional negative prompt, checkpoint, ratio, steps and image count, Generate), a right-hand panel with the model card (each part found or not found), the sampling parameters the model family uses, seed and size, and the VAE/text-encoder list; plus a "No checkpoints found" state with Refresh and a single z-index scale in the design tokens.
+
+### Changed
+
+- Probe findings from a real Forge Neo server: shift is sent in the `distilled_cfg_scale` field instead of an option, checkpoint previews are requested from `/sd_extra_networks/thumb`, and a checkpoint's family is detected from its whole title, folders included. New parameter sets start with the default module list the server keeps for the family.
+
+### Fixed
+
+- A slow `/sdapi/v1/loras` no longer breaks the catalog: it has a 60 s timeout of its own, and when it fails the catalog loads with no LoRAs and logs a warning.

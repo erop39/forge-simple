@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { startMockForge, type MockForge } from '../../../tools/mock-forge/server'
 import {
   DEFAULT_LIST_TIMEOUT_MS,
+  DEFAULT_LORAS_TIMEOUT_MS,
   DEFAULT_PING_TIMEOUT_MS,
   ForgeError,
   createForgeClient,
@@ -88,6 +89,7 @@ describe('defaults', () => {
   test('timeouts default to 10 s for lists and 5 s for ping', () => {
     expect(DEFAULT_LIST_TIMEOUT_MS).toBe(10_000)
     expect(DEFAULT_PING_TIMEOUT_MS).toBe(5_000)
+    expect(DEFAULT_LORAS_TIMEOUT_MS).toBe(60_000)
   })
 })
 
@@ -205,6 +207,12 @@ describe('timeouts', () => {
     mock.respond('/sdapi/v1/sd-models', { hang: true })
     const client = createForgeClient(mock.url, { listTimeoutMs: 50 })
     await expectForgeError(client.models(), { kind: 'timeout' })
+  })
+
+  test('loras() uses its own, longer timeout', async () => {
+    mock.respond('/sdapi/v1/loras', { hang: true })
+    const client = createForgeClient(mock.url, { listTimeoutMs: 5_000, lorasTimeoutMs: 50 })
+    await expectForgeError(client.loras(), { kind: 'timeout' })
   })
 
   test('ping times out (5 s by default; injectable here)', async () => {

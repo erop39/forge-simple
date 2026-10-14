@@ -155,7 +155,8 @@ export function registerIpc(
     if (typeof title !== 'string') return fail('error.invalidParams')
     const catalog = await loadCatalog()
     const ckpt = catalog.checkpoints.find((c) => c.title === title) ?? fail('error.notFound')
-    return defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers })
+    return defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers },
+      catalog.familyModules[ckpt.family] ?? [])
   })
 
   handle('catalog:parts', async (params) => {
