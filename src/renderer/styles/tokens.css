@@ -29,6 +29,8 @@
   --h-control: 28px;
   --h-bar: 32px;
   --h-topbar: 44px;
+  /* Tallest a dropdown menu gets before it scrolls. */
+  --h-menu-max: 420px;
   --gap-tile: 6px;
 
   --dur-hover: 120ms;

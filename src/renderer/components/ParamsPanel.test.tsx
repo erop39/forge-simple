@@ -6,7 +6,41 @@ import { PromptBar } from './PromptBar'
 import { renderWithStore } from './test-store'
 
 const open = { panelOpen: true }
-const row = (name: string) => screen.queryByRole('spinbutton', { name })
+const row = (name: string) => screen.queryByRole('spinbutton', { name }) ?? screen.queryByRole('slider', { name })
+
+function expectSlider(name: string, min: string, max: string): HTMLElement {
+  const slider = screen.getByRole('slider', { name })
+  expect(slider.getAttribute('aria-valuemin')).toBe(min)
+  expect(slider.getAttribute('aria-valuemax')).toBe(max)
+  return slider
+}
+
+test('CFG is a slider from 1 to 30 in steps of 0.5', async () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
+  store.getState().setParams({ cfgScale: 7 })
+  const cfg = expectSlider(en['params.cfg'], '1', '30')
+  cfg.focus()
+  await userEvent.keyboard('{ArrowRight}')
+  expect(store.getState().params?.cfgScale).toBe(7.5)
+})
+
+test('Distilled CFG is a slider from 0 to 30 in steps of 0.5', async () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'krea2', open)
+  store.getState().setParams({ distilledCfg: 3 })
+  const slider = expectSlider(en['params.distilledCfg'], '0', '30')
+  slider.focus()
+  await userEvent.keyboard('{ArrowLeft}')
+  expect(store.getState().params?.distilledCfg).toBe(2.5)
+})
+
+test('Shift is a slider from 0 to 20 in steps of 0.5', async () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'zimage', open)
+  store.getState().setParams({ shift: 3 })
+  const slider = expectSlider(en['params.shift'], '0', '20')
+  slider.focus()
+  await userEvent.keyboard('{ArrowRight}')
+  expect(store.getState().params?.shift).toBe(3.5)
+})
 
 test('sdxl shows CFG and Clip skip, hides Distilled CFG and Shift', () => {
   renderWithStore(<ParamsPanel />, 'sdxl', open)
@@ -98,7 +132,7 @@ test('Escape closes the panel and returns focus to the All parameters button', a
   expect(screen.queryByRole('complementary')).toBeNull()
   await userEvent.click(screen.getByRole('button', { name: en['prompt.allParams'] }))
   expect(screen.getByRole('complementary', { name: en['prompt.allParams'] })).toBeDefined()
-  await userEvent.click(screen.getByRole('spinbutton', { name: en['params.cfg'] }))
+  screen.getByRole('slider', { name: en['params.cfg'] }).focus()
   await userEvent.keyboard('{Escape}')
   expect(store.getState().panelOpen).toBe(false)
   expect(document.activeElement).toBe(screen.getByRole('button', { name: en['prompt.allParams'] }))

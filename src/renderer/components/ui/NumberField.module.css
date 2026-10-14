@@ -15,6 +15,7 @@
 
 .inline {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--sp-2);
   height: var(--h-control);

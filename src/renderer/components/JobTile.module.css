@@ -55,10 +55,14 @@
   background: color-mix(in srgb, var(--canvas) 80%, transparent);
 }
 
+/* One line at any tile width; the full text is the tooltip. */
 .line {
   display: block;
   padding: var(--sp-1) var(--sp-2);
+  overflow: hidden;
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .track {

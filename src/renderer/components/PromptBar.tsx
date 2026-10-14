@@ -3,11 +3,13 @@ import { useCallback, useId, useLayoutEffect, useRef, useState, type KeyboardEve
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
 import { t } from '../i18n/t'
+import { checkpointOptions } from '../state/checkpoint-options'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { Select } from './ui/Select'
+import { Slider } from './ui/Slider'
 import { PARAMS_PANEL_ID, PARAMS_TOGGLE_ID } from './params-ids'
 import styles from './PromptBar.module.css'
 
@@ -116,12 +118,18 @@ export function PromptBar() {
     void generate()
   }
 
+  /** Ctrl+Enter submits from either field; true when the key needs no further handling (also while composing). */
+  function submitOnCtrlEnter(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (event.nativeEvent.isComposing) return true
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return false
+    event.preventDefault()
+    submit()
+    return true
+  }
+
   function onPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.nativeEvent.isComposing) return
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault()
-      submit()
-    } else if (event.key === 'ArrowUp' && params?.prompt === '') {
+    if (submitOnCtrlEnter(event)) return
+    if (event.key === 'ArrowUp' && params?.prompt === '') {
       const last = readLastPrompt()
       if (last !== '') {
         event.preventDefault()
@@ -143,6 +151,7 @@ export function PromptBar() {
           label={t('prompt.negative')}
           placeholder={t('prompt.negativePlaceholder')}
           onChange={(negativePrompt) => setParams({ negativePrompt })}
+          onKeyDown={submitOnCtrlEnter}
         />
       )}
       <GrowingField
@@ -155,62 +164,65 @@ export function PromptBar() {
       />
       <div className={styles.row}>
         <Select
+          grow
           label={t('params.model')}
           value={params.checkpoint}
-          options={catalog.checkpoints.map((c) => ({ value: c.title, label: c.name }))}
+          options={checkpointOptions(catalog.checkpoints)}
           onChange={(title) => void selectCheckpoint(title)}
         />
-        <Select
-          label={t('prompt.ratio')}
-          value={ratio}
-          options={ratioOptions}
-          onChange={(value) => {
-            const picked = RATIOS.find((r) => ratioValue(r) === value)
-            if (picked) setParams(dimsForRatio(picked, area))
-          }}
-        />
-        <NumberField
-          inline
-          label={t('prompt.steps')}
-          value={params.steps}
-          min={1}
-          max={200}
-          onCommit={(steps) => setParams({ steps })}
-        />
-        <NumberField
-          inline
-          label={t('prompt.images')}
-          value={params.count}
-          min={1}
-          max={8}
-          onCommit={(count) => setParams({ count })}
-        />
-        {profile.negative && (
+        <div className={styles.controls}>
+          <Select
+            label={t('prompt.ratio')}
+            value={ratio}
+            options={ratioOptions}
+            onChange={(value) => {
+              const picked = RATIOS.find((r) => ratioValue(r) === value)
+              if (picked) setParams(dimsForRatio(picked, area))
+            }}
+          />
+          <Slider
+            inline
+            label={t('prompt.steps')}
+            value={params.steps}
+            min={1}
+            max={150}
+            step={1}
+            onCommit={(steps) => setParams({ steps })}
+          />
+          <NumberField
+            inline
+            label={t('prompt.images')}
+            value={params.count}
+            min={1}
+            max={8}
+            onCommit={(count) => setParams({ count })}
+          />
+          {profile.negative && (
+            <Button
+              aria-expanded={negativeOpen}
+              aria-controls={negativeOpen ? negativeId : undefined}
+              onClick={() => setNegativeOpen((open) => !open)}
+            >
+              {t('prompt.negative')}
+            </Button>
+          )}
+          <IconButton
+            id={PARAMS_TOGGLE_ID}
+            label={t('prompt.allParams')}
+            icon={<SlidersHorizontal size={20} />}
+            aria-expanded={panelOpen}
+            aria-controls={PARAMS_PANEL_ID}
+            onClick={togglePanel}
+          />
           <Button
-            aria-expanded={negativeOpen}
-            aria-controls={negativeOpen ? negativeId : undefined}
-            onClick={() => setNegativeOpen((open) => !open)}
-          >
-            {t('prompt.negative')}
-          </Button>
-        )}
-        <span className={styles.spacer} />
-        <IconButton
-          id={PARAMS_TOGGLE_ID}
-          label={t('prompt.allParams')}
-          icon={<SlidersHorizontal size={20} />}
-          aria-expanded={panelOpen}
-          aria-controls={PARAMS_PANEL_ID}
-          onClick={togglePanel}
-        />
-        <Button
-          variant="primary"
-          className={styles.generate}
-          aria-label={t('prompt.generate')}
-          aria-disabled={blank}
-          icon={<ArrowUp size={16} />}
-          onClick={submit}
-        />
+            variant="primary"
+            className={styles.generate}
+            aria-label={t('prompt.generate')}
+            aria-disabled={blank}
+            icon={<ArrowUp size={16} />}
+            onClick={submit}
+          />
+        </div>
       </div>
     </div>
   )

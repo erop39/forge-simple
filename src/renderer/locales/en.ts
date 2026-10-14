@@ -62,6 +62,13 @@ export const en = {
   'prompt.generate': 'Generate',
   'prompt.allParams': 'All parameters',
 
+  'family.sdxl': 'SDXL',
+  'family.zimage': 'Z-Image',
+  'family.qwen': 'Qwen',
+  'family.lumina': 'Lumina',
+  'family.krea2': 'Krea 2',
+  'family.anima': 'Anima',
+
   'params.model': 'Model',
   'params.module': 'Module',
   'params.found': 'Found',

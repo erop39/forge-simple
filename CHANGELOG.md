@@ -38,7 +38,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - The negative-prompt field no longer clips by one pixel, an empty model card renders nothing, and the top bar height and the panel slide-out time come from design tokens.
 - Probe findings from a real Forge Neo server: shift is sent in the `distilled_cfg_scale` field instead of an option, checkpoint previews are requested from `/sd_extra_networks/thumb`, and a checkpoint's family is detected from its whole title, folders included. New parameter sets start with the default module list the server keeps for the family.
+- Steps (1-150, in the prompt bar) and CFG, Distilled CFG and Shift (in the parameters panel) are now sliders with a value readout, built on a new `Slider` primitive (Radix Slider; arrows, Page Up/Down, Home/End).
+- The prompt bar fits at every window width: the Model select takes the remaining space and shortens a long checkpoint name (full name on hover), the other controls keep their size, and at narrow widths the controls move to a second line under the model instead of overflowing. The bar is up to 880 px wide and always leaves room for the open parameters panel.
+- The Model menu lists checkpoints grouped by model family (SDXL, Z-Image, Qwen, Lumina, Krea 2, Anima), each group sorted by name ignoring case, with numbers in natural order.
+- `pnpm mock-forge` takes `MOCK_CATALOG=many` (a long mixed-family checkpoint list with an overlong name) and `STEP_MS` (time per fake step).
 
 ### Fixed
+
+- Dropdown menus with a long list scroll (mouse wheel and keyboard) instead of running off the window; they stay inside the window and open on the selected item.
+- `Ctrl+Enter` also generates from the negative-prompt field.
+- The Images field in the prompt bar no longer overlaps the next control, and the running job's caption stays on one line (shortened with an ellipsis, full text on hover).
 
 - A slow `/sdapi/v1/loras` no longer breaks the catalog: it has a 60 s timeout of its own, and when it fails the catalog loads with no LoRAs and logs a warning.

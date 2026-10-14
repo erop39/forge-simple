@@ -48,7 +48,9 @@ function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null
         {t('job.cancel')}
       </Button>
       <div className={styles.footer}>
-        <span className={`mono ${styles.line}`}>{line}</span>
+        <span className={`mono ${styles.line}`} title={line}>
+          {line}
+        </span>
         <div
           role="progressbar"
           aria-label={stage}

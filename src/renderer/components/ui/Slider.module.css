@@ -1,0 +1,78 @@
+/* Panel rows: track and readout, the row shows the label. */
+.plain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-control);
+}
+
+.plain .root {
+  width: 120px;
+}
+
+/* Prompt bar: a bordered control like the inline NumberField, with a short track. */
+.inline {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-control);
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+
+.inline:hover {
+  border-color: var(--line-strong);
+}
+
+.inline .root {
+  width: 72px;
+}
+
+.label {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--h-control);
+  touch-action: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+.track {
+  position: relative;
+  flex-grow: 1;
+  height: var(--sp-1);
+  overflow: hidden;
+  border-radius: var(--r-tag);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.range {
+  position: absolute;
+  height: 100%;
+  background: var(--text-2);
+}
+
+/* A radius of at least half the size makes the thumb round. */
+.thumb {
+  display: block;
+  width: var(--sp-3);
+  height: var(--sp-3);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.readout {
+  min-width: 4ch;
+  color: var(--text);
+  text-align: right;
+}

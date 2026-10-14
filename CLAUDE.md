@@ -21,7 +21,7 @@ UI strings, README and CHANGELOG are English.
 - `src/main/e2e.test.ts` — end-to-end test of the main modules (real SQLite file, image store, Forge client, catalog, runner) against the mock Forge, without Electron; runs as part of `pnpm test`.
 - `pnpm typecheck` — renderer/main/preload and Node-side config.
 - `pnpm build` — production build. **Run it before every commit**: vitest does not compile CSS modules, so CSS errors only show up here.
-- `pnpm mock-forge` — fake Forge on port 7861 (`PORT=<n>` to change; 7861 is often taken). Used by tests and for manual runs.
+- `pnpm mock-forge` — fake Forge on port 7861 (`PORT=<n>` to change; 7861 is often taken). `STEP_MS=<ms>` slows the fake steps; `MOCK_CATALOG=many` serves ~55 fictional checkpoints across families (with an overlong name) for menu and layout checks. Used by tests and for manual runs.
 - `node tools/probe/probe.mjs http://HOST:7860` — read-only probe of a real Forge; writes `tools/probe/probe-report.json` (git-ignored, holds private paths).
 
 ## Smoke run
@@ -31,14 +31,16 @@ UI strings, README and CHANGELOG are English.
 
 ## Manual check in the real window
 
-`pnpm build`, then a slow mock so progress is visible: `node_modules/.bin/tsx -e "import('./tools/mock-forge/server.ts').then((m) => m.startMockForge({ port: 7881, stepMs: 300 }))"`, then `node_modules/.bin/electron . --remote-debugging-port=9333 --user-data-dir=<temp dir>` and drive or screenshot the page over CDP (`http://127.0.0.1:9333/json`). The window opens on the user's desktop: tell the user before starting, and stop both processes afterwards.
+`pnpm build`, then a slow mock so progress is visible: `STEP_MS=300 PORT=7881 pnpm mock-forge`, then `node_modules/.bin/electron . --remote-debugging-port=<port> --user-data-dir=<temp dir>` and drive or screenshot the page over CDP (`http://127.0.0.1:<port>/json`). The window opens on the user's desktop: tell the user before starting, and stop both processes afterwards.
+
+**Never drive a window you did not start.** Another window of this app (the user's, or another session's) may already hold a CDP port; if yours cannot bind it, Electron only logs an error and keeps running, and `/json` then answers from the other window. Pick an unusual port, check it is free first, and after start confirm that the process listening on it is yours (its command line has your `--user-data-dir`). A window behind others is `visibilityState: hidden` and renders no frames: transitions, `ResizeObserver` and `requestAnimationFrame` stall and CDP input waits for a frame; each `Page.captureScreenshot` forces one. `Emulation.setDeviceMetricsOverride` (for window widths) lasts only while that CDP connection is open.
 
 ## Layout
 
 - `src/main/` — owns all state. `forge/` (HTTP client, catalog, connection monitor, active-server holder, probe findings), `generation/payload.ts` (params → txt2img body), `queue/` (runner, speed), `storage/` (SQLite, repos, image files, `fnc-img://` resolver), `oplog/` (operation log), `ipc/register.ts` (every IPC handler), `index.ts` (Electron wiring, protocol, window).
 - `src/preload/index.ts` — exposes exactly the `Api` from `src/shared/ipc.ts` as `window.api`.
 - `src/shared/` — `types.ts`, `ipc.ts` (Api, channels, `IpcErrorKey`), `profiles.ts` (model families; imported by main and renderer, no Node imports).
-- `src/renderer/` — React. `state/store.ts` (zustand, provided via `StoreProvider`; `state/gallery-items.ts` merges jobs and images and lays out columns), `components/` (+ `ui/` primitives; `use-pending-delete.ts` drives delete-with-undo), `format.ts` (shared display formatters such as `baseName`), `locales/en.ts`, `i18n/`, `styles/` (`tokens.css`, `base.css`, `motion.module.css`). The prompt bar publishes its height as the root CSS variable `--prompt-bar-h`; floating content pads by it.
+- `src/renderer/` — React. `state/store.ts` (zustand, provided via `StoreProvider`; `state/gallery-items.ts` merges jobs and images and lays out columns; `state/checkpoint-options.ts` builds the family-grouped Model menu), `components/` (+ `ui/` primitives — `Select` takes `grow` and grouped options, `Slider` wraps Radix Slider; `use-pending-delete.ts` drives delete-with-undo), `format.ts` (shared display formatters such as `baseName`), `locales/en.ts`, `i18n/`, `styles/` (`tokens.css`, `base.css`, `motion.module.css`). The prompt bar publishes its height as the root CSS variable `--prompt-bar-h`; floating content pads by it.
 - `tools/mock-forge/server.ts`, `tools/probe/probe.mjs`.
 
 ## Rules

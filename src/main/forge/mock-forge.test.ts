@@ -95,3 +95,15 @@ test('close() terminates a hanging request', async () => {
   await mock.close()
   expect(await pending).toBe('dropped')
 })
+
+test('the default catalog has two checkpoints; catalog many serves a long mixed list', async () => {
+  mock = await startMockForge()
+  expect(await getJson('/sdapi/v1/sd-models')).toHaveLength(2)
+  await mock.close()
+  mock = await startMockForge({ catalog: 'many' })
+  const many: { title: string }[] = await getJson('/sdapi/v1/sd-models')
+  expect(many.length).toBeGreaterThanOrEqual(50)
+  expect(new Set(many.map((c) => c.title)).size).toBe(many.length)
+  expect(many.some((c) => c.title.includes('exampleSemiRealisticMix_v20LittleDetailer'))).toBe(true)
+  expect((await getJson('/sdapi/v1/options')).sd_model_checkpoint).toBe(many[0]?.title)
+})

@@ -82,6 +82,47 @@ const CHECKPOINTS = [
   },
 ]
 
+/** One fictional sd-models entry; the hash comes from the index so titles stay unique and stable. */
+function checkpointEntry(folder: string, name: string, index: number) {
+  const hash = (0xa0000000 + index * 0x1f3d5b7).toString(16).padStart(10, '0')
+  return {
+    title: `${folder}\\${name}.safetensors [${hash}]`,
+    model_name: name,
+    hash,
+    sha256: null,
+    filename: `C:\\forge\\models\\Stable-diffusion\\${folder}\\${name}.safetensors`,
+    config: null,
+  }
+}
+
+/**
+ * A long list across folders and families in mixed order (fictional names), for checking menu
+ * scrolling, grouping and an overlong name in the prompt bar. Opt in with `catalog: 'many'`.
+ */
+const MANY_CHECKPOINTS = (() => {
+  const names: [string, string][] = [
+    ['illustrious', 'exampleSemiRealisticMix_v20LittleDetailer'],
+    ['anima', 'anima_preview_v3'],
+    ['krea', 'krea2_turbo_fp8'],
+  ]
+  const sdxlStems = ['amberMix', 'birchXL', 'cobaltPony', 'duneIllustrious', 'emberAnime', 'fernReal', 'graniteXL']
+  for (const stem of sdxlStems) {
+    for (const version of ['v9', 'v10', 'v2']) names.push(['illustrious', `${stem}_${version}`])
+    names.push(['pony', `${stem}Pony_v1`])
+  }
+  for (let i = 1; i <= 8; i++) names.push(['anima', `anima_fineTune_${i}`])
+  for (let i = 1; i <= 5; i++) names.push(['zimage', `z_image_turbo_${i}`])
+  for (let i = 1; i <= 4; i++) names.push(['qwen', `qwen_image_edit_${i}`])
+  for (let i = 1; i <= 3; i++) names.push(['lumina', `lumina2_mix_${i}`])
+  for (let i = 1; i <= 4; i++) names.push(['krea', `krea2_dev_${i}`])
+  // A stride coprime with the length permutes the list, so families come mixed like a real server's.
+  const order = names.map((_, i) => (i * 37) % names.length)
+  return order.map((n, i) => {
+    const [folder, name] = names[n] as [string, string]
+    return checkpointEntry(folder, name, i)
+  })
+})()
+
 const MODULES = [
   { model_name: 'ae.safetensors', filename: 'C:\\forge\\models\\VAE\\ae.safetensors' },
   { model_name: 'clip_l.safetensors', filename: 'C:\\forge\\models\\text_encoder\\clip_l.safetensors' },
@@ -120,8 +161,16 @@ const MEMORY = {
 
 const NOT_FOUND = { detail: 'Not Found' }
 
-export function startMockForge(opts: { port?: number; stepMs?: number } = {}): Promise<MockForge> {
+export interface MockForgeOptions {
+  port?: number
+  stepMs?: number
+  /** 'many': a long mixed-family checkpoint list (MOCK_CATALOG=many from the command line). */
+  catalog?: 'default' | 'many'
+}
+
+export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> {
   const stepMs = opts.stepMs ?? 50
+  const checkpoints = opts.catalog === 'many' ? MANY_CHECKPOINTS : CHECKPOINTS
   const requests: MockForge['requests'] = []
   const overrides = new Map<string, Override>()
   const sockets = new Set<Socket>()
@@ -207,7 +256,7 @@ export function startMockForge(opts: { port?: number; stepMs?: number } = {}): P
     const ok = (json: unknown): { status: number; json: unknown } => ({ status: 200, json })
     if (method === 'GET') {
       switch (path) {
-        case '/sdapi/v1/sd-models': return ok(CHECKPOINTS)
+        case '/sdapi/v1/sd-models': return ok(checkpoints)
         case '/sdapi/v1/sd-modules': return ok(MODULES)
         case '/sdapi/v1/loras': return ok(LORAS)
         case '/sdapi/v1/samplers': return ok(SAMPLERS)
@@ -215,7 +264,7 @@ export function startMockForge(opts: { port?: number; stepMs?: number } = {}): P
         case '/sdapi/v1/upscalers': return ok([{ name: 'Latent' }, { name: 'R-ESRGAN 4x+' }])
         case '/sdapi/v1/options':
           return ok({
-            sd_model_checkpoint: CHECKPOINTS[0]?.title,
+            sd_model_checkpoint: checkpoints[0]?.title,
             forge_additional_modules: [],
             forge_additional_modules_xl: [],
             forge_additional_modules_krea: MODULES.map((x) => x.filename),
@@ -310,7 +359,12 @@ export function startMockForge(opts: { port?: number; stepMs?: number } = {}): P
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMain) {
   const port = Number(process.env.PORT ?? 7861)
-  startMockForge({ port })
+  const stepMs = process.env.STEP_MS === undefined ? undefined : Number(process.env.STEP_MS)
+  startMockForge({
+    port,
+    ...(stepMs !== undefined ? { stepMs } : {}),
+    catalog: process.env.MOCK_CATALOG === 'many' ? 'many' : 'default',
+  })
     .then((mock) => {
       console.log(`Mock Forge listening on ${mock.url}`)
       const stop = (): void => {

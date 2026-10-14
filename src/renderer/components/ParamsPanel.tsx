@@ -9,6 +9,7 @@ import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { ParamRow } from './ui/ParamRow'
 import { Select } from './ui/Select'
+import { Slider } from './ui/Slider'
 import { Tooltip } from './ui/Tooltip'
 import { PARAMS_PANEL_ID, PARAMS_TOGGLE_ID } from './params-ids'
 import styles from './ParamsPanel.module.css'
@@ -130,39 +131,36 @@ function Body() {
         </ParamRow>
         {profile.cfg && (
           <ParamRow label={t('params.cfg')}>
-            <NumberField
+            <Slider
               label={t('params.cfg')}
               value={params.cfgScale}
               min={1}
               max={30}
               step={0.5}
-              integer={false}
               onCommit={(cfgScale) => setParams({ cfgScale })}
             />
           </ParamRow>
         )}
         {profile.distilledCfg && (
           <ParamRow label={t('params.distilledCfg')}>
-            <NumberField
+            <Slider
               label={t('params.distilledCfg')}
               value={params.distilledCfg}
               min={0}
               max={30}
               step={0.5}
-              integer={false}
               onCommit={(distilledCfg) => setParams({ distilledCfg })}
             />
           </ParamRow>
         )}
         {profile.shift && params.shift !== null && (
           <ParamRow label={t('params.shift')}>
-            <NumberField
+            <Slider
               label={t('params.shift')}
               value={params.shift}
               min={0}
               max={20}
               step={0.5}
-              integer={false}
               onCommit={(shift) => setParams({ shift })}
             />
           </ParamRow>

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Button } from './Button'
 import { IconButton } from './IconButton'
@@ -72,4 +72,40 @@ test('Tooltip shows its text on keyboard focus', async () => {
   )
   await userEvent.tab()
   expect(await screen.findByRole('tooltip')).toBeDefined()
+})
+
+const grouped = [
+  { value: 'a', label: 'alpha', group: 'First' },
+  { value: 'b', label: 'beta', group: 'First' },
+  { value: 'c', label: 'gamma', group: 'Second' },
+]
+
+test('Select shows grouped options under labelled groups, in the given order', async () => {
+  render(<Select label="Model" value="c" options={grouped} onChange={() => {}} />)
+  await userEvent.click(screen.getByRole('button', { name: /Model/ }))
+  const first = screen.getByRole('group', { name: 'First' })
+  const second = screen.getByRole('group', { name: 'Second' })
+  expect(within(first).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['alpha', 'beta'])
+  expect(within(second).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['gamma'])
+})
+
+test('Select without groups renders no group labels', async () => {
+  render(<Select label="Sampler" value="Euler" options={options} onChange={() => {}} />)
+  await userEvent.click(screen.getByRole('button', { name: /Sampler/ }))
+  expect(screen.queryAllByRole('group').filter((g) => g.getAttribute('aria-labelledby'))).toEqual([])
+})
+
+test('Select opens a scrollable menu with the checked option focused', async () => {
+  render(<Select label="Model" value="b" options={grouped} onChange={() => {}} />)
+  await userEvent.click(screen.getByRole('button', { name: /Model/ }))
+  const menu = screen.getByRole('menu')
+  expect(menu.className).toMatch(/content/)
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'beta' })))
+  await userEvent.keyboard('{ArrowDown}')
+  expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'gamma' }))
+})
+
+test('a growing Select carries the full value as its tooltip', () => {
+  render(<Select grow label="Model" value="c" options={grouped} onChange={() => {}} />)
+  expect(screen.getByRole('button', { name: /Model/ }).getAttribute('title')).toBe('gamma')
 })

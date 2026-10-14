@@ -95,15 +95,41 @@ test('Images accepts 1 to 8', async () => {
   expect(store.getState().params?.count).toBe(5)
 })
 
-test('Steps steps by one with the arrow keys within its bounds', async () => {
+test('Steps is a slider from 1 to 150 that updates params.steps', async () => {
   const { store } = renderWithStore(<PromptBar />, 'sdxl')
-  const steps = screen.getByRole('spinbutton', { name: en['prompt.steps'] })
-  store.getState().setParams({ steps: 200 })
-  await userEvent.click(steps)
+  store.getState().setParams({ steps: 30 })
+  const steps = await screen.findByRole('slider', { name: en['prompt.steps'] })
+  expect(steps.getAttribute('aria-valuemin')).toBe('1')
+  expect(steps.getAttribute('aria-valuemax')).toBe('150')
+  steps.focus()
+  await userEvent.keyboard('{ArrowRight}')
+  expect(store.getState().params?.steps).toBe(31)
+  await userEvent.keyboard('{End}{ArrowRight}')
+  expect(store.getState().params?.steps).toBe(150)
+  await userEvent.keyboard('{Home}{ArrowLeft}')
+  expect(store.getState().params?.steps).toBe(1)
+})
+
+test('Ctrl+Enter in the negative field calls generate', async () => {
+  const generate = vi.fn(async () => {})
+  renderWithStore(<PromptBar />, 'sdxl', { generate })
+  await userEvent.type(promptField(), 'a fox')
+  await userEvent.click(screen.getByRole('button', { name: en['prompt.negative'] }))
+  const negative = screen.getByRole('textbox', { name: en['prompt.negative'] })
+  await userEvent.type(negative, 'blurry')
+  await userEvent.keyboard('{Control>}{Enter}{/Control}')
+  expect(generate).toHaveBeenCalledTimes(1)
+  expect((negative as HTMLTextAreaElement).value).toBe('blurry')
+})
+
+test('ArrowUp in an empty negative field does not restore the last prompt there', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { generate: vi.fn(async () => {}) })
+  await userEvent.type(promptField(), 'a fox')
+  await userEvent.keyboard('{Control>}{Enter}{/Control}')
+  await userEvent.click(screen.getByRole('button', { name: en['prompt.negative'] }))
+  await userEvent.click(screen.getByRole('textbox', { name: en['prompt.negative'] }))
   await userEvent.keyboard('{ArrowUp}')
-  expect(store.getState().params?.steps).toBe(200)
-  await userEvent.keyboard('{ArrowDown}')
-  expect(store.getState().params?.steps).toBe(199)
+  expect(store.getState().params?.negativePrompt).toBe('')
 })
 
 test('All parameters toggles the panel and reflects it in aria-expanded', async () => {

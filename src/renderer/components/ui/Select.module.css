@@ -26,10 +26,33 @@
   white-space: nowrap;
 }
 
+.label,
+.caret {
+  flex-shrink: 0;
+}
+
+/* Flexible width: the trigger fills what its row leaves and the value gives way first. */
+.grow {
+  min-width: 0;
+}
+
+.grow .value {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  text-align: left;
+}
+
 .content {
   composes: fadeIn from '../../styles/motion.module.css';
   z-index: var(--z-menu);
   min-width: 160px;
+  /* Long lists scroll inside the menu; Radix publishes the room left before the window edge. */
+  max-height: min(var(--h-menu-max), var(--radix-dropdown-menu-content-available-height, var(--h-menu-max)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
   padding: var(--sp-1);
   border-radius: var(--r-control);
   background: var(--surface-3);
@@ -62,4 +85,11 @@
 
 .indicator {
   display: inline-flex;
+}
+
+.groupLabel {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 16px;
 }
