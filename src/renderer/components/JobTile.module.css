@@ -1,0 +1,117 @@
+.tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--surface-1);
+}
+
+.waiting {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.running {
+  border-color: var(--line);
+}
+
+.failedTile {
+  border-color: var(--blocked);
+}
+
+.interrupted {
+  border-color: var(--signal);
+}
+
+.queued {
+  color: var(--text-2);
+}
+
+.corner {
+  position: absolute;
+  z-index: 1;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+}
+
+.preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  image-rendering: pixelated;
+}
+
+.footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+}
+
+.line {
+  display: block;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text);
+}
+
+.track {
+  height: 2px;
+  background: var(--line);
+}
+
+/* The bar grows from the left by scaling; reduced motion removes the transition (base.css). */
+.fill {
+  width: 100%;
+  height: 100%;
+  background: var(--signal);
+  transform-origin: left center;
+  transition: transform var(--dur-menu) ease-out;
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  align-self: stretch;
+  min-width: 0;
+  padding: var(--sp-3);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.message {
+  margin: 0;
+}
+
+.detail {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: auto;
+}

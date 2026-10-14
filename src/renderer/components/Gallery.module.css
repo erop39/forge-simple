@@ -1,0 +1,51 @@
+/* The scroll area. The prompt bar floats over it, so the bottom padding is its height plus one step. */
+.gallery {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: calc(var(--prompt-bar-h, 0px) + var(--sp-4) + var(--sp-6));
+  overflow-y: auto;
+}
+
+.grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sentinel {
+  flex: none;
+  height: 1px;
+}
+
+/* A floating notice centred above the prompt bar. */
+.toastHost {
+  position: fixed;
+  z-index: var(--z-menu);
+  bottom: calc(var(--prompt-bar-h, 0px) + var(--sp-4) + var(--sp-3));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border-radius: var(--r-control);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-float);
+}
+
+.toastText {
+  flex: 1;
+}

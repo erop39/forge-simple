@@ -29,9 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed the build: the `animation: :global(fade-in)` declaration in the Select and Tooltip styles was a CSS syntax error; those styles, and the new dialog, now compose a shared fade-in from `styles/motion.module.css`.
 - Review fixes for the first screen: a connect that cannot refresh settings now fails visibly instead of leaving the dialog stuck, the chip reads "No server" until an address is set, a failed catalog load shows a notice with Retry (one shared `Notice` component), finished jobs are never re-added by stale responses, the dialog keeps its accessible description, and the main process samples the connection on show/restore and publishes it when the page loads.
 - Prompt bar and parameters panel: a floating prompt bar (growing prompt field, Ctrl+Enter to generate, ArrowUp to recall the last prompt, optional negative prompt, checkpoint, ratio, steps and image count, Generate), a right-hand panel with the model card (each part found or not found), the sampling parameters the model family uses, seed and size, and the VAE/text-encoder list; plus a "No checkpoints found" state with Refresh and a single z-index scale in the design tokens.
+- Gallery: tiles in columns (at least two, one per 226 px) with new items at the top-left. Waiting jobs have a dashed border and a queue number; the running job shows the live preview, stage, step count, speed, elapsed seconds and a 2 px progress line; failed and interrupted jobs show a message mapped from the error code (the server text below it, shortened with the full text in a tooltip), Retry and Dismiss. Finished images show the frame marking (№, seconds, size) and a Delete button on hover and keyboard focus; Delete hides the image and offers Undo for 5 seconds. Older images load 100 at a time as you scroll, and an empty gallery invites the first prompt.
+- Store: `dismissJob` and `loadMoreImages` (older images, 100 at a time).
 
 ### Changed
 
+- The negative-prompt field no longer clips by one pixel, an empty model card renders nothing, and the top bar height and the panel slide-out time come from design tokens.
 - Probe findings from a real Forge Neo server: shift is sent in the `distilled_cfg_scale` field instead of an option, checkpoint previews are requested from `/sd_extra_networks/thumb`, and a checkpoint's family is detected from its whole title, folders included. New parameter sets start with the default module list the server keeps for the family.
 
 ### Fixed

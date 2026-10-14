@@ -326,3 +326,55 @@ test('retryCatalog reloads with refresh, clears the error and selects a checkpoi
   expect(store.getState().catalogError).toBeNull()
   expect(store.getState().params?.checkpoint).toBe('b.safetensors')
 })
+
+test('dismissJob removes a failed job and a stale copy is never merged back', async () => {
+  const { store, emit } = await ready()
+  emit('job:update', job(3, 'failed'))
+  expect(store.getState().jobs[3]).toBeDefined()
+  store.getState().dismissJob(3)
+  expect(store.getState().jobs[3]).toBeUndefined()
+  store.getState().dismissJob(99)
+  expect(Object.keys(store.getState().jobs)).toEqual(['1', '2'])
+})
+
+test('dismissJob keeps a dismissed job out when init finishes later', async () => {
+  const fake = fakeApi()
+  const store = createAppStore(fake.api)
+  store.getState().dismissJob(1)
+  await store.getState().init()
+  expect(Object.keys(store.getState().jobs)).toEqual(['2'])
+})
+
+const page = (from: number, count: number): ImageRecord[] => Array.from({ length: count }, (_, i) => image(from - i))
+
+test('loadMoreImages asks for the page before the smallest loaded id and appends without duplicates', async () => {
+  const fake = fakeApi()
+  fake.api.images.list.mockResolvedValueOnce(page(300, 100)).mockResolvedValueOnce([image(201), ...page(200, 98)])
+  const store = createAppStore(fake.api)
+  await store.getState().init()
+  expect(store.getState().imagesExhausted).toBe(false)
+  await store.getState().loadMoreImages()
+  expect(fake.api.images.list).toHaveBeenLastCalledWith({ limit: 100, beforeId: 201 })
+  expect(store.getState().images).toHaveLength(198)
+  expect(new Set(store.getState().images.map((i) => i.id)).size).toBe(198)
+  expect(store.getState().imagesExhausted).toBe(true)
+})
+
+test('loadMoreImages stops once a short page came back', async () => {
+  const { api, store } = await ready()
+  expect(store.getState().imagesExhausted).toBe(true)
+  await store.getState().loadMoreImages()
+  expect(api.images.list).toHaveBeenCalledTimes(1)
+})
+
+test('concurrent loadMoreImages calls share one request', async () => {
+  const fake = fakeApi()
+  fake.api.images.list.mockResolvedValueOnce(page(300, 100))
+  const store = createAppStore(fake.api)
+  await store.getState().init()
+  fake.api.images.list.mockClear()
+  fake.api.images.list.mockResolvedValue(page(200, 100))
+  await Promise.all([store.getState().loadMoreImages(), store.getState().loadMoreImages()])
+  expect(fake.api.images.list).toHaveBeenCalledTimes(1)
+  expect(store.getState().images).toHaveLength(200)
+})

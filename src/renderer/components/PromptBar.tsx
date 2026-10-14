@@ -1,5 +1,5 @@
 import { ArrowUp, SlidersHorizontal } from '@phosphor-icons/react'
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
 import { t } from '../i18n/t'
@@ -13,6 +13,8 @@ import styles from './PromptBar.module.css'
 
 const LAST_PROMPT_KEY = 'fnc.lastPrompt'
 const CUSTOM_RATIO = 'custom'
+/** Set on the document root so the gallery can leave room under the floating bar. */
+const BAR_HEIGHT_VAR = '--prompt-bar-h'
 
 function readLastPrompt(): string {
   try {
@@ -58,7 +60,8 @@ function GrowingField({ id, value, label, placeholder, className, onChange, onKe
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    // scrollHeight leaves out the border, which the border-box height must include.
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
   }, [value])
   return (
     <textarea
@@ -86,6 +89,20 @@ export function PromptBar() {
   const togglePanel = useAppStore((s) => s.togglePanel)
   const [negativeOpen, setNegativeOpen] = useState(false)
   const negativeId = useId()
+  const observer = useRef<ResizeObserver | null>(null)
+  const publishHeight = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect()
+    observer.current = null
+    const root = document.documentElement.style
+    if (!el) {
+      root.removeProperty(BAR_HEIGHT_VAR)
+      return
+    }
+    const apply = () => root.setProperty(BAR_HEIGHT_VAR, `${el.offsetHeight}px`)
+    apply()
+    observer.current = new ResizeObserver(apply)
+    observer.current.observe(el)
+  }, [])
 
   if (!params || !catalog) return null
   const profile = PROFILES[params.family]
@@ -117,7 +134,7 @@ export function PromptBar() {
   if (ratio === CUSTOM_RATIO) ratioOptions.push({ value: CUSTOM_RATIO, label: t('prompt.ratioCustom') })
 
   return (
-    <div className={`${styles.bar} ${panelOpen ? styles.shifted : ''}`}>
+    <div ref={publishHeight} className={`${styles.bar} ${panelOpen ? styles.shifted : ''}`}>
       {profile.negative && negativeOpen && (
         <GrowingField
           id={negativeId}

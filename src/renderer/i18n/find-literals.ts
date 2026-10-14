@@ -28,7 +28,8 @@ function visit(node: Node, found: string[]): void {
         : value?.type === 'JSXExpressionContainer'
           ? isPlainLiteral(value.expression as Node)
           : null
-    if (text !== null && text !== undefined) found.push(`${node.name.name}="${text}"`)
+    // An empty value shows nothing (alt="" marks a decorative image).
+    if (text !== null && text !== undefined && text.trim() !== '') found.push(`${node.name.name}="${text}"`)
   }
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) {

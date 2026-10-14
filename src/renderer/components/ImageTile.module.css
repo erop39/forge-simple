@@ -1,0 +1,49 @@
+.tile {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--r-tile);
+  background: var(--surface-1);
+}
+
+.tile:hover,
+.tile:focus-within {
+  border-color: var(--line-strong);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Hover-only parts fade with opacity and stay in the tab order, so focus reveals them too. */
+.caption,
+.delete {
+  position: absolute;
+  opacity: 0;
+  transition: opacity var(--dur-hover) ease-out;
+}
+
+.caption {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: var(--sp-1) var(--sp-2);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  color: var(--text-2);
+}
+
+.delete {
+  top: var(--sp-1);
+  right: var(--sp-1);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+}
+
+.tile:hover .caption,
+.tile:hover .delete,
+.tile:focus-within .caption,
+.tile:focus-within .delete {
+  opacity: 1;
+}

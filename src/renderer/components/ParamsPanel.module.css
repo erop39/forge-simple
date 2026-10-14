@@ -2,7 +2,7 @@
 .panel {
   position: fixed;
   z-index: var(--z-panel);
-  top: 44px;
+  top: var(--h-topbar);
   right: 0;
   bottom: 0;
   display: flex;

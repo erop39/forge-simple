@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { t } from './i18n/t'
 import { useAppStore } from './state/StoreProvider'
 import { EmptyState, NoModelsState } from './components/EmptyState'
+import { Gallery } from './components/Gallery'
 import { Notice } from './components/ui/Notice'
 import { ParamsPanel } from './components/ParamsPanel'
 import { PromptBar } from './components/PromptBar'
@@ -36,6 +37,7 @@ export function App() {
         {lastError !== null && <Notice text={t(lastError)} onDismiss={dismissError} />}
         {noServer && <EmptyState onConnect={openDialog} />}
         {!noServer && noModels && <NoModelsState onRefresh={() => void retryCatalog()} />}
+        {!noServer && !noModels && <Gallery />}
       </main>
       <PromptBar />
       <ParamsPanel />

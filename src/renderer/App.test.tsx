@@ -13,14 +13,14 @@ const catalog: Catalog = {
   modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1, familyModules: {},
 }
 
-function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>, catalogFails = false) {
+function setup(serverUrl: string | null, setServerUrl?: () => Promise<ConnectionCheck>, catalogFails = false, served: Catalog = catalog) {
   const api = {
     settings: {
       get: vi.fn(async () => ({ serverUrl, imagesDir: '' })),
       setServerUrl: vi.fn(setServerUrl ?? (async () => ({ ok: true, latencyMs: 5, errorKey: null }))),
     },
     catalog: {
-      get: vi.fn(async () => catalog),
+      get: vi.fn(async () => served),
       defaults: vi.fn(async () => defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })),
       parts: vi.fn(async () => []),
     },
@@ -164,4 +164,20 @@ test('a catalog failure shows a notice; Retry reloads and removes it', async () 
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   expect(api.catalog.get).toHaveBeenLastCalledWith(true)
   expect(store.getState().params?.checkpoint).toBe('a.safetensors')
+})
+
+test('a catalog without checkpoints shows the no-models state; Refresh asks the server again', async () => {
+  const { api } = setup('http://127.0.0.1:7861', undefined, false, { ...catalog, checkpoints: [] })
+  expect(await screen.findByText(en['empty.noModels.title'])).toBeDefined()
+  expect(screen.getByText(en['empty.noModels.body'])).toBeDefined()
+  expect(screen.queryByText(en['empty.gallery.title'])).toBeNull()
+  api.catalog.get.mockClear()
+  await userEvent.click(screen.getByRole('button', { name: en['catalog.refresh'] }))
+  expect(api.catalog.get).toHaveBeenCalledTimes(1)
+  expect(api.catalog.get).toHaveBeenCalledWith(true)
+})
+
+test('with a server and a model the empty gallery invites the first image', async () => {
+  setup('http://127.0.0.1:7861')
+  expect(await screen.findByText(en['empty.gallery.title'])).toBeDefined()
 })

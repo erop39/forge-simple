@@ -20,3 +20,8 @@ test('a found part shows a check, a missing part shows "Not found"', () => {
   expect(module!.textContent).toContain(en['params.notFound'])
   expect(module!.textContent).not.toContain(en['params.found'])
 })
+
+test('with no parts it renders nothing', () => {
+  const { container } = renderWithStore(<ModelCard />, 'sdxl', { parts: [] })
+  expect(container.querySelector('ul')).toBeNull()
+})

@@ -1,9 +1,10 @@
 import { Shuffle, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
+import { baseName } from '../format'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
-import { ModelCard, baseName } from './ModelCard'
+import { ModelCard } from './ModelCard'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { ParamRow } from './ui/ParamRow'
@@ -12,8 +13,15 @@ import { Tooltip } from './ui/Tooltip'
 import { PARAMS_PANEL_ID, PARAMS_TOGGLE_ID } from './params-ids'
 import styles from './ParamsPanel.module.css'
 
-/** Matches --dur-panel-out: how long the panel stays mounted while it slides out. */
-const SLIDE_OUT_MS = 160
+const FALLBACK_SLIDE_OUT_MS = 160
+
+/** --dur-panel-out in milliseconds, read once from the token; the fallback when it cannot be parsed. */
+function slideOutMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--dur-panel-out').trim()
+  const value = Number.parseFloat(raw)
+  if (!Number.isFinite(value) || value < 0) return FALLBACK_SLIDE_OUT_MS
+  return raw.endsWith('ms') ? value : raw.endsWith('s') ? value * 1000 : FALLBACK_SLIDE_OUT_MS
+}
 const MAX_SEED = 4294967295
 
 const options = (values: string[]) => values.map((value) => ({ value, label: value }))
@@ -214,7 +222,7 @@ export function ParamsPanel() {
       setMounted(true)
       return
     }
-    const timer = setTimeout(() => setMounted(false), SLIDE_OUT_MS)
+    const timer = setTimeout(() => setMounted(false), slideOutMs())
     return () => clearTimeout(timer)
   }, [open])
 

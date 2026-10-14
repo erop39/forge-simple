@@ -47,6 +47,7 @@ test('ArrowUp in an empty field restores the last submitted prompt', async () =>
   await userEvent.clear(promptField())
   await userEvent.keyboard('{ArrowUp}')
   expect((promptField() as HTMLTextAreaElement).value).toBe('a fox')
+  expect(localStorage.getItem('fnc.lastPrompt')).toBe('a fox')
 })
 
 test('choosing ratio 3:4 sets width 896 and height 1152 for an sdxl checkpoint', async () => {
@@ -117,4 +118,23 @@ test('All parameters toggles the panel and reflects it in aria-expanded', async 
 test('the bar is not rendered without parameters', () => {
   const { container } = renderWithStore(<PromptBar />, 'sdxl', { params: null })
   expect(container.textContent).toBe('')
+})
+
+test('a whitespace-only prompt keeps Generate inert', async () => {
+  const generate = vi.fn(async () => {})
+  renderWithStore(<PromptBar />, 'sdxl', { generate })
+  await userEvent.type(promptField(), '   ')
+  const button = generateButton()
+  expect(button.getAttribute('aria-disabled')).toBe('true')
+  await userEvent.click(button)
+  await userEvent.keyboard('{Control>}{Enter}{/Control}')
+  expect(generate).not.toHaveBeenCalled()
+  expect(localStorage.getItem('fnc.lastPrompt')).toBeNull()
+})
+
+test('the prompt bar publishes its height for the gallery and clears it on unmount', () => {
+  const { unmount } = renderWithStore(<PromptBar />)
+  expect(document.documentElement.style.getPropertyValue('--prompt-bar-h')).toBe('0px')
+  unmount()
+  expect(document.documentElement.style.getPropertyValue('--prompt-bar-h')).toBe('')
 })

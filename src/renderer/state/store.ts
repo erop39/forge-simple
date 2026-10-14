@@ -5,7 +5,7 @@ import type {
 } from '@shared/types'
 import { errorKeyOf } from '../i18n/error-text'
 
-const FIRST_IMAGE_PAGE = 100
+const IMAGE_PAGE = 100
 
 export interface AppState {
   connection: ConnectionStatus
@@ -20,6 +20,8 @@ export interface AppState {
   jobs: Record<number, Job>
   progress: Record<number, JobProgress>
   images: ImageRecord[]
+  /** True once a page came back short: there are no older images to load. */
+  imagesExhausted: boolean
   panelOpen: boolean
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
@@ -32,6 +34,10 @@ export interface AppState {
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
   deleteImage(id: number): Promise<void>
+  /** Removes a failed or interrupted job from the list; there is nothing to tell the main process. */
+  dismissJob(id: number): void
+  /** Appends the next page of older images; concurrent calls share one request. */
+  loadMoreImages(): Promise<void>
   setServerUrl(url: string): Promise<ConnectionCheck>
   dismissError(): void
   togglePanel(): void
@@ -45,7 +51,8 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean =>
 export function createAppStore(api: Api): StoreApi<AppState> {
   let initPromise: Promise<void> | null = null
   let partsSeq = 0
-  /** Jobs a terminal update removed this session; a stale copy of them is never merged back. */
+  let morePromise: Promise<void> | null = null
+  /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
   const fresh = (jobs: readonly Job[]): Array<[number, Job]> =>
     jobs.filter((j) => !finished.has(j.id)).map((j) => [j.id, j])
@@ -136,7 +143,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         attempt(() => api.settings.get()),
         attempt(() => api.connection.get()),
         attempt(() => api.jobs.listActive()),
-        attempt(() => api.images.list({ limit: FIRST_IMAGE_PAGE })),
+        attempt(() => api.images.list({ limit: IMAGE_PAGE })),
       ])
       set((s) => ({
         settings: settings ?? s.settings,
@@ -145,6 +152,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         images: images
           ? [...s.images.filter((i) => !images.some((l) => l.id === i.id)), ...images]
           : s.images,
+        imagesExhausted: images ? images.length < IMAGE_PAGE : s.imagesExhausted,
       }))
       if (settings?.serverUrl) await loadCatalog()
     }
@@ -160,6 +168,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       jobs: {},
       progress: {},
       images: [],
+      imagesExhausted: false,
       panelOpen: false,
 
       init() {
@@ -212,6 +221,34 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       async deleteImage(id) {
         await attempt(() => api.images.delete(id))
+      },
+
+      dismissJob(id) {
+        finished.add(id)
+        set((s) => {
+          const jobs = { ...s.jobs }
+          delete jobs[id]
+          return { jobs }
+        })
+      },
+
+      loadMoreImages() {
+        morePromise ??= (async () => {
+          try {
+            const { images, imagesExhausted } = get()
+            if (imagesExhausted || images.length === 0) return
+            const beforeId = Math.min(...images.map((i) => i.id))
+            const page = await attempt(() => api.images.list({ limit: IMAGE_PAGE, beforeId }))
+            if (!page) return
+            set((s) => ({
+              images: [...s.images, ...page.filter((p) => !s.images.some((i) => i.id === p.id))],
+              imagesExhausted: page.length < IMAGE_PAGE,
+            }))
+          } finally {
+            morePromise = null
+          }
+        })()
+        return morePromise
       },
 
       async setServerUrl(url) {

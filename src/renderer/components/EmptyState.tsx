@@ -22,3 +22,13 @@ export function NoModelsState({ onRefresh }: { onRefresh: () => void }) {
     </section>
   )
 }
+
+/** Nothing generated yet. */
+export function GalleryEmpty() {
+  return (
+    <section className={styles.empty}>
+      <h1 className={styles.title}>{t('empty.gallery.title')}</h1>
+      <p className={styles.body}>{t('empty.gallery.body')}</p>
+    </section>
+  )
+}

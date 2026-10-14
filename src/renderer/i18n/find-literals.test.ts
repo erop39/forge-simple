@@ -9,6 +9,10 @@ describe('findLiterals', () => {
     expect(findLiterals('<p>{count} items</p>')).toHaveLength(1)
   })
 
+  test('does not flag an empty alt on a decorative image', () => {
+    expect(findLiterals('<img alt="" />')).toEqual([])
+  })
+
   test.each(['aria-label', 'title', 'placeholder', 'alt'])('flags %s given as a string literal', (name) => {
     expect(findLiterals(`<input ${name}="Name" />`)).toHaveLength(1)
     expect(findLiterals(`<input ${name}={'Name'} />`)).toHaveLength(1)
