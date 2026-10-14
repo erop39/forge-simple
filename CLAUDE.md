@@ -18,6 +18,7 @@ UI strings, README and CHANGELOG are English.
 
 - `pnpm dev` — run the app with hot reload.
 - `pnpm test` — all tests (vitest inside Electron-as-Node, so better-sqlite3 has the app's ABI). One file: `pnpm test <path>`.
+- `src/main/e2e.test.ts` — end-to-end test of the main modules (real SQLite file, image store, Forge client, catalog, runner) against the mock Forge, without Electron; runs as part of `pnpm test`.
 - `pnpm typecheck` — renderer/main/preload and Node-side config.
 - `pnpm build` — production build. **Run it before every commit**: vitest does not compile CSS modules, so CSS errors only show up here.
 - `pnpm mock-forge` — fake Forge on port 7861 (`PORT=<n>` to change; 7861 is often taken). Used by tests and for manual runs.
@@ -27,6 +28,10 @@ UI strings, README and CHANGELOG are English.
 
 `FNC_SMOKE=1` (dev builds only) loads `src/main/fnc-smoke.ts`, which drives `window.api` against a mock Forge, prints one `FNC_SMOKE {...}` JSON line and quits. Build first, start `PORT=7871 pnpm mock-forge`, then:
 `FNC_SMOKE=1 FNC_SMOKE_SERVER=127.0.0.1:7871 node_modules/.bin/electron . --user-data-dir=<temp dir>`. Always use a throwaway `--user-data-dir`.
+
+## Manual check in the real window
+
+`pnpm build`, then a slow mock so progress is visible: `node_modules/.bin/tsx -e "import('./tools/mock-forge/server.ts').then((m) => m.startMockForge({ port: 7881, stepMs: 300 }))"`, then `node_modules/.bin/electron . --remote-debugging-port=9333 --user-data-dir=<temp dir>` and drive or screenshot the page over CDP (`http://127.0.0.1:9333/json`). The window opens on the user's desktop: tell the user before starting, and stop both processes afterwards.
 
 ## Layout
 

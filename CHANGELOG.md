@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Prompt bar and parameters panel: a floating prompt bar (growing prompt field, Ctrl+Enter to generate, ArrowUp to recall the last prompt, optional negative prompt, checkpoint, ratio, steps and image count, Generate), a right-hand panel with the model card (each part found or not found), the sampling parameters the model family uses, seed and size, and the VAE/text-encoder list; plus a "No checkpoints found" state with Refresh and a single z-index scale in the design tokens.
 - Gallery: tiles in columns (at least two, one per 226 px) with new items at the top-left. Waiting jobs have a dashed border and a queue number; the running job shows the live preview, stage, step count, speed, elapsed seconds and a 2 px progress line; failed and interrupted jobs show a message mapped from the error code (the server text below it, shortened with the full text in a tooltip), Retry and Dismiss. Finished images show the frame marking (№, seconds, size) and a Delete button on hover and keyboard focus; Delete hides the image and offers Undo for 5 seconds. Older images load 100 at a time as you scroll, and an empty gallery invites the first prompt.
 - Store: `dismissJob` and `loadMoreImages` (older images, 100 at a time).
+- End-to-end test of the main process (`src/main/e2e.test.ts`): the real database, image store, Forge client, catalog and queue against the mock Forge, covering a two-image run with its log entries, the server going down mid-queue and coming back, and recovery of a job left running by a previous launch.
+- README: what version 0.1.0 does, where the database, images and operation log live, how to run the probe, and the known limitations.
 
 ### Changed
 
