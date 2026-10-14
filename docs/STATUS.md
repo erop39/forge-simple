@@ -11,7 +11,7 @@ taken, or something starts waiting on the user.
 - Image viewer: implemented ahead of plan 2 (another session, reviewed and committed here). Click or Enter opens the full image, with saved job settings and Copy prompt below it. X closes the dialog; icons and Left/Right keys navigate the gallery, loading older pages as needed. The header reserves space for native Windows caption buttons. Checkpoint changes retain the selected width and height. See `docs/image-viewer.md` for the file map, behavior, checks and open work.
 - Viewer verification on 2026-10-14: full suite (then 516 tests; 521 after the review fixes), typecheck and build passed before the mouse-click follow-up. A later physical-mouse check exposed that the arrows still sat in the top bar's draggable region; `.actions` now opts out with `-webkit-app-region: no-drag`. Physical Next and Previous clicks were reproduced failing before the CSS fix and confirmed working after it in an isolated Electron window against mock Forge. The selected 16:9 ratio also remained after a checkpoint switch in the earlier live run. Plan 2's remaining viewer actions and animation are still open.
 - Review of that code: `docs/code-review-2026-10-14.md` — one server-switch gate, two async races and a PromptBar duplication. All four are fixed with tests (see its Resolution section).
-- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done and reviewed, live two-server window check still to do; U3 (negative-prompt presets) next.
+- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done, reviewed and checked live with two mock servers; U3 (negative-prompt presets) done, reviewed and checked live.
 
 | Task | State |
 |---|---|
@@ -21,8 +21,8 @@ taken, or something starts waiting on the user.
 | 16 Gallery (job and image tiles, delete with undo, paging) | done, reviewed |
 | 17 End-to-end check and release 0.1.0 | e2e tests + README done and reviewed (4d1eac7). Open: manual walkthrough (only partly done), the user's real-Forge check, then release (CHANGELOG `[0.1.0]`, version, tag `v0.1.0`) |
 | U1 Prompt bar fit, sliders, grouped scrollable menus | done, reviewed |
-| U2 Saved servers list | done, reviewed; live two-server window check pending |
-| U3 Negative-prompt presets | next (brief in the ledger) |
+| U2 Saved servers list | done, reviewed, checked live |
+| U3 Negative-prompt presets | done, reviewed, checked live |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -70,3 +70,5 @@ Collected by reviewers and deferred; the final review triages them. The full lis
 - Gallery tiles may change column when a job is added (greedy shortest-column layout); revisit with plan 2's virtualization. Each image tile is two tab stops (tile + Delete) — roving tabindex in plan 2.
 - Gallery paging does not retry by itself after a failed page load while the sentinel stays in view.
 - vitest sometimes prints "Timeout terminating forks worker" on this machine; all tests pass. Investigate in the final review.
+- Server delete confirmation puts focus on the panel, not Keep. In the negative-preset Manage dialog, focus falls to the panel after an inline rename/keep/delete; the empty-state line in the preset menu is not announced; preset and server name limits are duplicated between main and renderer; the preset text-update IPC has no UI yet.
+- Switching servers resets the negative prompt to the family default (switching checkpoints keeps it) — ask the user if they want it kept.

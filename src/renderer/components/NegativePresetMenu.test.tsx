@@ -87,6 +87,18 @@ test('the manage dialog renames a preset inline', async () => {
   await waitFor(() => expect(within(dialog).queryByRole('textbox')).toBeNull())
 })
 
+test('Escape in the rename field cancels the rename and keeps the dialog open', async () => {
+  const { renameNegativePreset } = setup('x')
+  await openMenu()
+  await userEvent.click(screen.getByRole('menuitem', { name: en['presets.manage'] }))
+  const dialog = await screen.findByRole('dialog', { name: en['presets.manageTitle'] })
+  await userEvent.click(within(dialog).getByRole('button', { name: t('presets.rename', { name: 'Blurry' }) }))
+  await userEvent.type(within(dialog).getByRole('textbox', { name: en['presets.name'] }), 'zz{Escape}')
+  expect(screen.getByRole('dialog', { name: en['presets.manageTitle'] })).toBeDefined()
+  expect(within(dialog).queryByRole('textbox')).toBeNull()
+  expect(renameNegativePreset).not.toHaveBeenCalled()
+})
+
 test('the manage dialog deletes a preset after confirmation', async () => {
   const { removeNegativePreset } = setup('x')
   await openMenu()

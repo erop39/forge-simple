@@ -42,6 +42,11 @@ function Frame({ open, onOpenChange, returnFocus, title, initialFocus, children 
             e.preventDefault()
             ;(initialFocus?.current ?? panel.current)?.focus()
           }}
+          // A field marked data-escape-local handles Escape itself (e.g. cancels an inline rename);
+          // Radix listens on the document first, so the dialog has to be told to stay open here.
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement instanceof HTMLElement && 'escapeLocal' in document.activeElement.dataset) e.preventDefault()
+          }}
           onCloseAutoFocus={(e) => {
             if (!returnFocus?.current) return
             e.preventDefault()
@@ -225,6 +230,13 @@ function PresetRow({ preset, mode, onMode }: PresetRowProps) {
             aria-invalid={error !== null}
             aria-describedby={error !== null ? errorId : undefined}
             onChange={(e) => setName(e.target.value)}
+            data-escape-local=""
+            onKeyDown={(e) => {
+              // Escape cancels the rename instead of closing the whole dialog (see Frame).
+              if (e.key !== 'Escape') return
+              setName(preset.name)
+              onMode(null)
+            }}
           />
           <div className={styles.rowActions}>
             <Button disabled={busy} onClick={() => { setName(preset.name); onMode(null) }}>

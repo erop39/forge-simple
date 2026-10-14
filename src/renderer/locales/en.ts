@@ -104,7 +104,7 @@ export const en = {
   'presets.saveTitle': 'Save negative preset',
   'presets.saveHint': 'Saves the text of the Negative field under a name.',
   'presets.manageTitle': 'Negative presets',
-  'presets.manageHint': 'Choosing a preset replaces the text of the Negative field.',
+  'presets.manageHint': 'Rename or delete saved negatives. To use one, pick it from the presets menu.',
   'presets.list': 'Saved negatives',
   'presets.name': 'Name',
   'presets.namePlaceholder': 'Hands and faces',
