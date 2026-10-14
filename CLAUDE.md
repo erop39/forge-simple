@@ -51,6 +51,7 @@ UI strings, README and CHANGELOG are English.
 - Prompts never reach the operation log, and neither does Forge's error text for a generation (it may echo the prompt).
 - Styling: only CSS variables from `tokens.css` (colours, spacing, radii, durations, heights, z-index); text ≥ 12 px; weights 400/500; no uppercase; animate only `transform`/`opacity`; shared fade via `composes: fadeIn from '…/motion.module.css'` (never `:global()` in an animation shorthand — it breaks the build); a signal colour is never the only indicator. No UI kits; Radix Primitives and Phosphor icons only.
 - Never commit the user's real file paths or model file names (from probe reports or their Forge); use fictional examples of the same shape.
+- Write text containing backslashes (Windows paths) with the Edit/Write tools, not shell `sed`/`echo`/heredocs/inline scripts: sequences like backslash-f get turned into control bytes (this corrupted the `%APPDATA%\forge-neo-client` path in README twice). Before committing docs, check: `grep -nP '[\x00-\x08\x0B\x0C\x0E-\x1F]' *.md docs/*.md` must print nothing.
 - Tests live next to the code (`x.ts` → `x.test.ts`); TypeScript strict; aliases `@shared/*`, `@main/*`, `@renderer/*`. Write the failing test first.
 
 ## Working method

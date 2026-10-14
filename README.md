@@ -52,7 +52,7 @@ git-ignored; do not share it.
 
 ## Where data lives
 
-The app keeps everything under Electron's per-user data folder (`%APPDATA%orge-neo-client` on Windows):
+The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge-neo-client` on Windows):
 
 - `forge-neo-client.db` - SQLite database with servers, jobs, image records, settings and the operation log. The log is the `oplog` table; entries older than 90 days are purged at start-up.
 - `images/` - generated PNGs in month folders (`images/2026-10/`) and JPEG thumbnails in `images/thumbs/`.

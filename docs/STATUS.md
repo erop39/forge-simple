@@ -14,7 +14,7 @@ taken, or something starts waiting on the user.
 | 2–15 Scaffold → prompt bar and parameters panel | done, each reviewed |
 | P Probe findings | done, reviewed |
 | 16 Gallery (job and image tiles, delete with undo, paging) | done, reviewed |
-| 17 End-to-end check and release 0.1.0 | not started |
+| 17 End-to-end check and release 0.1.0 | e2e tests + README done and reviewed (4d1eac7). Open: manual walkthrough (only partly done), the user's real-Forge check, then release (CHANGELOG `[0.1.0]`, version, tag `v0.1.0`) |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -27,6 +27,9 @@ taken, or something starts waiting on the user.
 ## Waiting on the user
 
 - Real-Forge check in Task 17: one generation per model family over VPN, cancel mid-generation, drop the VPN mid-queue. It also confirms that shift really travels in `distilled_cfg_scale` (look for "Shift" in the image's infotext).
+- Rest of the Task 17 manual walkthrough (on the mock or during the real-Forge session): cancel a waiting job, delete with Undo, images still there after restart, Tab order with visible focus, 1100×700 window, "Slow" state, animations, failed and interrupted tiles, native caption buttons. Already seen on 2026-10-14: connect, model pick, Ctrl+Enter with Images 2, live preview and progress, queued tile, finished tiles. The walkthrough stopped when someone at the desktop took over the test window and pointed it at the real Forge.
+- That test window ran from a throwaway profile in the controller's temp scratchpad (it now holds real model names and images); close it and delete that profile when the user is done with it.
+- Small UI issues seen in the window: Ctrl+Enter does nothing in the Negative field; the running-tile caption wraps to two lines at 1280 px.
 - Before anything is pushed: commit `d84ab06` on this branch contains the user's real model names and paths (HEAD is clean). Offer to squash or rewrite the branch so they never leave the machine.
 
 ## Decisions taken during plan 1
