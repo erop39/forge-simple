@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, LockState, ModelKind, NegativePreset, UpscaleSettings, HiresSettings,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -72,6 +72,8 @@ export interface AppState {
   hiresFor: number | null
   /** Which model gallery is open (checkpoints or LoRA), if any. */
   modelGallery: ModelKind | null
+  /** The optional Civitai lookup of the library. */
+  civitai: CivitaiProgress
   logOpen: boolean
   /** Newest first, matching logFilters; new entries arrive live while the panel is open. */
   logEntries: OplogEntry[]
@@ -124,6 +126,11 @@ export interface AppState {
   askRestart(): void
   openHires(id: number): void
   openModelGallery(kind: ModelKind): void
+  /** Records the user's consent (or its withdrawal); a lookup needs it. */
+  setCivitaiEnabled(enabled: boolean): Promise<void>
+  updateFromCivitai(force?: boolean): Promise<void>
+  cancelCivitai(): Promise<void>
+  openOnCivitai(kind: ModelKind, id: string): Promise<void>
   /** Rejects with error.presetNameTaken when the name exists. */
   saveHiresPreset(name: string, settings: HiresSettings): Promise<void>
   deleteHiresPreset(id: number): Promise<void>
@@ -380,6 +387,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       api.on('connection', (connection) => set({ connection }))
       api.on('resources', (resources) => set({ resources }))
       api.on('job:removed', ({ id }) => forgetJob(id))
+      api.on('civitai:progress', (civitai) => {
+        const was = get().civitai.running
+        set({ civitai })
+        // A finished run changed trigger words, base families and previews: read the catalog again (no refetch).
+        if (was && !civitai.running) void markModel(async () => undefined)
+      })
       api.on('servers', (servers) => set({ servers }))
       api.on('forge:capabilities', (capabilities) => {
         capabilitiesSeq++
@@ -536,6 +549,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       restartAsked: false,
       hiresFor: null,
       modelGallery: null,
+      civitai: { running: false, done: 0, total: 0, found: 0, paused: false },
       logOpen: false,
       logEntries: [],
       logFilters: { level: 'all', category: 'all', period: '24h' },
@@ -836,6 +850,23 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       openModelGallery(kind) {
         set({ modelGallery: kind })
+      },
+
+      async setCivitaiEnabled(enabled) {
+        if (await attempt(async () => { await api.civitai.setEnabled(enabled); return true }) === undefined) return
+        set((s) => ({ settings: s.settings ? { ...s.settings, civitaiEnabled: enabled } : null }))
+      },
+
+      async updateFromCivitai(force = false) {
+        await attempt(() => api.civitai.update({ force }))
+      },
+
+      async cancelCivitai() {
+        await attempt(() => api.civitai.cancel())
+      },
+
+      async openOnCivitai(kind, id) {
+        await attempt(() => api.civitai.open(kind, id))
       },
 
       async saveHiresPreset(name, settings) {

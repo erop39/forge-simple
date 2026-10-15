@@ -39,6 +39,9 @@ let imageStore: ReturnType<typeof createImageStore>
 let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
 let revealed: string | null
+let civitaiAsked: string[]
+let civitaiAnswers: Map<string, object>
+let openedUrls: string[]
 let exportPath: string | null
 let exportNames: string[]
 let selectedImagesDir: string | null
@@ -84,6 +87,9 @@ beforeEach(async () => {
   sent = []
   copiedText = null
   revealed = null
+  civitaiAsked = []
+  civitaiAnswers = new Map()
+  openedUrls = []
   exportPath = null
   exportNames = []
   selectedImagesDir = null
@@ -100,6 +106,9 @@ beforeEach(async () => {
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
       revealFile: (path) => { revealed = path },
+      civitai: { lookup: async (hash: string) => { civitaiAsked.push(hash); return (civitaiAnswers.get(hash) ?? null) as never } },
+      openExternal: (url: string) => { openedUrls.push(url) },
+      civitaiGapMs: 1,
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       lock,
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
@@ -152,7 +161,7 @@ describe('servers', () => {
     expect(res.errorKey).toBeNull()
     expect(repos.servers.active()).toMatchObject({ name: 'Home', url: mock.url })
     expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null }, familyNegatives: {} })
+      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false })
     expect(forgeRef.address()).toBe(mock.url)
     expect(kicks).toBe(1)
     expect(serverChanges).toBe(1)
@@ -329,7 +338,7 @@ describe('servers', () => {
     expect(sentOf('job:removed')).toEqual([{ id: q.id }])
     expect(sentOf('servers').at(-1)).toEqual([])
     expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null }, familyNegatives: {} })
+      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false })
     expect(serverChanges).toBe(1)
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
       messageKey: 'log.server.removed', details: { name: '127.0.0.1', url: mock.url, deletedJobs: 1 },
@@ -1152,4 +1161,47 @@ test('hires presets: add, list ordered, duplicate name refused, rename, remove; 
   expect(((await call('hiresPresets:list')) as { name: string }[]).map((p) => p.name)).toEqual(['Zeta'])
   await expect(call('hiresPresets:remove', a.id)).rejects.toThrow('error.notFound')
   expect(JSON.stringify(oplog.list())).toContain('log.preset.hiresCreated')
+})
+
+describe('civitai lookup', () => {
+  const LORA_PATH = String.raw`C:orgemodelsLoradetail_tweaker.safetensors`
+  const LORA_HASH = 'b'.repeat(64)
+  const answer = {
+    modelId: 7, versionId: 70, name: 'Detail Tweaker', versionName: 'v2', baseModel: 'Illustrious',
+    trainedWords: ['civi word'], imageUrl: null, checkedAt: 1,
+  }
+
+  beforeEach(() => { repos.servers.setActiveUrl(mock.url) })
+
+  test('nothing is looked up until the user switches it on', async () => {
+    await expect(call('civitai:update')).rejects.toThrow('error.invalidParams')
+    expect(civitaiAsked).toEqual([])
+    expect(((await call('settings:get')) as { civitaiEnabled: boolean }).civitaiEnabled).toBe(false)
+    await expect(call('civitai:setEnabled', 'yes')).rejects.toThrow('error.invalidParams')
+  })
+
+  test('with consent files are looked up by hash; answers are kept, shown in the catalog and openable', async () => {
+    mock.respond('/sdapi/v1/loras', { json: [{ name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH,
+      metadata: { sshs_model_hash: LORA_HASH } }] })
+    civitaiAnswers.set(LORA_HASH, answer)
+    await call('catalog:get', true)
+    await call('civitai:setEnabled', true)
+    await call('civitai:update')
+    await vi.waitFor(() => expect(sent.filter((s) => s.e === 'civitai:progress').some((s) => (s.p as { running: boolean; done: number }).done > 0)).toBe(true))
+    await vi.waitFor(async () => expect(((await call('civitai:state')) as { running: boolean }).running).toBe(false))
+    expect(civitaiAsked).toContain(LORA_HASH)
+    const catalog = (await call('catalog:get')) as Catalog
+    const lora = catalog.loras.find((l) => l.path === LORA_PATH)!
+    expect(lora).toMatchObject({ triggers: ['civi word'], baseFamily: 'sdxl', hash: LORA_HASH,
+      civitai: { url: 'https://civitai.com/models/7?modelVersionId=70', name: 'Detail Tweaker' } })
+    await call('civitai:open', 'lora', LORA_PATH)
+    expect(openedUrls).toEqual(['https://civitai.com/models/7?modelVersionId=70'])
+    await expect(call('civitai:open', 'lora', 'C:\nope')).rejects.toThrow('error.notFound')
+  })
+
+  test('switching it off is logged', async () => {
+    await call('civitai:setEnabled', true)
+    await call('civitai:setEnabled', false)
+    expect(oplog.list().map((e) => e.messageKey)).toEqual(expect.arrayContaining(['log.civitai.enabled', 'log.civitai.disabled']))
+  })
 })

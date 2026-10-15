@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { ModelKind } from '@shared/types'
 import type { ModelMetaRow } from '../storage/repos'
 import type { ForgeClient } from './client'
+import { isCivitaiImage } from './civitai'
 
 const EXTENSIONS = ['png', 'preview.png', 'jpg', 'preview.jpg', 'jpeg', 'preview.jpeg', 'webp', 'preview.webp']
 const TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
@@ -23,6 +24,8 @@ export interface PreviewDeps {
   /** The active server; null when there is none (nothing is served). */
   serverId(): number | null
   cacheDir(): string
+  /** An image Civitai holds for the file (https, civitai.com only); used when Forge has no preview of its own. */
+  remoteImage?(kind: ModelKind, filename: string): string | null
   meta: {
     get(serverId: number, kind: ModelKind, filename: string): ModelMetaRow | null
     setPreview(serverId: number, kind: ModelKind, filename: string, preview: string): void
@@ -65,7 +68,8 @@ export function createPreviewService(deps: PreviewDeps): PreviewService {
     const serverId = deps.serverId()
     if (serverId === null) return null
     const row = deps.meta.get(serverId, kind, filename)
-    if (row?.preview === '') return null
+    const remote = deps.remoteImage?.(kind, filename) ?? null
+    if (row?.preview === '' && remote === null) return null
     if (row?.preview) {
       const file = cachePath(serverId, filename, row.preview)
       try {
@@ -75,7 +79,7 @@ export function createPreviewService(deps: PreviewDeps): PreviewService {
     }
     return slot(async () => {
       const client = deps.client()
-      for (const candidate of previewCandidates(filename)) {
+      for (const candidate of row?.preview === '' ? [] : previewCandidates(filename)) {
         let hit: Awaited<ReturnType<ForgeClient['thumb']>>
         try {
           hit = await client.thumb(candidate)
@@ -89,6 +93,21 @@ export function createPreviewService(deps: PreviewDeps): PreviewService {
         await fs.writeFile(file, hit.bytes)
         deps.meta.setPreview(serverId, kind, filename, ext)
         return { file, type: TYPES[ext]! }
+      }
+      if (remote !== null && isCivitaiImage(remote)) {
+        try {
+          const res = await fetch(remote, { signal: AbortSignal.timeout(15_000) })
+          const type = res.headers.get('content-type') ?? ''
+          const bytes = res.ok && type.startsWith('image/') ? Buffer.from(await res.arrayBuffer()) : null
+          if (bytes && bytes.length <= 8 * 1024 * 1024) {
+            const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg'
+            const file = cachePath(serverId, filename, ext)
+            await fs.mkdir(path.dirname(file), { recursive: true })
+            await fs.writeFile(file, bytes)
+            deps.meta.setPreview(serverId, kind, filename, ext)
+            return { file, type: TYPES[ext]! }
+          }
+        } catch { /* Civitai is not reachable now: the next request tries again */ }
       }
       deps.meta.setPreview(serverId, kind, filename, '')
       return null

@@ -40,6 +40,13 @@ const FAMILY_HINTS: readonly (readonly [RegExp, Family])[] = [
   [/krea/, 'krea2'],
 ]
 
+/** The family a free-text base model name (`Illustrious`, `SDXL 1.0`, `ZImageTurbo`…) points to. */
+export function baseFamilyFromText(value: string): Family | null {
+  const lower = value.toLowerCase()
+  for (const [pattern, family] of FAMILY_HINTS) if (pattern.test(lower)) return family
+  return null
+}
+
 /** The family named by the training metadata (`ss_base_model_version`, `modelspec.architecture`); null when unknown. */
 export function baseFamilyFromMetadata(metadata: Record<string, unknown>): Family | null {
   for (const key of ['ss_base_model_version', 'modelspec.architecture']) {

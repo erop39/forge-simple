@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind, HiresPreset,
+  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind, HiresPreset, CivitaiInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
 import type { Db } from './db'
@@ -42,10 +42,13 @@ interface JobSql {
 }
 export interface ModelMetaRow {
   family: Family | null; favorite: boolean; note: string; preview: string | null; triggers: string[] | null
+  /** null: never looked up; `missing`: Civitai does not know the file (checkedAt is when we asked). */
+  civitai: CivitaiStored | null
 }
+export type CivitaiStored = (CivitaiInfo & { missing?: false }) | { missing: true; checkedAt: number }
 interface ModelMetaSql {
   server_id: number; kind: string; filename: string; family: string | null; favorite: number
-  note: string; preview: string | null; triggers: string | null
+  note: string; preview: string | null; triggers: string | null; civitai: string | null
 }
 function toModelMeta(r: ModelMetaSql): ModelMetaRow {
   let triggers: string[] | null = null
@@ -55,8 +58,16 @@ function toModelMeta(r: ModelMetaSql): ModelMetaRow {
       if (Array.isArray(parsed) && parsed.every((x): x is string => typeof x === 'string')) triggers = parsed
     } catch { /* a damaged value counts as unset */ }
   }
+  let civitai: CivitaiStored | null = null
+  if (r.civitai !== null) {
+    try {
+      const parsed = JSON.parse(r.civitai) as { missing?: boolean; checkedAt?: unknown; versionId?: unknown }
+      if (parsed.missing === true && typeof parsed.checkedAt === 'number') civitai = { missing: true, checkedAt: parsed.checkedAt }
+      else if (typeof parsed.versionId === 'number') civitai = parsed as unknown as CivitaiStored
+    } catch { /* a damaged value counts as never looked up */ }
+  }
   return { family: r.family && Object.hasOwn(PROFILES, r.family) ? (r.family as Family) : null, favorite: r.favorite === 1,
-    note: r.note, preview: r.preview, triggers }
+    note: r.note, preview: r.preview, triggers, civitai }
 }
 
 interface ImageSql {
@@ -548,7 +559,7 @@ export function createRepos(db: Db, now: () => number) {
   }
 
   const metaGet = db.prepare('SELECT * FROM model_meta WHERE server_id = ? AND kind = ? AND filename = ?')
-  const metaUpsert = (column: 'family' | 'favorite' | 'note' | 'preview' | 'triggers', value: string | number | null) =>
+  const metaUpsert = (column: 'family' | 'favorite' | 'note' | 'preview' | 'triggers' | 'civitai', value: string | number | null) =>
     (serverId: number, kind: ModelKind, filename: string): void => {
       db.prepare(`INSERT INTO model_meta (server_id, kind, filename, ${column}) VALUES (?, ?, ?, ?)
         ON CONFLICT(server_id, kind, filename) DO UPDATE SET ${column} = excluded.${column}`).run(serverId, kind, filename, value)
@@ -574,6 +585,11 @@ export function createRepos(db: Db, now: () => number) {
     /** null returns to the words found in the file's metadata. */
     setTriggers: (serverId: number, kind: ModelKind, filename: string, triggers: string[] | null): void =>
       metaUpsert('triggers', triggers === null ? null : JSON.stringify(triggers))(serverId, kind, filename),
+    setCivitai: (serverId: number, kind: ModelKind, filename: string, value: CivitaiStored): void =>
+      metaUpsert('civitai', JSON.stringify(value))(serverId, kind, filename),
+    clearPreview(serverId: number, kind: ModelKind, filename: string): void {
+      db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ? AND kind = ? AND filename = ?').run(serverId, kind, filename)
+    },
     /** Forgets looked-up previews (a refreshed catalog may have new ones); the user's own marks stay. */
     clearPreviews(serverId: number): void {
       db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ?').run(serverId)

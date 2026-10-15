@@ -133,6 +133,11 @@ async function boot(): Promise<void> {
     client: () => forge.client(),
     serverId: () => repos.servers.active()?.id ?? null,
     cacheDir: () => join(userData, 'model-previews'),
+    remoteImage: (kind, filename) => {
+      const serverId = repos.servers.active()?.id
+      const found = serverId === undefined ? null : repos.modelMeta.get(serverId, kind, filename)?.civitai
+      return found && !found.missing ? found.imageUrl : null
+    },
     meta: repos.modelMeta,
   })
   const images = createImageStore(imagesDir, makeThumb, imageRoots)
@@ -200,6 +205,7 @@ async function boot(): Promise<void> {
     localUrl: !app.isPackaged ? process.env['FNC_LOCAL_SERVER'] || undefined : undefined,
     copyToClipboard: (value) => clipboard.writeText(value),
     revealFile: (path) => shell.showItemInFolder(path),
+    openExternal: (url) => { void shell.openExternal(url) },
     onServerChanged: syncMonitor,
     capabilities,
     lock,

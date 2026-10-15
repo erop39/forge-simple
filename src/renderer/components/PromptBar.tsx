@@ -1,5 +1,5 @@
 import { ArrowUp, SlidersHorizontal, SquaresFour, X } from '@phosphor-icons/react'
-import { useCallback, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
 import { t } from '../i18n/t'
@@ -94,6 +94,25 @@ function GrowingField({ id, value, label, placeholder, className, onChange, onKe
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
     />
+  )
+}
+
+/** Shown in place of the model menu while the server's lists load, so it is clear why nothing can be chosen yet. */
+function ModelsLoading() {
+  const server = useAppStore((s) => s.servers.find((item) => item.active)?.name ?? null)
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 4000)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div className={styles.loading} role="status" aria-live="polite">
+      <span className={styles.loadingText}>
+        {server ? t('prompt.loadingModelsFrom', { server }) : t('prompt.loadingModels')}
+      </span>
+      <span className={styles.loadingTrack} aria-hidden="true"><span className={styles.loadingBar} /></span>
+      {slow && <span className={styles.loadingHint}>{t('prompt.loadingModelsHint')}</span>}
+    </div>
   )
 }
 
@@ -237,7 +256,7 @@ export function PromptBar() {
               onClick={() => openModelGallery('checkpoint')}
             />
           </>
-        ) : loading && <span role="status" className={styles.pending}>{t('prompt.loadingModels')}</span>}
+        ) : loading && <ModelsLoading />}
         <div className={styles.controls}>
           {model && (
             <>
@@ -267,15 +286,6 @@ export function PromptBar() {
                 />
                 </div>
               )}
-              <Select
-                label={t('prompt.ratio')}
-                value={ratio}
-                options={ratioOptions}
-                onChange={(value) => {
-                  const picked = RATIOS.find((r) => ratioValue(r) === value)
-                  if (picked) setParams(dimsForRatio(picked, area))
-                }}
-              />
               <Slider
                 inline
                 label={t('prompt.steps')}
@@ -284,6 +294,15 @@ export function PromptBar() {
                 max={150}
                 step={1}
                 onCommit={(steps) => setParams({ steps })}
+              />
+              <Select
+                label={t('prompt.ratio')}
+                value={ratio}
+                options={ratioOptions}
+                onChange={(value) => {
+                  const picked = RATIOS.find((r) => ratioValue(r) === value)
+                  if (picked) setParams(dimsForRatio(picked, area))
+                }}
               />
               <NumberField
                 inline

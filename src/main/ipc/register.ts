@@ -10,6 +10,8 @@ import {
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
+import { createCivitaiClient, type CivitaiClient } from '../forge/civitai'
+import { createCivitaiUpdater } from '../forge/civitai-updater'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
 import { LockError, type Lock } from '../lock/lock'
@@ -38,6 +40,12 @@ export interface IpcDeps {
   /** Builds a throwaway client for a candidate address. */
   createClient(url: string, opts?: { pingTimeoutMs?: number }): ForgeClient
   copyToClipboard(text: string): void
+  /** Looks a file hash up on Civitai; injectable for tests. */
+  civitai?: CivitaiClient
+  /** Opens a web address in the system browser. */
+  openExternal?(url: string): void
+  /** Pause between Civitai requests; injectable for tests. */
+  civitaiGapMs?: number
   /** Shows a file in the system file manager. */
   revealFile(path: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
@@ -283,6 +291,7 @@ export function registerIpc(
 
   const localUrl = (): string => normalizeBaseUrl(deps.localUrl ?? LOCAL_FORGE_URL)
   const HIRES_UPSCALER_KEY = 'upscaler.hires'
+  const CIVITAI_KEY = 'civitai.enabled'
   const FINISHED_UPSCALER_KEY = 'upscaler.finished'
 
   const familyNegativeKey = (family: string): string => `negative.family.${family}`
@@ -299,6 +308,7 @@ export function registerIpc(
     serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir(), localUrl: localUrl(),
     upscalers: { hires: repos.settings.get(HIRES_UPSCALER_KEY), finished: repos.settings.get(FINISHED_UPSCALER_KEY) },
     familyNegatives: familyNegatives(),
+    civitaiEnabled: repos.settings.get(CIVITAI_KEY) === '1',
   }))
 
   handle('settings:setFamilyNegative', (family, presetId) => {
@@ -578,6 +588,70 @@ export function registerIpc(
       if (serverId !== undefined) repos.modelMeta.clearPreviews(serverId)
     }
     return loadCatalog(refresh === true)
+  })
+
+  // ---- optional Civitai lookup (hashes only, slow, cancellable) -------------------
+  let lastCatalog: Catalog | null = null
+  const civitaiUpdater = createCivitaiUpdater({
+    client: deps.civitai ?? createCivitaiClient({ now: Date.now }),
+    now: Date.now,
+    emit: (progress) => send('civitai:progress', progress),
+    sleep: (ms, signal) => new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms)
+      signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+    }),
+    ...(deps.civitaiGapMs !== undefined ? { gapMs: deps.civitaiGapMs } : {}),
+    items: () => {
+      const serverId = repos.servers.active()?.id
+      if (serverId === undefined || !lastCatalog) return []
+      const stored = (kind: ModelKind) => repos.modelMeta.list(serverId, kind)
+      const checkedAt = (row: ReturnType<typeof stored> extends Map<string, infer R> ? R | undefined : never): number | null =>
+        row?.civitai ? row.civitai.checkedAt : null
+      const checkpoints = stored('checkpoint')
+      const loras = stored('lora')
+      return [
+        ...lastCatalog.checkpoints.flatMap((c) => c.sha256
+          ? [{ kind: 'checkpoint' as const, id: c.filename, hash: c.sha256, checkedAt: checkedAt(checkpoints.get(c.filename)) }] : []),
+        ...lastCatalog.loras.flatMap((l) => l.hash
+          ? [{ kind: 'lora' as const, id: l.path, hash: l.hash, checkedAt: checkedAt(loras.get(l.path)) }] : []),
+      ]
+    },
+    save: (item, info) => {
+      const serverId = repos.servers.active()?.id
+      if (serverId === undefined) return
+      repos.modelMeta.setCivitai(serverId, item.kind, item.id, info ?? { missing: true, checkedAt: Date.now() })
+      // A model Forge had no preview for may get one from Civitai now: look it up again.
+      if (info?.imageUrl && repos.modelMeta.get(serverId, item.kind, item.id)?.preview === '') {
+        repos.modelMeta.setPreview(serverId, item.kind, item.id, '')
+        repos.modelMeta.clearPreview(serverId, item.kind, item.id)
+      }
+    },
+  })
+
+  handle('civitai:setEnabled', (enabled) => {
+    if (typeof enabled !== 'boolean') return fail('error.invalidParams')
+    repos.settings.set(CIVITAI_KEY, enabled ? '1' : '0')
+    if (!enabled) civitaiUpdater.cancel()
+    oplog.write({ level: 'info', category: 'settings', messageKey: enabled ? 'log.civitai.enabled' : 'log.civitai.disabled' })
+  })
+
+  handle('civitai:update', async (opts) => {
+    if (repos.settings.get(CIVITAI_KEY) !== '1') return fail('error.invalidParams')
+    const force = typeof opts === 'object' && opts !== null && (opts as { force?: unknown }).force === true
+    lastCatalog = await loadCatalog()
+    void civitaiUpdater.start({ force })
+  })
+
+  handle('civitai:cancel', () => { civitaiUpdater.cancel() })
+  handle('civitai:state', () => civitaiUpdater.state())
+
+  handle('civitai:open', async (kind, id) => {
+    if ((kind !== 'checkpoint' && kind !== 'lora') || typeof id !== 'string') return fail('error.invalidParams')
+    const catalog = await loadCatalog()
+    const url = (kind === 'checkpoint' ? catalog.checkpoints.find((c) => c.filename === id) : catalog.loras.find((l) => l.path === id))
+      ?.civitai?.url
+    if (!url || !url.startsWith('https://civitai.com/models/')) return fail('error.notFound')
+    deps.openExternal?.(url)
   })
 
   /** The active server and the file the renderer named, checked against the catalog it was listed in. */

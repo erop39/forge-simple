@@ -97,6 +97,58 @@
   min-height: var(--h-bar);
 }
 
+.loading {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.loadingText,
+.loadingHint {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.loadingHint {
+  color: var(--text-3);
+}
+
+/* Indeterminate: only a transform moves, the bar slides along its track. */
+.loadingTrack {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.loadingBar {
+  display: block;
+  width: 30%;
+  height: 100%;
+  background: var(--signal);
+  animation: loading-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingBar {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 .pending {
   color: var(--text-3);
   font-size: 12px;

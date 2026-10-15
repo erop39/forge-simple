@@ -1,6 +1,7 @@
 import { detectFamily } from '@shared/profiles'
 import type { Catalog, Family, GenerationParams, ModelKind, ModuleInfo, PartStatus } from '@shared/types'
 import type { ModelMetaRow } from '../storage/repos'
+import { baseFamilyFromText } from './lora-meta'
 import { baseFamilyFromMetadata, triggersFromMetadata } from './lora-meta'
 import type { Oplog } from '../oplog/oplog'
 import { ForgeError, type ForgeClient, type LoraItem } from './client'
@@ -39,6 +40,13 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
   let inFlight: Promise<Catalog> | null = null
   // Raw LoRA metadata is kept apart from the catalog: it is large and only the derived words and family are sent.
   let loraMetadata = new Map<string, Record<string, unknown>>()
+  let loraHashes = new Map<string, string>()
+
+  const civitaiOf = (mark: ModelMetaRow | undefined): { url: string; name: string; baseModel: string } | null =>
+    mark?.civitai && !mark.civitai.missing
+      ? { url: `https://civitai.com/models/${mark.civitai.modelId}?modelVersionId=${mark.civitai.versionId}`,
+        name: mark.civitai.name, baseModel: mark.civitai.baseModel }
+      : null
 
   /** The fetched catalog with the user's marks applied; cheap, so it runs at every `get`. */
   function withMarks(base: Catalog): Catalog {
@@ -56,16 +64,21 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
           previewUrl: deps.previewUrl?.('checkpoint', c.filename) ?? '',
+          civitai: civitaiOf(mark),
         }
       }),
       loras: base.loras.map((l) => {
         const mark = loraMeta.get(l.path)
         const metadata = loraMetadata.get(l.path) ?? {}
         const own = mark?.triggers ?? null
+        const found = mark?.civitai && !mark.civitai.missing ? mark.civitai : null
+        const words = found && found.trainedWords.length > 0 ? found.trainedWords : triggersFromMetadata(metadata)
         return {
           ...l,
-          baseFamily: baseFamilyFromMetadata(metadata),
-          triggers: own ?? triggersFromMetadata(metadata),
+          hash: loraHashes.get(l.path) ?? null,
+          baseFamily: baseFamilyFromMetadata(metadata) ?? (found ? baseFamilyFromText(found.baseModel) : null),
+          triggers: own ?? words,
+          civitai: civitaiOf(mark),
           triggersEdited: own !== null,
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
@@ -113,6 +126,10 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         familyModules: familyModules(options),
       }
       loraMetadata = new Map(loras.map((l) => [l.path, l.metadata]))
+      loraHashes = new Map(loras.flatMap((l): [string, string][] => {
+        const hash = l.metadata.sshs_model_hash
+        return typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash) ? [[l.path, hash]] : []
+      }))
       deps.oplog.write({
         level: 'info', category: 'catalog', messageKey: 'log.catalog.loaded',
         durationMs: deps.now() - started,

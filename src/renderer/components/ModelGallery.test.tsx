@@ -104,3 +104,40 @@ test('the stack: switch off, change weight is a number, insert a trigger once, r
   await userEvent.click(screen.getByRole('button', { name: 'Remove ghost' }))
   expect(store.getState().params?.loras.map((l) => l.name)).toEqual(['detail', 'style_a'])
 })
+
+test('Update from Civitai asks first, says what is sent, and only then enables and starts the lookup', async () => {
+  const setCivitaiEnabled = vi.fn(async () => undefined)
+  const updateFromCivitai = vi.fn(async () => undefined)
+  withGallery('lora', { setCivitaiEnabled, updateFromCivitai })
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.update'] }))
+  expect(screen.getByText(en['civitai.consentBody'])).toBeDefined()
+  expect(updateFromCivitai).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.consentNo'] }))
+  expect(setCivitaiEnabled).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.update'] }))
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.consentAllow'] }))
+  expect(setCivitaiEnabled).toHaveBeenCalledWith(true)
+  expect(updateFromCivitai).toHaveBeenCalledOnce()
+})
+
+test('with consent given the button starts at once; progress and Stop show while it runs; found models link to Civitai', async () => {
+  const updateFromCivitai = vi.fn(async () => undefined)
+  const cancelCivitai = vi.fn(async () => undefined)
+  const openOnCivitai = vi.fn(async () => undefined)
+  const withLink: Catalog = { ...models, loras: [{ ...models.loras[0]!,
+    civitai: { url: 'https://civitai.com/models/7?modelVersionId=70', name: 'Detail Tweaker', baseModel: 'Illustrious' } },
+  models.loras[1]!] }
+  const { store } = renderWithStore(<ModelGalleryDialog />, 'sdxl', {
+    catalog: withLink, modelGallery: 'lora', updateFromCivitai, cancelCivitai, openOnCivitai,
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
+  })
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.update'] }))
+  expect(updateFromCivitai).toHaveBeenCalledOnce()
+  act(() => store.setState({ civitai: { running: true, done: 3, total: 40, found: 2, paused: false } }))
+  expect(screen.getByRole('status').textContent).toBe('Civitai: 3 of 40')
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.cancel'] }))
+  expect(cancelCivitai).toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: 'Select detail' }))
+  await userEvent.click(screen.getByRole('button', { name: en['civitai.open'] }))
+  expect(openOnCivitai).toHaveBeenCalledWith('lora', String.raw`C:\m\lora\detail.safetensors`)
+})

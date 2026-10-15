@@ -207,7 +207,7 @@ test('init is safe to call twice: one load, one set of subscriptions', async () 
   const { api, store } = await ready()
   await store.getState().init()
   expect(api.settings.get).toHaveBeenCalledTimes(1)
-  expect(api.on).toHaveBeenCalledTimes(13)
+  expect(api.on).toHaveBeenCalledTimes(14)
 })
 
 test('params stay null when the catalog has no checkpoints', async () => {

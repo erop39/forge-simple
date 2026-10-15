@@ -100,6 +100,12 @@ export interface OplogEntry {
   messageKey: string; durationMs: number | null; jobId: number | null; details: Record<string, unknown>;
 }
 
+/** What Civitai knows about a file (looked up by its SHA-256 on request). */
+export interface CivitaiInfo {
+  modelId: number; versionId: number; name: string; versionName: string; baseModel: string
+  trainedWords: string[]; imageUrl: string | null; checkedAt: number
+}
+export interface CivitaiProgress { running: boolean; done: number; total: number; found: number; paused: boolean }
 export type ModelKind = 'checkpoint' | 'lora'
 export interface CheckpointInfo {
   title: string; name: string; filename: string; family: Family
@@ -108,17 +114,21 @@ export interface CheckpointInfo {
   /** The family was set by hand rather than detected from the name. */
   familyOverridden?: boolean
   favorite?: boolean; note?: string
+  /** Page of this file on Civitai once it was looked up and found. */
+  civitai?: { url: string; name: string; baseModel: string } | null
   /** fnc-model://… ; answers 404 when Forge has no preview for it. */
   previewUrl?: string
 }
 export interface LoraInfo {
   name: string; alias?: string; path: string
   /** The family its training metadata names; null when unknown or not one of ours. */
+  hash?: string | null
   baseFamily?: Family | null
   /** Trigger words: the user's own list when set, else the most frequent training tags. */
   triggers?: string[]
   triggersEdited?: boolean
   favorite?: boolean; note?: string; previewUrl?: string
+  civitai?: { url: string; name: string; baseModel: string } | null
 }
 export interface ModuleInfo { name: string; filename: string }
 export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: LoraInfo[];

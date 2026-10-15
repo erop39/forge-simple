@@ -32,6 +32,13 @@ const api: Api = {
     update: (id, patch) => invoke('negativePresets:update', id, patch),
     remove: (id) => invoke('negativePresets:remove', id),
   },
+  civitai: {
+    setEnabled: (enabled) => invoke('civitai:setEnabled', enabled),
+    update: (opts) => invoke('civitai:update', opts),
+    cancel: () => invoke('civitai:cancel'),
+    state: () => invoke('civitai:state'),
+    open: (kind, id) => invoke('civitai:open', kind, id),
+  },
   hiresPresets: {
     list: () => invoke('hiresPresets:list'),
     add: (input) => invoke('hiresPresets:add', input),

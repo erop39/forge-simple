@@ -1,5 +1,5 @@
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -32,6 +32,8 @@ export interface AppSettings {
   /** Where Forge Neo listens on this PC by default; the add-server form starts with it. */
   localUrl: string
   upscalers?: { hires: string | null; finished: string | null }
+  /** The user agreed to look the library up on Civitai (by file hash). */
+  civitaiEnabled?: boolean
   /** The negative preset applied when a checkpoint of that family is loaded; absent = none. */
   familyNegatives?: Partial<Record<Family, number>>
 }
@@ -57,6 +59,7 @@ export interface AppEvents {
   'forge:health': ForgeHealth
   /** A new operation-log entry. */
   'oplog:added': OplogEntry
+  'civitai:progress': CivitaiProgress
   /** The lock opened or closed, or its password was set: what the gallery may show changed. */
   'lock': LockState
   /** These images were hidden or unhidden. */
@@ -108,6 +111,18 @@ export interface Api {
     setFamily(checkpointFile: string, family: Family | null): Promise<void>
     /** null returns to the words found in the file's metadata. */
     setTriggers(loraPath: string, triggers: string[] | null): Promise<void>
+  }
+  /**
+   * Optional lookup of the library on civitai.com: only file SHA-256 hashes are sent, one request a second.
+   * `update` needs `setEnabled(true)` first (error.invalidParams otherwise) and returns when the run has started.
+   */
+  civitai: {
+    setEnabled(enabled: boolean): Promise<void>
+    update(opts?: { force?: boolean }): Promise<void>
+    cancel(): Promise<void>
+    state(): Promise<CivitaiProgress>
+    /** Opens the file's Civitai page in the system browser; error.notFound when it was not found there. */
+    open(kind: ModelKind, id: string): Promise<void>
   }
   /** Named hires second passes; a name already taken (ignoring case) is error.presetNameTaken. */
   hiresPresets: {
@@ -199,7 +214,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',
@@ -211,7 +226,7 @@ export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'resources', 'servers',
-  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed',
+  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed', 'civitai:progress',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

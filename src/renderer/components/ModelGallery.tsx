@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { Star, X } from '@phosphor-icons/react'
+import { CloudArrowDown, Star, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
 import type { Family, ModelKind } from '@shared/types'
@@ -29,6 +29,7 @@ interface Item {
   /** The checkpoint's title (what Forge selects it by) or the LoRA's name (what the prompt tag uses). */
   key: string
   familyOverridden: boolean
+  civitai: { url: string; name: string; baseModel: string } | null
 }
 
 const folderOf = (path: string): string => {
@@ -61,11 +62,24 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const setNote = useAppStore((s) => s.setModelNote)
   const setFamily = useAppStore((s) => s.setCheckpointFamily)
   const setTriggers = useAppStore((s) => s.setLoraTriggers)
+  const civitai = useAppStore((s) => s.civitai)
+  const consent = useAppStore((s) => s.settings?.civitaiEnabled === true)
+  const setCivitaiEnabled = useAppStore((s) => s.setCivitaiEnabled)
+  const updateFromCivitai = useAppStore((s) => s.updateFromCivitai)
+  const cancelCivitai = useAppStore((s) => s.cancelCivitai)
+  const openOnCivitai = useAppStore((s) => s.openOnCivitai)
+  const [asking, setAsking] = useState(false)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState(ALL)
   const [folder, setFolder] = useState(ALL)
   const [selected, setSelected] = useState<string | null>(null)
   const search = useRef<HTMLInputElement>(null)
+
+  async function startUpdate(): Promise<void> {
+    if (!consent) await setCivitaiEnabled(true)
+    setAsking(false)
+    await updateFromCivitai()
+  }
 
   const items = useMemo<Item[]>(() => {
     if (!catalog) return []
@@ -74,13 +88,13 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
         id: c.filename, key: c.title, name: c.name,
         folder: folderOf(c.filename), family: c.family, favorite: c.favorite ?? false, note: c.note ?? '',
         previewUrl: c.previewUrl ?? '', hash: c.sha256 ?? c.hash ?? null, loaded: catalog.loadedCheckpoint === c.title,
-        triggers: [], triggersEdited: false, familyOverridden: c.familyOverridden ?? false,
+        triggers: [], triggersEdited: false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null,
       }))
     }
     return catalog.loras.map((l) => ({
       id: l.path, key: l.name, name: l.alias || l.name, folder: folderOf(l.path), family: l.baseFamily ?? null,
       favorite: l.favorite ?? false, note: l.note ?? '', previewUrl: l.previewUrl ?? '', hash: null, loaded: false,
-      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false,
+      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null,
     }))
   }, [catalog, kind])
 
@@ -126,8 +140,33 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
         <div className={styles.head}>
           <Dialog.Title className={styles.title}>{title}</Dialog.Title>
           <span className={`mono ${styles.count}`}>{t('models.count', { shown: shown.length, total: items.length })}</span>
+          {civitai.running ? (
+            <>
+              <span className={styles.progress} role="status">
+                {t(civitai.paused ? 'civitai.paused' : 'civitai.running', { done: civitai.done, total: civitai.total })}
+              </span>
+              <Button onClick={() => void cancelCivitai()}>{t('civitai.cancel')}</Button>
+            </>
+          ) : (
+            <Button icon={<CloudArrowDown size={16} />} onClick={() => (consent ? void startUpdate() : setAsking(true))}>
+              {t('civitai.update')}
+            </Button>
+          )}
           <IconButton label={t('models.close')} icon={<X size={20} />} onClick={onClose} />
         </div>
+        {asking && (
+          <div className={styles.consent} role="alertdialog" aria-label={t('civitai.consentTitle')}>
+            <strong>{t('civitai.consentTitle')}</strong>
+            <p>{t('civitai.consentBody')}</p>
+            <div className={styles.consentActions}>
+              <Button variant="primary" autoFocus onClick={() => void startUpdate()}>{t('civitai.consentAllow')}</Button>
+              <Button onClick={() => setAsking(false)}>{t('civitai.consentNo')}</Button>
+            </div>
+          </div>
+        )}
+        {!civitai.running && civitai.total > 0 && (
+          <p className={styles.result}>{t('civitai.result', { found: civitai.found, total: civitai.total })}</p>
+        )}
         <div className={styles.toolbar}>
           <input
             ref={search}
@@ -190,6 +229,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onNote={(note) => void setNote(kind, current.id, note)}
             onFamily={(family) => void setFamily(current.id, family)}
             onTriggers={(triggers) => void setTriggers(current.id, triggers)}
+            onOpenCivitai={() => void openOnCivitai(kind, current.id)}
           />
         ) : (
           <p className={styles.hint}>{t('models.select', { name: title })}</p>
@@ -217,9 +257,10 @@ type DetailsProps = {
   onNote(note: string): void
   onFamily(family: Family | null): void
   onTriggers(triggers: string[] | null): void
+  onOpenCivitai(): void
 }
 
-function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers }: DetailsProps) {
+function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai }: DetailsProps) {
   const [noteDraft, setNoteDraft] = useState(item.note)
   const [word, setWord] = useState('')
   const detected = item.familyOverridden ? null : item.family
@@ -302,6 +343,13 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
           onBlur={() => { if (noteDraft.trim() !== item.note) onNote(noteDraft) }}
         />
       </label>
+      {item.civitai && (
+        <div className={styles.field}>
+          <span className={styles.label}>{t('civitai.on')}</span>
+          <span className={styles.hint}>{item.civitai.name}{item.civitai.baseModel ? ` · ${item.civitai.baseModel}` : ''}</span>
+          <Button onClick={onOpenCivitai}>{t('civitai.open')}</Button>
+        </div>
+      )}
       <dl className={styles.facts}>
         <dt>{t('models.path')}</dt>
         <dd className="mono" title={item.id}>{item.id}</dd>

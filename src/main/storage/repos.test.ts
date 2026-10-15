@@ -575,7 +575,7 @@ test('modelMeta keeps marks per server, kind and file, and clearPreviews leaves 
   repos.modelMeta.setPreview(a.id, 'checkpoint', 'f1', 'png')
   repos.modelMeta.setTriggers(a.id, 'lora', 'l1', ['x', 'y'])
   expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')).toEqual({
-    family: 'anima', favorite: true, note: 'good', preview: 'png', triggers: null,
+    family: 'anima', favorite: true, note: 'good', preview: 'png', triggers: null, civitai: null,
   })
   expect(repos.modelMeta.get(b.id, 'checkpoint', 'f1')).toBeNull()
   expect(repos.modelMeta.get(a.id, 'lora', 'f1')).toBeNull()

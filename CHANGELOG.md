@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Optional Civitai lookup, off until you agree: Update from Civitai in the model galleries sends only each file's SHA-256 hash to civitai.com (about one a second, stoppable) and keeps the official name, base model, trigger words (they replace the file's own tags until you edit them), a preview when Forge has none, and an Open on Civitai link.
+- A loading bar with the server's name replaces the model menu while checkpoints and LoRA load at start, with a hint when it takes long.
 - Hires presets: save the second pass (scale, upscaler, steps, denoising, CFG) under a name, pick one to apply everything at once, delete the selected one.
 - Checkpoint gallery (grid button next to the model menu): previews from Forge, search by name or folder, filters by family (with counts), favorites and folder, a details panel with path, hash, note, favorite and a hand-set model family (it decides the defaults the checkpoint starts with), Use selects the checkpoint.
 - LoRA: a stack in the parameters panel (switch, weight -2..2, trigger words that insert into the prompt, remove, warnings for a LoRA that is not on the server or was made for another family) and a LoRA gallery to add from, with trigger words read from the file's training tags and editable. An enabled LoRA the server does not list fails the job as "missing on the server" before Forge is called.
@@ -83,6 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Steps follow CFG in the prompt bar's bottom row, before the ratio.
 - CFG (or Distilled CFG) is a slider in the bottom row of the prompt bar that takes the free room, so nothing is left empty under the model menu; it is no longer in the parameters panel.
 - Scrollbars are thin and dark everywhere, in the colours of the UI.
 - The hires settings' Save as default button no longer overflows the parameters panel (it has its own line).

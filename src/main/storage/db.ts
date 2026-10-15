@@ -40,6 +40,8 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   // 6: named hires second-pass settings (the settings are JSON, validated on the way in).
   `CREATE TABLE hires_presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   settings TEXT NOT NULL, created_at INTEGER NOT NULL);`,
+  // 7: what Civitai answered for a file (JSON; '{"missing":true,…}' when it does not know it).
+  `ALTER TABLE model_meta ADD COLUMN civitai TEXT;`,
 ]
 
 export function openDb(path: string): Db {
