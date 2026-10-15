@@ -69,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The upscaler list in the image viewer could not be opened (it sat under the dialog); it now opens above it, and None and latent methods are no longer offered for a finished image.
 - A hires upscaler the server does not list now fails the job as "missing on the server" instead of sending it to Forge, and a model switch replaces such an upscaler with the default.
 - An upscaled image keeps the seed and infotext of its source instead of seed -1 and an empty infotext.
 - The viewer's Upscale button stays visible but disabled, with a note, when the image is already at the 4096 px limit.

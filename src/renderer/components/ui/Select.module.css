@@ -45,7 +45,7 @@
 
 .content {
   composes: fadeIn from '../../styles/motion.module.css';
-  z-index: var(--z-menu);
+  z-index: var(--z-popup);
   min-width: 160px;
   /* Long lists scroll inside the menu; Radix publishes the room left before the window edge. */
   max-height: min(var(--h-menu-max), var(--radix-dropdown-menu-content-available-height, var(--h-menu-max)));

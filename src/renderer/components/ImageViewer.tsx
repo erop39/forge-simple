@@ -96,7 +96,8 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const hires = params?.hires?.scale && params.hires.scale > 1 ? params.hires : null
   const allowedScales = ([1.5, 2, 4] as const).filter((scale) => image.width * scale <= 4096 && image.height * scale <= 4096)
   const selectedScale = allowedScales.includes(upscaleScale) ? upscaleScale : allowedScales[0]
-  const methods = upscalers ?? []
+  // Extras has no latent upscalers, and None would leave the image as it is.
+  const methods = (upscalers ?? []).filter((name) => name !== 'None' && !name.startsWith('Latent'))
   const selectedMethod = methods.includes(upscaleName) ? upscaleName
     : methods.includes(preferredUpscaler ?? '') ? preferredUpscaler!
       : methods.includes('R-ESRGAN 4x+') ? 'R-ESRGAN 4x+' : methods[0]

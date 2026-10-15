@@ -542,9 +542,18 @@ describe('reveal', () => {
 test('viewer explains why Upscale is unavailable for an image already at the size limit', async () => {
   vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: { ...image(7), width: 3000, height: 3000 }, params, jobType: 'txt2img' })) } })
   renderWithStore(<Gallery />, 'sdxl', { images: [{ ...image(7), width: 3000, height: 3000 }],
-    catalog: { ...catalog, upscalers: ['Latent'] } })
+    catalog: { ...catalog, upscalers: ['R-ESRGAN 4x+'] } })
   await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
   const action = await screen.findByRole('button', { name: en['viewer.upscale'] })
   expect((action as HTMLButtonElement).disabled).toBe(true)
   expect(screen.getByText(en['viewer.upscaleLimit'])).toBeDefined()
+})
+
+test('viewer offers neither None nor latent methods for a finished image', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' })) } })
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)],
+    catalog: { ...catalog, upscalers: ['None', 'Latent', 'Latent (nearest)', 'Lanczos'] } })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await userEvent.click(await screen.findByRole('button', { name: en['viewer.upscale'] }))
+  expect(screen.getByRole('button', { name: new RegExp(`${en['viewer.upscaleMethod']}.*Lanczos`) })).toBeDefined()
 })
