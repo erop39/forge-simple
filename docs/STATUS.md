@@ -6,13 +6,14 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 661 pass (45 files); typecheck and build clean (2026-10-15).
+- Tests: 781 pass; typecheck and build clean (2026-10-15, after plan 2 Task 2).
+- Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Startup prompt delay: fixed (committed with the servers work). The field now renders while the catalog loads and preserves early typing; see `docs/prompt-startup-fix.md` for cause, implementation, checks and the remaining catalog wait. A live-window check has not been done for this fix.
 - Image viewer: implemented ahead of plan 2 (another session, reviewed and committed here). Click or Enter opens the full image, with saved job settings and Copy prompt below it. X closes the dialog; icons and Left/Right keys navigate the gallery, loading older pages as needed. The header reserves space for native Windows caption buttons. Checkpoint changes retain the selected width and height. See `docs/image-viewer.md` for the file map, behavior, checks and open work.
 - Viewer verification on 2026-10-14: full suite (then 516 tests; 521 after the review fixes), typecheck and build passed before the mouse-click follow-up. A later physical-mouse check exposed that the arrows still sat in the top bar's draggable region; `.actions` now opts out with `-webkit-app-region: no-drag`. Physical Next and Previous clicks were reproduced failing before the CSS fix and confirmed working after it in an isolated Electron window against mock Forge. The selected 16:9 ratio also remained after a checkpoint switch in the earlier live run. Plan 2's remaining viewer actions and animation are still open.
 - Review of that code: `docs/code-review-2026-10-14.md` — one server-switch gate, two async races and a PromptBar duplication. All four are fixed with tests (see its Resolution section).
-- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done, reviewed and checked live with two mock servers; U3 (negative-prompt presets) done, reviewed and checked live; U4 (Forge 500 recovery, Restart Forge / Unload model, operation-log panel = plan 2 Task 11, generation timestamps, mouse-wheel stepping) done and reviewed (one fix round), checked live on the mock only.
+- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the user approved it on 2026-10-15 and it is being executed (subagent-driven; ledger in `.superpowers/sdd/2026-10-14-plan-2-gallery/`, local only). Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done, reviewed and checked live with two mock servers; U3 (negative-prompt presets) done, reviewed and checked live; U4 (Forge 500 recovery, Restart Forge / Unload model, operation-log panel = plan 2 Task 11, generation timestamps, mouse-wheel stepping) done and reviewed (one fix round), checked live on the mock only.
 
 | Task | State |
 |---|---|
@@ -25,6 +26,12 @@ taken, or something starts waiting on the user.
 | U2 Saved servers list | done, reviewed, checked live |
 | U3 Negative-prompt presets | done, reviewed, checked live |
 | U4 500 recovery, Restart/Unload Forge, log panel, timestamps, wheel stepping | done, reviewed; live check on the mock only |
+| U5 Keep negative across server switch; local Forge by default | done, reviewed |
+| Plan 2 Task 1 Tags and filtered image queries (storage) | done, reviewed |
+| Plan 2 Task 2 Hidden images behind a session lock | done, reviewed (one fix round: no prompt leak via jobs:get while locked, wrong-password lockout 5 failures → 30 s) |
+| Plan 2 Task 3 Virtualized gallery, keyboard, crossfade | in progress |
+| Plan 2 Tasks 4–10, 12 | not started |
+| Plan 2 Task 11 Log panel | done earlier as U4 |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -36,7 +43,7 @@ taken, or something starts waiting on the user.
 
 ## Waiting on the user
 
-- Next steps the user decides: (1) the real-Forge check below, then release 0.1.0; (2) review and approve plan 2 before it is executed; (3) whether switching servers should keep the negative prompt (now it resets to the family default).
+- Next step the user decides: the real-Forge check below, then release 0.1.0. (Plan 2 approved 2026-10-15; the negative now survives server switches — U5.)
 - Leftover throwaway test profiles from viewer checks (mock data only) may sit in the system temp folder and in the ignored `out/viewer-click-profile`; safe to delete.
 - The user's real Forge now runs with `--api-server-stop` (restart from the app is enabled). After a failed checkpoint load (500 `AttributeError`) it returned 500 `TypeError` for every model until restarted; the app now unloads after a 500 and offers a restart.
 - Real-Forge check in Task 17: one generation per model family over VPN, cancel mid-generation, drop the VPN mid-queue. It also confirms that shift really travels in `distilled_cfg_scale` (look for "Shift" in the image's infotext).

@@ -10,6 +10,7 @@ UI strings, README and CHANGELOG are English.
 ## Repository and machines
 
 - Remote: `https://github.com/erop39/forge-simple` (**public**). Work branch `feature/core`; `main` holds the spec and plans. Pull before starting, push when a task is done.
+- Git workflow and the push checklist for every agent: `AGENTS.md`. Run `node scripts/scan-private.mjs` before every push.
 - **Before every push, scan everything being pushed for private data** — the user's Forge address and any LAN IPs, Windows user paths, real model/VAE/LoRA file names, emails, tokens and keys (`gh?_`, `sk-`, `AKIA`, `BEGIN … PRIVATE KEY`, passwords, `.env`), databases, images, `tools/probe/probe-report.json`. If anything is found, stop and tell the user. Docs and tests use fictional names (`exampleMix_v10`, `http://100.x.y.z:7860`).
 - The detailed task ledger (`.superpowers/sdd/…/progress.md`, briefs, review reports) is git-ignored and exists only on the PC where it was written. Everything another PC needs must be in `docs/STATUS.md`.
 - New PC: clone, `git checkout feature/core`, `pnpm install` (it rebuilds better-sqlite3). If `pnpm` is broken on the PATH, `scripts/start-windows.cmd` starts the app without it. Keep the checkout outside OneDrive.

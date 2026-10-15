@@ -1,0 +1,3 @@
+# Fictional values that look private but are test fixtures. One exact substring per line.
+# Add a line only after checking the value is invented; never add the user's real data.
+ECONNRESET at 10.0.0.2
