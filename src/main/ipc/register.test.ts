@@ -147,7 +147,7 @@ describe('servers', () => {
     expect(res.errorKey).toBeNull()
     expect(repos.servers.active()).toMatchObject({ name: 'Home', url: mock.url })
     expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null } })
+      upscalers: { hires: null, finished: null }, familyNegatives: {} })
     expect(forgeRef.address()).toBe(mock.url)
     expect(kicks).toBe(1)
     expect(serverChanges).toBe(1)
@@ -324,7 +324,7 @@ describe('servers', () => {
     expect(sentOf('job:removed')).toEqual([{ id: q.id }])
     expect(sentOf('servers').at(-1)).toEqual([])
     expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null } })
+      upscalers: { hires: null, finished: null }, familyNegatives: {} })
     expect(serverChanges).toBe(1)
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
       messageKey: 'log.server.removed', details: { name: '127.0.0.1', url: mock.url, deletedJobs: 1 },
@@ -1069,4 +1069,18 @@ test('jobs:clearUnfinished removes failed jobs and tells the renderer', async ()
   expect(await call('jobs:clearUnfinished')).toBe(1)
   expect(repos.jobs.get(job.id)).toBeNull()
   expect(sent.some((s) => s.e === 'job:removed' && (s.p as { id: number }).id === job.id)).toBe(true)
+})
+
+test('a family negative is saved, reported by settings:get, validated and cleared with its preset', async () => {
+  const preset = (await call('negativePresets:add', { name: 'Anima base', text: 'worst quality' })) as { id: number }
+  await call('settings:setFamilyNegative', 'anima', preset.id)
+  expect(((await call('settings:get')) as { familyNegatives: Record<string, number> }).familyNegatives).toEqual({ anima: preset.id })
+  await expect(call('settings:setFamilyNegative', 'nope', preset.id)).rejects.toThrow('error.invalidParams')
+  await expect(call('settings:setFamilyNegative', 'anima', 999)).rejects.toThrow('error.notFound')
+  await call('negativePresets:remove', preset.id)
+  expect(((await call('settings:get')) as { familyNegatives: Record<string, number> }).familyNegatives).toEqual({})
+  const again = (await call('negativePresets:add', { name: 'Other', text: 'x' })) as { id: number }
+  await call('settings:setFamilyNegative', 'sdxl', again.id)
+  await call('settings:setFamilyNegative', 'sdxl', null)
+  expect(((await call('settings:get')) as { familyNegatives: Record<string, number> }).familyNegatives).toEqual({})
 })

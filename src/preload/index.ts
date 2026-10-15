@@ -15,6 +15,7 @@ const api: Api = {
   settings: {
     get: () => invoke('settings:get'),
     setUpscalers: (input) => invoke('settings:setUpscalers', input),
+    setFamilyNegative: (family, presetId) => invoke('settings:setFamilyNegative', family, presetId),
     chooseImagesDir: () => invoke('settings:chooseImagesDir'),
   },
   servers: {

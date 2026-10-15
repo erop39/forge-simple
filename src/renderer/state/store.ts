@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings, HiresSettings,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -93,6 +93,8 @@ export interface AppState {
   /** Queue a finished image for upscale, preserving the current prompt-bar draft. */
   upscaleImage(id: number, sourceParams: GenerationParams, upscaler: string, scale: UpscaleSettings['scale']): Promise<boolean>
   setDefaultUpscaler(kind: 'hires' | 'finished', name: string): Promise<boolean>
+  /** The preset a family starts with when a checkpoint of it is loaded (null = none). */
+  setFamilyNegative(family: Family, presetId: number | null): Promise<void>
   chooseImagesDir(): Promise<string | null>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
@@ -225,11 +227,17 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return // a newer choice replaced this one; its failure no longer matters
       }
       if (seq !== selectSeq) return
-      const { params: current, draftPrompt, draftNegative } = get()
+      const { params: current, draftPrompt, draftNegative, negativePresets, settings } = get()
+      // Coming to a family (or starting up) loads its default negative, unless the user already typed one before
+      // the first model arrived; inside a family the text stays whatever the user left.
+      const presetId = settings?.familyNegatives?.[defaults.family]
+      const familyDefault = PROFILES[defaults.family].negative && presetId !== undefined
+        && (current ? current.family !== defaults.family : draftNegative === null)
+        ? negativePresets.find((preset) => preset.id === presetId)?.text : undefined
       const params: GenerationParams = {
         ...defaults,
         prompt: current?.prompt ?? draftPrompt,
-        negativePrompt: draftNegative ?? defaults.negativePrompt,
+        negativePrompt: familyDefault ?? draftNegative ?? defaults.negativePrompt,
         width: current?.width ?? defaults.width,
         height: current?.height ?? defaults.height,
         // An upscaler the new server does not list gives way to its default; the other second-pass values stay.
@@ -465,7 +473,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       if (local) set({ servers: local.servers })
       const current = local?.settings ?? settings
       if (current) set({ settings: current })
-      await Promise.all([loadPresets(), loadForgeState(), current?.serverUrl ? loadCatalog() : undefined])
+      // The presets come first: a family's default negative is applied while the first model is selected.
+      await loadPresets()
+      await Promise.all([loadForgeState(), current?.serverUrl ? loadCatalog() : undefined])
     }
 
     /** Asks main to save Forge on this PC when it answers; null when it did not (or the check failed). */
@@ -614,6 +624,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (!(await attempt(async () => { await api.settings.setUpscalers(next); return true }))) return false
         set((s) => ({ settings: s.settings ? { ...s.settings, upscalers: next } : null }))
         return true
+      },
+
+      async setFamilyNegative(family, presetId) {
+        if (await attempt(async () => { await api.settings.setFamilyNegative(family, presetId); return true }) === undefined) return
+        set((s) => {
+          const next = { ...s.settings?.familyNegatives }
+          if (presetId === null) delete next[family]
+          else next[family] = presetId
+          return { settings: s.settings ? { ...s.settings, familyNegatives: next } : null }
+        })
       },
 
       async chooseImagesDir() {

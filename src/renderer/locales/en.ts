@@ -315,6 +315,8 @@ export const en = {
   'prompt.allParams': 'All parameters',
   'presets.menu': 'Negative presets',
   'presets.empty': 'No saved negatives',
+  'presets.defaultFor': 'Default for {family}',
+  'presets.defaultNone': 'None',
   'presets.saveCurrent': 'Save current as preset…',
   'presets.manage': 'Manage presets…',
   'presets.saveTitle': 'Save negative preset',

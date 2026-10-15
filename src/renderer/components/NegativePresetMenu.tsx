@@ -1,6 +1,7 @@
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { BookmarkSimple } from '@phosphor-icons/react'
+import { BookmarkSimple, Check } from '@phosphor-icons/react'
 import { useRef, useState } from 'react'
+import { PROFILES } from '@shared/profiles'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { ManagePresetsDialog, SavePresetDialog } from './NegativePresetDialogs'
@@ -23,6 +24,9 @@ type Open = 'save' | 'manage' | null
 /** The saved negatives next to the Negative toggle: apply one, save the current text, or manage them. */
 export function NegativePresetMenu({ negative, onApply }: NegativePresetMenuProps) {
   const presets = useAppStore((s) => s.negativePresets)
+  const family = useAppStore((s) => s.params?.family ?? null)
+  const defaultId = useAppStore((s) => (family ? s.settings?.familyNegatives?.[family] : undefined))
+  const setFamilyNegative = useAppStore((s) => s.setFamilyNegative)
   const [open, setOpen] = useState<Open>(null)
   // A dialog opened from the menu keeps the focus: the menu must not hand it back to its trigger.
   const opening = useRef(false)
@@ -62,6 +66,27 @@ export function NegativePresetMenu({ negative, onApply }: NegativePresetMenuProp
                   <span className={styles.menuName}>{preset.name}</span>
                 </Menu.Item>
               ))
+            )}
+            {family && PROFILES[family].negative && presets.length > 0 && (
+              <>
+                <Menu.Separator className={styles.separator} />
+                <Menu.Label className={styles.menuLabel}>{t('presets.defaultFor', { family: t(`family.${family}`) })}</Menu.Label>
+                <Menu.RadioGroup
+                  value={defaultId === undefined ? 'none' : String(defaultId)}
+                  onValueChange={(value) => void setFamilyNegative(family, value === 'none' ? null : Number(value))}
+                >
+                  <Menu.RadioItem value="none" className={`${selectStyles.item} ${styles.menuItem}`}>
+                    <span className={styles.menuName}>{t('presets.defaultNone')}</span>
+                    <Menu.ItemIndicator><Check size={14} aria-hidden="true" /></Menu.ItemIndicator>
+                  </Menu.RadioItem>
+                  {presets.map((preset) => (
+                    <Menu.RadioItem key={preset.id} value={String(preset.id)} className={`${selectStyles.item} ${styles.menuItem}`}>
+                      <span className={styles.menuName}>{preset.name}</span>
+                      <Menu.ItemIndicator><Check size={14} aria-hidden="true" /></Menu.ItemIndicator>
+                    </Menu.RadioItem>
+                  ))}
+                </Menu.RadioGroup>
+              </>
             )}
             <Menu.Separator className={styles.separator} />
             <Menu.Item

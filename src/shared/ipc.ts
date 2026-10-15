@@ -1,5 +1,5 @@
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -32,6 +32,8 @@ export interface AppSettings {
   /** Where Forge Neo listens on this PC by default; the add-server form starts with it. */
   localUrl: string
   upscalers?: { hires: string | null; finished: string | null }
+  /** The negative preset applied when a checkpoint of that family is loaded; absent = none. */
+  familyNegatives?: Partial<Record<Family, number>>
 }
 /** A server to save. An empty name is replaced by the address's host. */
 export interface ServerInput { name: string; url: string }
@@ -66,6 +68,8 @@ export interface Api {
     get(): Promise<AppSettings>
     /** Saved preferences are used only when the active Forge offers the named upscaler. */
     setUpscalers(input: { hires: string; finished: string }): Promise<void>
+    /** The preset a family starts with (null = none); error.notFound for an unknown preset. */
+    setFamilyNegative(family: Family, presetId: number | null): Promise<void>
     /** Opens the native folder picker; null means cancelled. Only future images use the selected folder. */
     chooseImagesDir(): Promise<string | null>
   }
@@ -173,7 +177,7 @@ declare global { interface Window { api: Api } }
 
 /** Request channels, `<area>:<method>`. Event channels are `event:<name>`. */
 export const CHANNELS = [
-  'settings:get', 'settings:setUpscalers', 'settings:chooseImagesDir',
+  'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',

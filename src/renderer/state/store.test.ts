@@ -1098,3 +1098,42 @@ test('clearUnfinished asks main and drops failed and interrupted tiles, keeping 
   expect(api.jobs.clearUnfinished).toHaveBeenCalledOnce()
   expect(Object.keys(store.getState().jobs)).toEqual(['3'])
 })
+
+describe('family default negative', () => {
+  const preset = { id: 1, name: 'Anima base', text: 'worst quality, blurry', createdAt: 1 }
+
+  test('loading a checkpoint of another family applies its default; inside the family the typed text stays', async () => {
+    const { api, store } = await ready()
+    store.setState((s) => ({ negativePresets: [preset],
+      settings: { ...s.settings!, familyNegatives: { anima: 1 } } }))
+    api.catalog.defaults.mockResolvedValueOnce(paramsFor('anima_a.safetensors', { family: 'anima', negativePrompt: 'forge default' }))
+    await store.getState().selectCheckpoint('anima_a.safetensors')
+    expect(store.getState().params?.negativePrompt).toBe('worst quality, blurry')
+    store.getState().setParams({ negativePrompt: 'my own text' })
+    api.catalog.defaults.mockResolvedValueOnce(paramsFor('anima_b.safetensors', { family: 'anima', negativePrompt: 'forge default' }))
+    await store.getState().selectCheckpoint('anima_b.safetensors')
+    expect(store.getState().params?.negativePrompt).toBe('my own text')
+  })
+
+  test('a family without a chosen default keeps the current negative; a deleted preset is ignored', async () => {
+    const { api, store } = await ready()
+    store.getState().setParams({ negativePrompt: 'kept' })
+    api.catalog.defaults.mockResolvedValueOnce(paramsFor('anima_a.safetensors', { family: 'anima' }))
+    await store.getState().selectCheckpoint('anima_a.safetensors')
+    expect(store.getState().params?.negativePrompt).toBe('kept')
+    store.setState((s) => ({ negativePresets: [], settings: { ...s.settings!, familyNegatives: { sdxl: 9 } } }))
+    api.catalog.defaults.mockResolvedValueOnce(paramsFor('sdxl_a.safetensors', { family: 'sdxl' }))
+    await store.getState().selectCheckpoint('sdxl_a.safetensors')
+    expect(store.getState().params?.negativePrompt).toBe('kept')
+  })
+
+  test('setFamilyNegative saves through main and updates the settings', async () => {
+    const { api, store } = await ready()
+    api.settings.setFamilyNegative = vi.fn(async () => {})
+    await store.getState().setFamilyNegative('anima', 1)
+    expect(api.settings.setFamilyNegative).toHaveBeenCalledWith('anima', 1)
+    expect(store.getState().settings?.familyNegatives).toEqual({ anima: 1 })
+    await store.getState().setFamilyNegative('anima', null)
+    expect(store.getState().settings?.familyNegatives).toEqual({})
+  })
+})

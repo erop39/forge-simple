@@ -79,6 +79,12 @@
   white-space: nowrap;
 }
 
+.menuLabel {
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
 .menuEmpty {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);

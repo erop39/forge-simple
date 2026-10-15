@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Default negative per model family: in the negative-presets menu pick which saved negative a family starts with (e.g. Anima). Loading a checkpoint of another family (or starting the app) fills the Negative field with it; inside a family your text stays.
 - Send to hires on a gallery tile: the image's own job (model, prompt, seed) runs again with a hires second pass; the dialog sets scale, upscaler, second-pass steps, denoising and CFG. Hires settings gained an optional second-pass CFG (`hr_cfg` / `hr_distilled_cfg`), also in the parameters panel.
 - HD mark in the top right of images made with hires fix or upscale.
 - Image viewer: zoom (buttons, +/-/0 keys, mouse wheel, drag to pan) and Show in folder.

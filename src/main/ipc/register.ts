@@ -6,7 +6,7 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type ConnectionStatus, type ForgeCapabilities, type GenerationParams, type ImageQuery, type ImageRecord,
+  type Catalog, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
@@ -285,10 +285,32 @@ export function registerIpc(
   const HIRES_UPSCALER_KEY = 'upscaler.hires'
   const FINISHED_UPSCALER_KEY = 'upscaler.finished'
 
+  const familyNegativeKey = (family: string): string => `negative.family.${family}`
+  const familyNegatives = (): Partial<Record<Family, number>> => {
+    const out: Partial<Record<Family, number>> = {}
+    for (const family of Object.keys(PROFILES) as Family[]) {
+      const id = Number(repos.settings.get(familyNegativeKey(family)))
+      if (Number.isInteger(id) && id > 0 && repos.negativePresets.get(id)) out[family] = id
+    }
+    return out
+  }
+
   handle('settings:get', () => ({
     serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir(), localUrl: localUrl(),
     upscalers: { hires: repos.settings.get(HIRES_UPSCALER_KEY), finished: repos.settings.get(FINISHED_UPSCALER_KEY) },
+    familyNegatives: familyNegatives(),
   }))
+
+  handle('settings:setFamilyNegative', (family, presetId) => {
+    if (typeof family !== 'string' || !Object.hasOwn(PROFILES, family)) return fail('error.invalidParams')
+    if (presetId === null) {
+      repos.settings.set(familyNegativeKey(family), '')
+      return
+    }
+    if (!isInt(presetId, 1, MAX_ID)) return fail('error.invalidParams')
+    if (!repos.negativePresets.get(presetId)) return fail('error.notFound')
+    repos.settings.set(familyNegativeKey(family), String(presetId))
+  })
 
   handle('settings:setUpscalers', async (input) => {
     if (typeof input !== 'object' || input === null || Array.isArray(input)) return fail('error.invalidParams')
@@ -512,6 +534,9 @@ export function registerIpc(
   handle('negativePresets:remove', (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
     const removed = repos.negativePresets.remove(id) ?? fail('error.notFound')
+    for (const family of Object.keys(PROFILES)) {
+      if (repos.settings.get(familyNegativeKey(family)) === String(id)) repos.settings.set(familyNegativeKey(family), '')
+    }
     oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.deleted', details: { name: removed.name } })
   })
 
