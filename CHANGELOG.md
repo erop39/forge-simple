@@ -69,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A long file name in a failed job tile (missing VAE or text encoder) wraps instead of being clipped.
 - Images made by img2img or upscale from a hidden image are now hidden too (they carried the hidden prompt); a retry after a crash no longer fails on a leftover file name; an upscale over the size limit reports its own error.
 - A failed job now shows Forge's error message (for example `TypeError: 'NoneType' object is not callable`), not only the error class name.
 - Switching checkpoints preserves the selected width and height, including custom sizes and aspect ratios; the initial checkpoint still uses its model family's defaults.

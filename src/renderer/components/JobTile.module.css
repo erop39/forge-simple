@@ -110,6 +110,7 @@
 
 .message {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 /* When the job failed: local time, today's without a date. */
