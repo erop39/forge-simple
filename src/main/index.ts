@@ -5,6 +5,7 @@ import { createActiveForge } from './forge/active-forge'
 import { createCapabilities } from './forge/capabilities'
 import { createForgeClient } from './forge/client'
 import { createConnectionMonitor } from './forge/connection'
+import { createResourceMonitor } from './forge/resources'
 import { FINDINGS } from './forge/findings'
 import { forwardEvents, registerIpc } from './ipc/register'
 import { createLock } from './lock/lock'
@@ -112,6 +113,14 @@ async function boot(): Promise<void> {
   })
   const images = createImageStore(imagesDir, makeThumb)
   const events = forwardEvents(imagesDir, send)
+  const resources = createResourceMonitor({
+    read: () => forge.client().memory(),
+    now,
+    runningJob: () => {
+      const serverId = repos.servers.active()?.id
+      return repos.jobs.listActive().find((job) => job.status === 'running' && job.serverId === serverId)?.id ?? null
+    },
+  })
   const runner = createRunner({
     client: forge.client,
     catalog: () => forge.catalog().get(),
@@ -120,9 +129,10 @@ async function boot(): Promise<void> {
     images,
     lock,
     oplog,
-    events: events.runner,
+    events: { ...events.runner, jobUpdate: (job) => { events.runner.jobUpdate(job); resources.jobChanged() } },
     now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    peakVram: resources.takePeak,
   })
   const capabilities = createCapabilities({ client: forge.client, emit: events.capabilities })
   const monitor = createConnectionMonitor({
@@ -139,8 +149,14 @@ async function boot(): Promise<void> {
   // The monitor runs only while the window is shown and a server is configured.
   const syncMonitor = (): void => {
     const visible = win !== null && !win.isDestroyed() && win.isVisible() && !win.isMinimized()
-    if (visible && repos.servers.active()) monitor.start(MONITOR_INTERVAL_MS)
-    else monitor.stop()
+    const server = repos.servers.active()
+    if (visible && server) {
+      monitor.start(MONITOR_INTERVAL_MS)
+      resources.start(String(server.id))
+    } else {
+      monitor.stop()
+      resources.stop()
+    }
   }
 
   registerIpc(ipcMain, {
@@ -178,6 +194,7 @@ async function boot(): Promise<void> {
     closing = true
     event.preventDefault()
     monitor.stop()
+    resources.stop()
     void (async () => {
       try {
         await Promise.race([

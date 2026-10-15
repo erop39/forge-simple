@@ -28,6 +28,8 @@ export interface RunnerDeps {
   events: RunnerEvents
   now(): number
   sleep(ms: number): Promise<void>
+  /** Consumes the largest VRAM reading collected for this job, if any. */
+  peakVram?(jobId: number): number | null
 }
 
 export type TickResult = 'idle' | 'ran' | 'paused'
@@ -128,7 +130,9 @@ export function createRunner(deps: RunnerDeps): {
   }
 
   function setStatus(id: number, status: Job['status'], patch: Parameters<typeof repos.jobs.setStatus>[2] = {}): Job {
-    const job = repos.jobs.setStatus(id, status, patch)
+    const terminal = status === 'done' || status === 'failed' || status === 'interrupted' || status === 'cancelled'
+    const peakVram = terminal ? deps.peakVram?.(id) : null
+    const job = repos.jobs.setStatus(id, status, peakVram == null ? patch : { ...patch, peakVram })
     emitSafely(() => events.jobUpdate(job))
     return job
   }
@@ -537,7 +541,7 @@ export function createRunner(deps: RunnerDeps): {
     }
 
     for (const row of saved) emitSafely(() => events.imageAdded(row))
-    setStatus(job.id, 'done', { durationMs, stepsPerSec: speed })
+    const finished = setStatus(job.id, 'done', { durationMs, stepsPerSec: speed })
     resetHealth()
     if (job.type !== 'upscale') lastDone = { checkpoint: params.checkpoint, modules: [...params.modules] }
     log({
@@ -545,6 +549,7 @@ export function createRunner(deps: RunnerDeps): {
       details: {
         checkpoint: params.checkpoint, width: params.width, height: params.height, steps: params.steps,
         seed: saved[0]?.seed ?? params.seed, images: saved.length,
+        ...(finished.peakVram !== null ? { peakVram: finished.peakVram } : {}),
       },
     })
     return 'ran'

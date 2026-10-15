@@ -1,4 +1,5 @@
 import type { RestartOutcome } from '@shared/types'
+import { parseMemory, type MemoryMetrics } from './resources'
 
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
@@ -117,6 +118,8 @@ export interface ForgeClient {
   img2img(body: Img2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
   upscale(body: UpscaleBody, signal?: AbortSignal): Promise<GenerationResponse>
   progress(): Promise<ProgressResponse>
+  /** Read-only Forge process and CUDA memory readings. */
+  memory(): Promise<MemoryMetrics>
   interrupt(): Promise<void>
   models(): Promise<SdModel[]>
   modules(): Promise<SdModule[]>
@@ -303,6 +306,10 @@ export function createForgeClient(
 
     async progress() {
       return parseProgress(await request('GET', `${API}/progress`, { timeoutMs: listTimeoutMs }))
+    },
+
+    async memory() {
+      return parseMemory(await request('GET', `${API}/memory`, { timeoutMs: pingTimeoutMs }))
     },
 
     async interrupt() {

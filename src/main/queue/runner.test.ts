@@ -46,7 +46,7 @@ const progressAt = (step: number, image: string | null = null): ProgressResponse
 let db: Db
 afterEach(() => { if (db?.open) db.close() })
 
-function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean } = {}) {
+function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean; peakVram?: number } = {}) {
   db = openDb(':memory:')
   let clock = 0
   const now = () => clock
@@ -126,6 +126,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
     },
     now,
     sleep: (ms) => { const d = deferred<void>(); sleeps.push({ ms, d, used: false }); return d.promise },
+    peakVram: () => opts.peakVram ?? null,
   })
 
   const at = (t: number) => { clock = t }
@@ -380,6 +381,14 @@ test('success: job goes running → done, image row saved, events fired in order
   const finish = h.oplog.list({ category: 'generation' })[0]
   expect(finish).toMatchObject({ messageKey: 'log.generation.finished', durationMs: 3500, jobId: job.id })
   expect(finish!.details).toEqual({ checkpoint: CKPT, width: 896, height: 1152, steps: 28, seed: 111, images: 1 })
+})
+
+test('a sampled VRAM peak is saved on the job and its completion log', async () => {
+  const h = setup({ autoComplete: true, peakVram: 14 * 1024 ** 3 })
+  const [job] = h.runner.enqueue(params()) as [Job]
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(job.id)?.peakVram).toBe(14 * 1024 ** 3)
+  expect(h.oplog.list({ category: 'generation' })[0]?.details.peakVram).toBe(14 * 1024 ** 3)
 })
 
 test('progress events carry step, totalSteps, stepsPerSec and a data-URL preview', async () => {

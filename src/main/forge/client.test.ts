@@ -306,6 +306,16 @@ test('upscale maps the single-image extras response and rejects malformed replie
 })
 
 describe('server control', () => {
+  test('memory() reads the read-only endpoint and keeps absent CUDA fields null', async () => {
+    const client = createForgeClient(mock.url)
+    expect(await client.memory()).toMatchObject({
+      ramTotal: 32 * 1024 ** 3, vramUsed: 16 * 1024 ** 3, vramTotal: 24 * 1024 ** 3, oom: 0,
+    })
+    expect(mock.requests.at(-1)).toMatchObject({ method: 'GET', path: '/sdapi/v1/memory' })
+    mock.respond('/sdapi/v1/memory', { json: { ram: { used: 123 } } })
+    expect(await client.memory()).toMatchObject({ ramUsed: 123, vramUsed: null, oom: null })
+  })
+
   test('cmdFlags() reads the launch flags', async () => {
     expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: false })
     mock.setApiServerStop(true)

@@ -6,7 +6,7 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 846 pass after plan 3 Task 5; build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer also queued an upscale and displayed its before/after slider. No mutating request went to the user's Forge.
+- Tests: 852 pass after plan 3 Task 6; build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer also queued an upscale and displayed its before/after slider. No mutating request went to the user's Forge.
 - Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Plan 3 (generation and server tools): `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`. The user chose to pause plan 2 after Task 3's local commit and start plan 3 on 2026-10-15. Restart/Unload were already delivered as U4; plan 3 Task 1 (hires fix) is done, tested against mock Forge, and awaits a live-window check. No mutating request was sent to the user's Forge.
@@ -38,7 +38,8 @@ taken, or something starts waiting on the user.
 | Plan 3 Task 3 Img2img entry points | done; viewer action, saved-gallery drag, mode/source and controls; checked in an isolated window against mock Forge. External file drops are not supported. |
 | Plan 3 Task 4 Upscale finished image | done and tested: extras request, queued job, saved source link, source deletion detach, saved default upscalers. |
 | Plan 3 Task 5 Upscale viewer | done: queue action, separate saved defaults, before/after slider, hidden-source lock handling; checked in an isolated window with mock Forge. Build, typechecks and 846 tests pass. |
-| Plan 3 Tasks 6–10 | not started |
+| Plan 3 Task 6 Read-only resource monitor | done: `/memory` parser, 60 in-memory readings, visibility and 2 s/1 s cadence, sampled job peak, stale-response/server-switch protection. Build, typechecks and 852 tests pass. |
+| Plan 3 Tasks 7–10 | not started |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -46,7 +47,7 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
 3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
-4. Continue plan 3 Task 6 (read-only resource monitor); plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
+4. Continue plan 3 Task 7 (optional Forge stats extension and resource UI); plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
 
 ## Waiting on the user
 

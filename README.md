@@ -27,6 +27,9 @@ Forge's HTTP API. One user, no login.
 - An operation log in the database: queue events, start and finish of every generation with its
   duration, checkpoint changes, connection loss and recovery, Forge restarts, errors. Prompts are never
   written to it. The Activity log panel shows, filters, searches and exports it.
+- While its window is visible, the app samples Forge's read-only `/memory` endpoint every two seconds
+  (every second during a job). It keeps only the latest 60 readings in memory and saves the sampled
+  peak VRAM on each job. The resource display is planned next.
 
 ## Requirements
 
