@@ -4,7 +4,9 @@ import type {
   Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
+import { PROFILES } from '@shared/profiles'
 import { errorKeyOf } from '../i18n/error-text'
+import { t } from '../i18n/t'
 
 const IMAGE_PAGE = 100
 /** Log entries the panel holds; older ones need a narrower filter. */
@@ -39,6 +41,11 @@ export interface AppState {
   params: GenerationParams | null
   /** Text entered before the model catalog has supplied generation parameters. */
   draftPrompt: string
+  /**
+   * The negative prompt to carry into the next model's parameters (a server switch clears them); null until
+   * a model with a negative was chosen. A family without a negative leaves it unchanged.
+   */
+  draftNegative: string | null
   parts: PartStatus[]
   jobs: Record<number, Job>
   progress: Record<number, JobProgress>
@@ -145,6 +152,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       }
     }
 
+    /** A family without a negative prompt leaves the kept one alone, so it comes back on a family that has one. */
+    const keptNegative = (params: GenerationParams, kept: string | null): string | null =>
+      PROFILES[params.family].negative ? params.negativePrompt : kept
+
     async function refreshParts(params: GenerationParams): Promise<void> {
       const seq = ++partsSeq
       try {
@@ -165,15 +176,15 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return // a newer choice replaced this one; its failure no longer matters
       }
       if (seq !== selectSeq) return
-      const current = get().params
+      const { params: current, draftPrompt, draftNegative } = get()
       const params: GenerationParams = {
         ...defaults,
-        prompt: current?.prompt ?? get().draftPrompt,
-        negativePrompt: current?.negativePrompt ?? defaults.negativePrompt,
+        prompt: current?.prompt ?? draftPrompt,
+        negativePrompt: draftNegative ?? defaults.negativePrompt,
         width: current?.width ?? defaults.width,
         height: current?.height ?? defaults.height,
       }
-      set({ params, draftPrompt: params.prompt })
+      set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, draftNegative) })
       await refreshParts(params)
     }
 
@@ -213,13 +224,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       set({ settings, servers })
       if (settings.serverUrl === before) return
       // Everything tied to the old server goes at once, so Generate cannot submit its checkpoint to the
-      // new one while the new catalog loads; pending selections of the old server are dropped. The prompt stays.
+      // new one while the new catalog loads; pending selections of the old server are dropped. The prompt and
+      // the negative prompt stay (draftPrompt and draftNegative already follow every change of the parameters).
       partsSeq++
       selectSeq++
       catalogSeq++
-      set((s) => ({
-        catalog: null, catalogError: null, params: null, parts: [], draftPrompt: s.params?.prompt ?? s.draftPrompt,
-      }))
+      set({ catalog: null, catalogError: null, params: null, parts: [] })
       // The new catalog loads in the background (its LoRA list can take a minute); the prompt bar shows
       // that models are loading, and the server dialog is free again at once.
       if (settings.serverUrl) void loadCatalog()
@@ -332,7 +342,6 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         attempt(() => api.images.list({ limit: IMAGE_PAGE })),
       ])
       set((s) => ({
-        settings: settings ?? s.settings,
         servers: servers ?? s.servers,
         connection: connection ?? s.connection,
         jobs: active ? { ...Object.fromEntries(fresh(active)), ...s.jobs } : s.jobs,
@@ -341,7 +350,24 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           : s.images,
         imagesExhausted: images ? images.length < IMAGE_PAGE : s.imagesExhausted,
       }))
-      await Promise.all([loadPresets(), loadForgeState(), settings?.serverUrl ? loadCatalog() : undefined])
+      // First run: Forge on this PC is saved without asking. Settings stay unset until the check is over,
+      // so the server dialog does not open for a moment and close again.
+      const local = settings && !settings.serverUrl && servers?.length === 0 ? await findLocalServer() : null
+      if (local) set({ servers: local.servers })
+      const current = local?.settings ?? settings
+      if (current) set({ settings: current })
+      await Promise.all([loadPresets(), loadForgeState(), current?.serverUrl ? loadCatalog() : undefined])
+    }
+
+    /** Asks main to save Forge on this PC when it answers; null when it did not (or the check failed). */
+    async function findLocalServer(): Promise<{ settings: AppSettings; servers: ServerInfo[] } | null> {
+      try {
+        if (!(await api.servers.addLocal(t('server.thisPc')))) return null
+        const [settings, servers] = await Promise.all([api.settings.get(), api.servers.list()])
+        return { settings, servers }
+      } catch {
+        return null // nothing found: the server dialog opens as usual
+      }
     }
 
     return {
@@ -354,6 +380,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       lastError: null,
       params: null,
       draftPrompt: '',
+      draftNegative: null,
       parts: [],
       jobs: {},
       progress: {},
@@ -377,10 +404,11 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         const before = get().params
         if (!before) {
           if (patch.prompt !== undefined) set({ draftPrompt: patch.prompt })
+          if (patch.negativePrompt !== undefined) set({ draftNegative: patch.negativePrompt })
           return
         }
         const params = { ...before, ...patch }
-        set({ params, draftPrompt: params.prompt })
+        set((s) => ({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, s.draftNegative) }))
         if (params.checkpoint !== before.checkpoint || !sameList(params.modules, before.modules)) {
           void refreshParts(params)
         }

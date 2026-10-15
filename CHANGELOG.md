@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Forge on this PC without typing: on first start (no saved server) the app pings `http://127.0.0.1:7860` once with a short timeout and, when Forge answers, saves it as "This PC" and makes it active, so the server dialog does not open; nothing else on the network is tried. The add-server form starts with "This PC" and that address (both editable, with a Use this PC action to put the address back), and starts empty when that address is already saved. `FNC_LOCAL_SERVER` points the check at another address in dev builds.
 - Generation time on display: an image's frame marking ends with the local time it was made (the date too when not today), the image viewer lists the full date and time as Created, and failed or interrupted job tiles show when they ended.
 - Mouse-wheel adjustment: hovering a slider or number field (steps, images, CFG, Distilled CFG, Shift, clip skip, width, height, log retention) and turning the wheel steps its value up or down, Shift+wheel by ten steps, within its limits; the page does not scroll meanwhile, and trackpad scrolling needs a full notch's travel per step.
 - Activity log panel (the plan 2 log screen, done early): opened from the top bar, newest first, with time, level, category, catalog text and duration; filters by level, category and period, a search over the shown text, live updates, export as JSON Lines through a save dialog (every entry matching the filters, read page by page, or exactly the search results while a search is active), and the retention period (1 to 3650 days, default 90) used by the start-up purge. Clicking a failed job's entry shows that job's stored error; a finished job's entry opens its image. Every message key the main process writes now has a catalog string (checked by a test).
@@ -45,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The negative prompt survives a server switch like the prompt does, instead of being replaced by the new model's default; a model family without a negative prompt keeps it for the next one that has one.
 - The message of a job stopped mid-run now covers both causes: the app closed or Forge restarted.
 - The Restart Forge action on a failed job tile is a compact icon button (with a tooltip), and tile buttons wrap whole instead of breaking their labels.
 - The negative-prompt field no longer clips by one pixel, an empty model card renders nothing, and the top bar height and the panel slide-out time come from design tokens.

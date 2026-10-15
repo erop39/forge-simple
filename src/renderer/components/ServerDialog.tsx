@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { CheckCircle, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
+import { CheckCircle, Desktop, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { ServerInfo } from '@shared/types'
 import { errorText } from '../i18n/error-text'
@@ -292,8 +292,13 @@ type ServerFormProps = {
 function ServerForm({ head, server, onSaved, onCancel }: ServerFormProps) {
   const addServer = useAppStore((s) => s.addServer)
   const updateServer = useAppStore((s) => s.updateServer)
-  const [name, setName] = useState(server?.name ?? '')
-  const [url, setUrl] = useState(server?.url ?? '')
+  // A new server starts as Forge on this PC, unless that address is already saved.
+  const local = useAppStore((s) => {
+    const address = s.settings?.localUrl
+    return server === null && address && !s.servers.some((x) => x.url === address) ? address : null
+  })
+  const [name, setName] = useState(server?.name ?? (local ? t('server.thisPc') : ''))
+  const [url, setUrl] = useState(server?.url ?? local ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -352,6 +357,20 @@ function ServerForm({ head, server, onSaved, onCancel }: ServerFormProps) {
           onChange={(e) => setUrl(e.target.value)}
         />
       </label>
+      {local && url.trim() !== local && (
+        <Button
+          className={styles.useLocal}
+          icon={<Desktop size={16} />}
+          disabled={busy}
+          onClick={() => {
+            setUrl(local)
+            if (name.trim() === '') setName(t('server.thisPc'))
+            input.current?.focus()
+          }}
+        >
+          {t('server.useThisPc')}
+        </Button>
+      )}
       {error !== null && (
         <p id={errorId} role="alert" className={styles.error}>
           {error}

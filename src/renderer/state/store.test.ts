@@ -2,6 +2,7 @@ import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
   Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, OplogEntry, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
+import { en } from '../locales/en'
 import { createAppStore, LOG_LIMIT, logQuery } from './store'
 
 const baseParams: GenerationParams = {
@@ -44,7 +45,7 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
   const cat = over.catalog ?? catalog()
   const api = {
     settings: {
-      get: vi.fn(async () => ({ serverUrl: over.serverUrl === undefined ? 'http://127.0.0.1:7861' : over.serverUrl, imagesDir: 'C:\\images' })),
+      get: vi.fn(async () => ({ serverUrl: over.serverUrl === undefined ? 'http://127.0.0.1:7861' : over.serverUrl, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })),
     },
     servers: {
       list: vi.fn(async (): Promise<ServerInfo[]> => (over.serverUrl === null ? [] : [home])),
@@ -52,6 +53,7 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
       update: vi.fn(async (): Promise<ConnectionCheck> => ({ ok: true, latencyMs: null, errorKey: null })),
       remove: vi.fn(async () => {}),
       activate: vi.fn(async () => {}),
+      addLocal: vi.fn(async () => false),
     },
     negativePresets: {
       list: vi.fn(async (): Promise<NegativePreset[]> => [blurry]),
@@ -141,6 +143,51 @@ test('init without a server url skips the catalog', async () => {
   expect(store.getState().catalog).toBeNull()
   expect(store.getState().params).toBeNull()
   expect(store.getState().images).toHaveLength(2)
+})
+
+describe('first run', () => {
+  const local: ServerInfo = { id: 1, name: en['server.thisPc'], url: 'http://127.0.0.1:7860', active: true }
+
+  test('with no saved server, init has main add the local Forge as This PC and loads its catalog', async () => {
+    const fake = fakeApi({ serverUrl: null })
+    const check = deferred<boolean>()
+    fake.api.servers.addLocal.mockReturnValueOnce(check.promise)
+    const store = createAppStore(fake.api)
+    const loading = store.getState().init()
+    await vi.waitFor(() => expect(fake.api.servers.addLocal).toHaveBeenCalledWith(en['server.thisPc']))
+    // No settings yet, so the server dialog does not flash open while the check runs.
+    expect(store.getState().settings).toBeNull()
+    expect(store.getState().images).toHaveLength(2)
+    fake.api.settings.get.mockResolvedValueOnce({ serverUrl: local.url, imagesDir: 'C:\\images', localUrl: local.url })
+    fake.api.servers.list.mockResolvedValueOnce([local])
+    check.resolve(true)
+    await loading
+    expect(store.getState().settings?.serverUrl).toBe(local.url)
+    expect(store.getState().servers).toEqual([local])
+    expect(fake.api.catalog.get).toHaveBeenCalledTimes(1)
+    expect(store.getState().params?.checkpoint).toBe('b.safetensors')
+  })
+
+  test('with nothing answering locally, settings show no server, so the dialog opens', async () => {
+    const { api, store } = await ready({ serverUrl: null })
+    expect(api.servers.addLocal).toHaveBeenCalledTimes(1)
+    expect(store.getState().settings).toMatchObject({ serverUrl: null })
+    expect(api.catalog.get).not.toHaveBeenCalled()
+  })
+
+  test('a failing check counts as nothing found', async () => {
+    const fake = fakeApi({ serverUrl: null })
+    fake.api.servers.addLocal.mockRejectedValueOnce(new Error('error.unexpected'))
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    expect(store.getState().settings).toMatchObject({ serverUrl: null })
+    expect(store.getState().lastError).toBeNull()
+  })
+
+  test('with a saved server init never asks for the local Forge', async () => {
+    const { api } = await ready()
+    expect(api.servers.addLocal).not.toHaveBeenCalled()
+  })
 })
 
 test('init is safe to call twice: one load, one set of subscriptions', async () => {
@@ -307,7 +354,7 @@ test('a rejected cancel is reported through lastError', async () => {
 
 test('addServer on success refreshes settings, servers and the catalog and selects a checkpoint', async () => {
   const { api, store } = await ready({ serverUrl: null })
-  api.settings.get.mockResolvedValueOnce({ serverUrl: 'http://127.0.0.1:7861', imagesDir: 'C:\\images' })
+  api.settings.get.mockResolvedValueOnce({ serverUrl: 'http://127.0.0.1:7861', imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })
   api.servers.list.mockResolvedValueOnce([home])
   const check = await store.getState().addServer({ name: 'Home', url: '127.0.0.1:7861' })
   expect(check.ok).toBe(true)
@@ -338,7 +385,7 @@ test('adding an inactive server does not reload the catalog', async () => {
 test('activateServer switches: settings, servers and the catalog of the new server are loaded', async () => {
   const { api, store } = await ready()
   const other: ServerInfo = { id: 2, name: 'Other', url: 'http://other.test', active: true }
-  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images' })
+  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })
   api.servers.list.mockResolvedValueOnce([{ ...home, active: false }, other])
   api.catalog.get.mockClear()
   await store.getState().activateServer(2)
@@ -361,7 +408,7 @@ test('a server switch drops the old params at once, keeps the prompt, and a late
   api.catalog.defaults.mockReturnValueOnce(oldDefaults.promise)
   const oldPick = store.getState().selectCheckpoint('a.safetensors')
   const other: ServerInfo = { id: 2, name: 'Other', url: 'http://other.test', active: true }
-  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images' })
+  api.settings.get.mockResolvedValueOnce({ serverUrl: other.url, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })
   api.servers.list.mockResolvedValueOnce([{ ...home, active: false }, other])
   const next = deferred<Catalog>()
   api.catalog.get.mockReturnValueOnce(next.promise)
@@ -377,6 +424,61 @@ test('a server switch drops the old params at once, keeps the prompt, and a late
   next.resolve(catalog({ checkpoints: [{ title: 'c.safetensors', name: 'c', filename: 'c.safetensors', family: 'sdxl' }], loadedCheckpoint: null }))
   await vi.waitFor(() => expect(store.getState().params?.checkpoint).toBe('c.safetensors'))
   expect(store.getState().params?.prompt).toBe('a lighthouse')
+})
+
+describe('negative prompt across a server switch', () => {
+  const other: ServerInfo = { id: 2, name: 'Other', url: 'http://other.test', active: true }
+  const third: ServerInfo = { id: 3, name: 'Third', url: 'http://third.test', active: true }
+  const only = (title: string, family: GenerationParams['family']): Catalog =>
+    catalog({ checkpoints: [{ title, name: title, filename: title, family }], loadedCheckpoint: null })
+
+  /** Switches to `server`, whose catalog holds one checkpoint of `family` with these defaults. */
+  async function switchTo(fake: Awaited<ReturnType<typeof ready>>, server: ServerInfo, title: string, family: GenerationParams['family'], negative: string) {
+    const { api, store } = fake
+    api.settings.get.mockResolvedValueOnce({ serverUrl: server.url, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })
+    api.servers.list.mockResolvedValueOnce([{ ...home, active: false }, server])
+    api.catalog.get.mockResolvedValueOnce(only(title, family))
+    api.catalog.defaults.mockResolvedValueOnce(paramsFor(title, { family, negativePrompt: negative }))
+    await store.getState().activateServer(server.id)
+    await vi.waitFor(() => expect(store.getState().params?.checkpoint).toBe(title))
+  }
+
+  test('a switch keeps the negative the user typed instead of the new family default', async () => {
+    const fake = await ready()
+    fake.store.getState().setParams({ negativePrompt: 'blurry, watermark' })
+    await switchTo(fake, other, 'c.safetensors', 'sdxl', 'family negative')
+    expect(fake.store.getState().params?.negativePrompt).toBe('blurry, watermark')
+    expect(fake.store.getState().draftNegative).toBe('blurry, watermark')
+  })
+
+  test('the kept negative also survives a checkpoint change on the new server', async () => {
+    const fake = await ready()
+    fake.store.getState().setParams({ negativePrompt: 'lowres' })
+    await switchTo(fake, other, 'c.safetensors', 'sdxl', 'family negative')
+    fake.api.catalog.defaults.mockResolvedValueOnce(paramsFor('d.safetensors', { family: 'zimage', negativePrompt: 'other default' }))
+    await fake.store.getState().selectCheckpoint('d.safetensors')
+    expect(fake.store.getState().params?.negativePrompt).toBe('lowres')
+  })
+
+  test('a family without a negative does not lose it for a later family that has one', async () => {
+    const fake = await ready()
+    fake.store.getState().setParams({ negativePrompt: 'jpeg artifacts' })
+    await switchTo(fake, other, 'k.safetensors', 'krea2', '')
+    expect(fake.store.getState().draftNegative).toBe('jpeg artifacts')
+    await switchTo(fake, third, 'e.safetensors', 'sdxl', 'family negative')
+    expect(fake.store.getState().params?.negativePrompt).toBe('jpeg artifacts')
+  })
+
+  test('without any negative yet, a family without one leaves the next family its default', async () => {
+    const base = fakeApi({ catalog: only('k.safetensors', 'krea2') })
+    base.api.catalog.defaults.mockResolvedValueOnce(paramsFor('k.safetensors', { family: 'krea2', negativePrompt: '' }))
+    const store = createAppStore(base.api)
+    await store.getState().init()
+    const fake = { ...base, store }
+    expect(store.getState().params?.family).toBe('krea2')
+    await switchTo(fake, other, 'e.safetensors', 'sdxl', 'family negative')
+    expect(fake.store.getState().params?.negativePrompt).toBe('family negative')
+  })
 })
 
 test('a superseded checkpoint choice that fails does not report an error', async () => {
@@ -413,7 +515,7 @@ test('activateServer passes a refusal on to the caller', async () => {
 
 test('removing the active server clears the catalog and the parameters', async () => {
   const { api, store } = await ready()
-  api.settings.get.mockResolvedValueOnce({ serverUrl: null, imagesDir: 'C:\\images' })
+  api.settings.get.mockResolvedValueOnce({ serverUrl: null, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })
   api.servers.list.mockResolvedValueOnce([])
   await store.getState().removeServer(1)
   expect(api.servers.remove).toHaveBeenCalledWith(1)

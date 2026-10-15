@@ -30,7 +30,7 @@ export interface IpcDeps {
   oplog: Oplog
   imagesDir(): string
   /** Builds a throwaway client for a candidate address. */
-  createClient(url: string): ForgeClient
+  createClient(url: string, opts?: { pingTimeoutMs?: number }): ForgeClient
   copyToClipboard(text: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
   onServerChanged?(): void
@@ -40,7 +40,14 @@ export interface IpcDeps {
   exportPageSize?: number
   /** What the active Forge allows (see forge/capabilities.ts). */
   capabilities: { current(): ForgeCapabilities; refresh(): Promise<ForgeCapabilities>; reset(): void }
+  /** Forge on this PC; defaults to LOCAL_FORGE_URL, injectable for tests and manual checks. */
+  localUrl?: string
 }
+
+/** Forge Neo's default address on the same PC. */
+export const LOCAL_FORGE_URL = 'http://127.0.0.1:7860'
+/** The first-run check of the local Forge must not hold up the start for long. */
+const LOCAL_PING_TIMEOUT_MS = 1500
 
 type Send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]) => void
 
@@ -208,7 +215,11 @@ export function registerIpc(
     }
   }
 
-  handle('settings:get', () => ({ serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir() }))
+  const localUrl = (): string => normalizeBaseUrl(deps.localUrl ?? LOCAL_FORGE_URL)
+
+  handle('settings:get', () => ({
+    serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir(), localUrl: localUrl(),
+  }))
 
   // ---- saved servers ----------------------------------------------------
 
@@ -232,7 +243,7 @@ export function registerIpc(
   }
 
   /** Normalises and pings an address; a failure is a ConnectionCheck, not a rejection. */
-  async function testAddress(url: string): Promise<{ url: string; check: ConnectionCheck }> {
+  async function testAddress(url: string, pingTimeoutMs?: number): Promise<{ url: string; check: ConnectionCheck }> {
     let normalised: string
     try {
       normalised = normalizeBaseUrl(url)
@@ -240,7 +251,8 @@ export function registerIpc(
       return { url, check: { ok: false, latencyMs: null, errorKey: 'error.network' } }
     }
     try {
-      const latencyMs = await deps.createClient(normalised).ping()
+      const client = pingTimeoutMs === undefined ? deps.createClient(normalised) : deps.createClient(normalised, { pingTimeoutMs })
+      const latencyMs = await client.ping()
       return { url: normalised, check: { ok: true, latencyMs, errorKey: null } }
     } catch (err) {
       return { url: normalised, check: { ok: false, latencyMs: null, errorKey: forgeErrorKey(err) } }
@@ -271,12 +283,17 @@ export function registerIpc(
     if (takenByOther(normalisedOrSelf(url), null)) return fail('error.duplicateServer')
     const tested = await testAddress(url)
     if (!tested.check.ok) return tested.check
-    let server: Server
     try {
-      server = repos.servers.add(name || hostOf(tested.url), tested.url)
+      saveTested(name, tested.url)
     } catch (err) {
       return rethrowDuplicate(err)
     }
+    return tested.check
+  })
+
+  /** Saves an address that answered as Forge and logs it; with no active server it becomes the active one. */
+  function saveTested(name: string, url: string): void {
+    const server = repos.servers.add(name || hostOf(url), url)
     oplog.write({
       level: 'info', category: 'server', messageKey: 'log.server.added', details: { name: server.name, url: server.url },
     })
@@ -285,7 +302,17 @@ export function registerIpc(
       activeServerChanged(null)
     }
     sendServers()
-    return tested.check
+  }
+
+  // First run: only the loopback address is tried, never the network around it.
+  handle('servers:addLocal', async (name): Promise<boolean> => {
+    const input = validateServerInput({ name, url: '' })
+    if (repos.servers.list().length > 0) return false
+    const tested = await testAddress(localUrl(), LOCAL_PING_TIMEOUT_MS)
+    // A server saved while the ping was out (the user was quicker) wins.
+    if (!tested.check.ok || repos.servers.list().length > 0) return false
+    saveTested(input.name, tested.url)
+    return true
   })
 
   handle('servers:update', async (id, input): Promise<ConnectionCheck> => {

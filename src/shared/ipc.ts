@@ -24,7 +24,12 @@ export function extractErrorKey(message: string): IpcErrorKey {
 }
 
 export interface ConnectionCheck { ok: boolean; latencyMs: number | null; errorKey: string | null }
-export interface AppSettings { serverUrl: string | null; imagesDir: string }
+export interface AppSettings {
+  serverUrl: string | null
+  imagesDir: string
+  /** Where Forge Neo listens on this PC by default; the add-server form starts with it. */
+  localUrl: string
+}
 /** A server to save. An empty name is replaced by the address's host. */
 export interface ServerInput { name: string; url: string }
 /** A negative preset to save; the name is trimmed by main. */
@@ -60,6 +65,11 @@ export interface Api {
     remove(id: number): Promise<void>
     /** Refused with error.jobRunning while a job runs. */
     activate(id: number): Promise<void>
+    /**
+     * First run: when no server is saved and Forge answers at `localUrl`, saves it under `name` and makes it
+     * active. Resolves whether it did; never rejects for an unreachable address.
+     */
+    addLocal(name: string): Promise<boolean>
   }
   /** Named negative prompts. A name already taken (ignoring case) is refused with error.presetNameTaken. */
   negativePresets: {
@@ -119,7 +129,7 @@ declare global { interface Window { api: Api } }
 /** Request channels, `<area>:<method>`. Event channels are `event:<name>`. */
 export const CHANNELS = [
   'settings:get',
-  'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate',
+  'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:get',

@@ -64,6 +64,8 @@ export const en = {
   'server.namePlaceholder': 'Home PC',
   'server.address': 'Server address',
   'server.placeholder': 'http://100.x.y.z:7860',
+  'server.thisPc': 'This PC',
+  'server.useThisPc': 'Use this PC',
   'server.connect': 'Connect',
   'server.connecting': 'Connecting…',
   'server.save': 'Save',

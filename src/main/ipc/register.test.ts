@@ -38,6 +38,8 @@ let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
 let exportPath: string | null
 let exportNames: string[]
+/** The address main treats as Forge on this PC; tests point it at the mock (or at nothing). */
+let localServer: string
 
 beforeEach(async () => {
   mock = await startMockForge({ stepMs: 5 })
@@ -73,6 +75,7 @@ beforeEach(async () => {
   copiedText = null
   exportPath = null
   exportNames = []
+  localServer = mock.url
   const send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]): void => { sent.push({ e, p }) }
   registerIpc(
     { handle: (ch, fn) => { handlers.set(ch, fn as never) } },
@@ -86,6 +89,7 @@ beforeEach(async () => {
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
       exportPageSize: 3,
+      get localUrl() { return localServer },
     },
     send,
   )
@@ -116,13 +120,57 @@ describe('servers', () => {
     expect(res.latencyMs).toBeGreaterThanOrEqual(0)
     expect(res.errorKey).toBeNull()
     expect(repos.servers.active()).toMatchObject({ name: 'Home', url: mock.url })
-    expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir })
+    expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url })
     expect(forgeRef.address()).toBe(mock.url)
     expect(kicks).toBe(1)
     expect(serverChanges).toBe(1)
     expect(samples).toBe(1)
     expect(sentOf('servers').at(-1)).toEqual([{ id: 1, name: 'Home', url: mock.url, active: true }])
     expect(logKeys()).toEqual(expect.arrayContaining(['log.server.added', 'log.settings.serverChanged']))
+  })
+
+  test('addLocal on a first run saves the local Forge under the given name and makes it active', async () => {
+    expect(await call('servers:addLocal', 'This PC')).toBe(true)
+    expect(repos.servers.active()).toMatchObject({ name: 'This PC', url: mock.url })
+    expect(forgeRef.address()).toBe(mock.url)
+    expect(serverChanges).toBe(1)
+    expect(kicks).toBe(1)
+    expect(sentOf('servers').at(-1)).toEqual([{ id: 1, name: 'This PC', url: mock.url, active: true }])
+    expect(oplog.list({ category: 'server' })[0]).toMatchObject({
+      messageKey: 'log.server.added', details: { name: 'This PC', url: mock.url },
+    })
+    expect(logKeys()).toContain('log.settings.serverChanged')
+  })
+
+  test('addLocal with nothing listening saves nothing, logs nothing and does not reject', async () => {
+    localServer = DEAD
+    expect(await call('servers:addLocal', 'This PC')).toBe(false)
+    expect(repos.servers.list()).toEqual([])
+    expect(oplog.list({ category: 'server' })).toEqual([])
+    expect(sentOf('servers')).toEqual([])
+    expect(serverChanges).toBe(0)
+  })
+
+  test('addLocal does not answer for a server that is not Forge', async () => {
+    mock.respond('/sdapi/v1/progress', { json: { hello: 'world' } })
+    expect(await call('servers:addLocal', 'This PC')).toBe(false)
+    expect(repos.servers.list()).toEqual([])
+  })
+
+  test('addLocal never adds or even pings when any server is saved', async () => {
+    repos.servers.add('Studio', 'http://studio.test')
+    const before = mock.requests.length
+    expect(await call('servers:addLocal', 'This PC')).toBe(false)
+    expect(mock.requests.length).toBe(before)
+    expect(repos.servers.list().map((s) => s.name)).toEqual(['Studio'])
+    expect(serverChanges).toBe(0)
+  })
+
+  test.each([
+    ['a non-string name', 5],
+    ['an overlong name', 'x'.repeat(101)],
+  ])('addLocal rejects %s with error.invalidParams', async (_n, name) => {
+    await expect(call('servers:addLocal', name)).rejects.toThrow('error.invalidParams')
   })
 
   test('a later server is saved inactive, named after its host when the name is blank', async () => {
@@ -248,7 +296,7 @@ describe('servers', () => {
     expect(repos.jobs.get(q.id)).toBeNull()
     expect(sentOf('job:removed')).toEqual([{ id: q.id }])
     expect(sentOf('servers').at(-1)).toEqual([])
-    expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir })
+    expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url })
     expect(serverChanges).toBe(1)
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
       messageKey: 'log.server.removed', details: { name: '127.0.0.1', url: mock.url, deletedJobs: 1 },

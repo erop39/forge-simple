@@ -26,7 +26,7 @@ function setup(state: Partial<AppState> = {}) {
   }
   const onOpenChange = vi.fn()
   renderWithStore(<ServerDialog open onOpenChange={onOpenChange} />, 'sdxl', {
-    settings: { serverUrl: home.url, imagesDir: '' },
+    settings: { serverUrl: home.url, imagesDir: '', localUrl: 'http://127.0.0.1:7860' },
     servers: [home, studio],
     ...actions,
     ...state,
@@ -96,7 +96,7 @@ test('Delete asks first: Keep leaves the server, Delete removes it', async () =>
   expect(removeServer).toHaveBeenCalledWith(2)
 })
 
-test('Add server opens an empty form; Connect saves it and returns to the list; Cancel goes back', async () => {
+test('Add server opens the form; Connect saves it and returns to the list; Cancel goes back', async () => {
   const { addServer } = setup()
   await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
   await userEvent.click(screen.getByRole('button', { name: en['server.cancel'] }))
@@ -104,8 +104,10 @@ test('Add server opens an empty form; Connect saves it and returns to the list; 
 
   await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
   const address = screen.getByRole('textbox', { name: en['server.address'] }) as HTMLInputElement
-  expect(address.value).toBe('')
-  await userEvent.type(screen.getByRole('textbox', { name: en['server.name'] }), 'Laptop')
+  const name = screen.getByRole('textbox', { name: en['server.name'] })
+  await userEvent.clear(name)
+  await userEvent.type(name, 'Laptop')
+  await userEvent.clear(address)
   await userEvent.type(address, '100.64.0.3:7860')
   await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
   expect(addServer).toHaveBeenCalledWith({ name: 'Laptop', url: '100.64.0.3:7860' })
@@ -116,13 +118,77 @@ test('a duplicate address is reported under the form', async () => {
   const { addServer } = setup()
   addServer.mockRejectedValueOnce(new Error('error.duplicateServer'))
   await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
+  await userEvent.clear(screen.getByRole('textbox', { name: en['server.address'] }))
   await userEvent.type(screen.getByRole('textbox', { name: en['server.address'] }), home.url)
   await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
   expect((await screen.findByRole('alert')).textContent).toBe(en['error.duplicateServer'])
 })
 
+describe('this PC', () => {
+  const LOCAL = 'http://127.0.0.1:7860'
+  const field = (key: 'server.name' | 'server.address') =>
+    screen.getByRole('textbox', { name: en[key] }) as HTMLInputElement
+  const useThisPc = () => screen.queryByRole('button', { name: en['server.useThisPc'] })
+
+  test('the add form starts with This PC and the local address, and Connect adds it', async () => {
+    const { addServer } = setup()
+    await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
+    expect(field('server.name').value).toBe(en['server.thisPc'])
+    expect(field('server.address').value).toBe(LOCAL)
+    expect(useThisPc()).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
+    expect(addServer).toHaveBeenCalledWith({ name: en['server.thisPc'], url: LOCAL })
+  })
+
+  test('the first-run form is filled in the same way', () => {
+    setup({ settings: { serverUrl: null, imagesDir: '', localUrl: LOCAL }, servers: [] })
+    expect(field('server.name').value).toBe(en['server.thisPc'])
+    expect(field('server.address').value).toBe(LOCAL)
+  })
+
+  test('both fields stay editable; Use this PC puts the local address back (and the name, when blank)', async () => {
+    setup()
+    await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
+    await userEvent.clear(field('server.name'))
+    await userEvent.clear(field('server.address'))
+    await userEvent.type(field('server.address'), '100.64.0.9:7860')
+    expect(field('server.address').value).toBe('100.64.0.9:7860')
+    await userEvent.click(useThisPc()!)
+    expect(field('server.address').value).toBe(LOCAL)
+    expect(field('server.name').value).toBe(en['server.thisPc'])
+    expect(useThisPc()).toBeNull()
+  })
+
+  test('Use this PC keeps a name the user typed', async () => {
+    setup()
+    await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
+    await userEvent.clear(field('server.name'))
+    await userEvent.type(field('server.name'), 'Desk')
+    await userEvent.type(field('server.address'), '1')
+    await userEvent.click(useThisPc()!)
+    expect(field('server.name').value).toBe('Desk')
+    expect(field('server.address').value).toBe(LOCAL)
+  })
+
+  test('with the local address already saved the add form starts empty and offers no Use this PC', async () => {
+    setup({ servers: [home, { ...studio, url: LOCAL }] })
+    await userEvent.click(screen.getByRole('button', { name: en['server.add'] }))
+    expect(field('server.name').value).toBe('')
+    expect(field('server.address').value).toBe('')
+    await userEvent.type(field('server.address'), '100.64.0.9:7860')
+    expect(useThisPc()).toBeNull()
+  })
+
+  test('editing a server is never prefilled and offers no Use this PC', async () => {
+    setup()
+    await userEvent.click(within(row('Studio')).getByRole('button', { name: en['server.edit'].replace('{name}', 'Studio') }))
+    expect(field('server.address').value).toBe(studio.url)
+    expect(useThisPc()).toBeNull()
+  })
+})
+
 test('with saved servers but none active, the list shows and cannot be dismissed', () => {
-  setup({ settings: { serverUrl: null, imagesDir: '' }, servers: [{ ...home, active: false }] })
+  setup({ settings: { serverUrl: null, imagesDir: '', localUrl: 'http://127.0.0.1:7860' }, servers: [{ ...home, active: false }] })
   expect(screen.getByRole('list', { name: en['server.list'] })).toBeDefined()
   expect(screen.queryByRole('button', { name: en['server.close'] })).toBeNull()
   expect(within(row('Home')).getByRole('button', { name: en['server.use'] })).toBeDefined()

@@ -149,7 +149,9 @@ async function boot(): Promise<void> {
     images,
     oplog,
     imagesDir,
-    createClient: (url) => createForgeClient(url),
+    createClient: (url, opts) => createForgeClient(url, opts),
+    // Dev builds only: points the first-run check of the local Forge at a mock (manual checks).
+    localUrl: !app.isPackaged ? process.env['FNC_LOCAL_SERVER'] || undefined : undefined,
     copyToClipboard: (value) => clipboard.writeText(value),
     onServerChanged: syncMonitor,
     capabilities,

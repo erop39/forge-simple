@@ -13,11 +13,14 @@ const catalog: Catalog = {
   modules: [], loras: [], samplers: [], schedulers: [], upscalers: [], loadedCheckpoint: null, fetchedAt: 1, familyModules: {},
 }
 
-function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionCheck>, catalogFails = false, served: Catalog = catalog) {
+function setup(
+  serverUrl: string | null, addServer?: () => Promise<ConnectionCheck>, catalogFails = false, served: Catalog = catalog,
+  tweak?: (api: FakeApi) => void,
+) {
   const saved: ServerInfo[] = serverUrl ? [{ id: 1, name: 'Home', url: serverUrl, active: true }] : []
   const api = {
     settings: {
-      get: vi.fn(async () => ({ serverUrl, imagesDir: '' })),
+      get: vi.fn(async () => ({ serverUrl, imagesDir: '', localUrl: 'http://127.0.0.1:7860' })),
     },
     servers: {
       list: vi.fn(async () => saved),
@@ -25,6 +28,7 @@ function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionChe
       update: vi.fn(),
       remove: vi.fn(),
       activate: vi.fn(),
+      addLocal: vi.fn(async () => false),
     },
     negativePresets: { list: vi.fn(async () => []), add: vi.fn(), update: vi.fn(), remove: vi.fn() },
     catalog: {
@@ -44,6 +48,7 @@ function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionChe
     on: vi.fn(() => () => {}),
   }
   if (catalogFails) api.catalog.get.mockRejectedValueOnce(new Error('error.network'))
+  tweak?.(api)
   const store = createAppStore(api as unknown as Api)
   render(
     <StoreProvider store={store}>
@@ -53,6 +58,8 @@ function setup(serverUrl: string | null, addServer?: () => Promise<ConnectionChe
   return { api, store }
 }
 
+type FakeApi = ReturnType<typeof setup>['api']
+
 const dialog = () => screen.queryByRole('dialog')
 
 test('with no server the dialog opens by itself and the empty state sits behind it', async () => {
@@ -60,6 +67,22 @@ test('with no server the dialog opens by itself and the empty state sits behind 
   expect(await screen.findByRole('dialog', { name: en['server.title'] })).toBeDefined()
   expect(document.body.textContent).toContain(en['empty.noServer.title'])
   expect(document.body.textContent).toContain(en['empty.noServer.body'])
+})
+
+test('first run with Forge answering on this PC: it is used and the dialog never opens', async () => {
+  const local: ServerInfo = { id: 1, name: en['server.thisPc'], url: 'http://127.0.0.1:7860', active: true }
+  // The check resolves only after the first render, as a real loopback ping would.
+  let found!: (v: boolean) => void
+  const { api } = setup(null, undefined, false, catalog, (fake) => {
+    fake.servers.addLocal.mockReturnValueOnce(new Promise<boolean>((resolve) => { found = resolve }))
+  })
+  await waitFor(() => expect(api.servers.addLocal).toHaveBeenCalledWith(en['server.thisPc']))
+  expect(dialog()).toBeNull()
+  api.settings.get.mockResolvedValue({ serverUrl: local.url, imagesDir: '', localUrl: local.url })
+  api.servers.list.mockResolvedValue([local])
+  found(true)
+  await waitFor(() => expect(api.catalog.get).toHaveBeenCalled())
+  expect(dialog()).toBeNull()
 })
 
 test('with no server, Escape does not dismiss and there is no close button', async () => {
@@ -89,17 +112,19 @@ test('with a server the dialog is closed, opens from the chip and the gear, and 
 test('a successful connect closes the dialog', async () => {
   const { api } = setup(null)
   const input = await screen.findByRole('textbox', { name: en['server.address'] })
-  api.settings.get.mockResolvedValue({ serverUrl: 'http://127.0.0.1:7861', imagesDir: '' })
+  api.settings.get.mockResolvedValue({ serverUrl: 'http://127.0.0.1:7861', imagesDir: '', localUrl: 'http://127.0.0.1:7860' })
   api.servers.list.mockResolvedValue([{ id: 1, name: '127.0.0.1', url: 'http://127.0.0.1:7861', active: true }])
+  await userEvent.clear(input)
   await userEvent.type(input, '127.0.0.1:7861')
   await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
   await waitFor(() => expect(dialog()).toBeNull())
-  expect(api.servers.add).toHaveBeenCalledWith({ name: '', url: '127.0.0.1:7861' })
+  expect(api.servers.add).toHaveBeenCalledWith({ name: en['server.thisPc'], url: '127.0.0.1:7861' })
 })
 
 test('a failed connect shows the mapped error under the field and refocuses it', async () => {
   const { api } = setup(null, async () => ({ ok: false, latencyMs: null, errorKey: 'error.notForge' }))
   const input = await screen.findByRole('textbox', { name: en['server.address'] })
+  await userEvent.clear(input)
   await userEvent.type(input, '127.0.0.1:1')
   await userEvent.click(screen.getByRole('button', { name: en['server.connect'] }))
   const alert = await screen.findByRole('alert')

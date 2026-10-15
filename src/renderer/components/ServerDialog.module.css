@@ -72,6 +72,10 @@
   color: var(--text);
 }
 
+.useLocal {
+  align-self: flex-start;
+}
+
 .input::placeholder {
   color: var(--text-3);
 }

@@ -21,6 +21,7 @@ const api: Api = {
     update: (id, input) => invoke('servers:update', id, input),
     remove: (id) => invoke('servers:remove', id),
     activate: (id) => invoke('servers:activate', id),
+    addLocal: (name) => invoke('servers:addLocal', name),
   },
   negativePresets: {
     list: () => invoke('negativePresets:list'),
