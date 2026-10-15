@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+  GenerationParams, HiresSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
 } from '@shared/types'
 import type { Db } from './db'
 import { buildImageQuery, escapeLike } from './image-query'
@@ -73,6 +73,20 @@ function parseError(text: string | null): JobError | null {
 }
 
 /** True when a stored params object has everything the request builder needs. */
+export function isHiresSettings(value: unknown, width: number, height: number): value is HiresSettings {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const h = value as Record<string, unknown>
+  const scale = h.scale
+  return typeof scale === 'number' && [1, 1.5, 2, 4].includes(scale)
+    && typeof h.upscaler === 'string' && h.upscaler.trim() !== '' && h.upscaler.length <= 200
+    && typeof h.secondPassSteps === 'number' && Number.isInteger(h.secondPassSteps)
+    && h.secondPassSteps >= 1 && h.secondPassSteps <= 150
+    && typeof h.denoisingStrength === 'number' && Number.isFinite(h.denoisingStrength)
+    && h.denoisingStrength >= 0 && h.denoisingStrength <= 1
+    && Number.isFinite(width) && Number.isFinite(height)
+    && width * scale <= 4096 && height * scale <= 4096
+}
+
 export function isGenerationParams(p: unknown): p is GenerationParams {
   if (typeof p !== 'object' || p === null) return false
   const o = p as Record<string, unknown>
@@ -81,6 +95,7 @@ export function isGenerationParams(p: unknown): p is GenerationParams {
   return str('family') && str('checkpoint') && Array.isArray(o.modules) && o.modules.every((m) => typeof m === 'string')
     && str('prompt') && str('negativePrompt') && num('width') && num('height') && num('steps') && num('cfgScale')
     && num('distilledCfg') && str('sampler') && str('scheduler') && num('seed') && Array.isArray(o.loras)
+    && (o.hires === undefined || isHiresSettings(o.hires, o.width as number, o.height as number))
 }
 
 const toJob = (r: JobSql): Job => ({

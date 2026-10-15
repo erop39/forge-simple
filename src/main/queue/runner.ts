@@ -331,6 +331,7 @@ export function createRunner(deps: RunnerDeps): {
     const startedAt = deps.now()
     const samples: { t: number; step: number }[] = []
     let speed: number | null = null
+    let lastJobNo = 0
     let settled = false
 
     const request: Promise<Outcome> = (async () => client.txt2img(body, a.controller.signal))().then(
@@ -350,6 +351,11 @@ export function createRunner(deps: RunnerDeps): {
             failures = 0
             if (settled) return
             const now = deps.now()
+            if (prog.state.job_no !== lastJobNo) {
+              samples.length = 0
+              speed = null
+              lastJobNo = prog.state.job_no
+            }
             samples.push({ t: now, step: prog.state.sampling_step })
             const sps = stepsPerSec(samples)
             if (sps !== null) speed = sps
@@ -357,7 +363,7 @@ export function createRunner(deps: RunnerDeps): {
               jobId: job.id,
               step: prog.state.sampling_step,
               totalSteps: prog.state.sampling_steps,
-              stage: 'sampling',
+              stage: params.hires && params.hires.scale > 1 && prog.state.job_no > 0 ? 'hires' : 'sampling',
               stepsPerSec: sps,
               elapsedMs: now - startedAt,
               preview: prog.current_image ? `data:image/png;base64,${prog.current_image}` : null,

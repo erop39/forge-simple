@@ -124,8 +124,9 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
 
   const at = (t: number) => { clock = t }
   /** Lets the in-flight request's progress poll fire once, with Forge reporting `step`. */
-  async function poll(step: number, t: number, image: string | null = null) {
-    state.progress = progressAt(step, image)
+  async function poll(step: number, t: number, image: string | null = null, jobNo = 0) {
+    const reported = progressAt(step, image)
+    state.progress = { ...reported, state: { ...reported.state, job_no: jobNo, job_count: jobNo > 0 ? 2 : 1 } }
     at(t)
     const before = progress.length
     const s = sleeps.find((x) => x.ms === 1000 && !x.used)
@@ -222,6 +223,20 @@ test('progress events carry step, totalSteps, stepsPerSec and a data-URL preview
     preview: 'data:image/png;base64,AAAA',
   })
   expect(h.progress[1]).toMatchObject({ step: 10, stepsPerSec: 3, elapsedMs: 3000, preview: null })
+  h.gens[0]!.resolve(response())
+  await t
+})
+
+test('hires second pass changes the stage and resets the speed sample window', async () => {
+  const h = setup()
+  h.runner.enqueue(params({ hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }))
+  const t = h.runner.tick()
+  await h.started()
+  await h.poll(4, 1000)
+  await h.poll(10, 2000)
+  expect(h.progress[1]?.stepsPerSec).toBe(6)
+  await h.poll(2, 3000, null, 1)
+  expect(h.progress[2]).toMatchObject({ stage: 'hires', step: 2, stepsPerSec: null })
   h.gens[0]!.resolve(response())
   await t
 })

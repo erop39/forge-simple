@@ -38,5 +38,12 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
   if (profile.distilledCfg) body.distilled_cfg_scale = p.distilledCfg
   // Forge Neo relabels the distilled-CFG slider as "Shift" for the shift families; no family has both.
   if (profile.shift && p.shift !== null && findings.shiftField !== null) body[findings.shiftField] = p.shift
+  if (p.hires && p.hires.scale > 1) {
+    body.enable_hr = true
+    body.hr_scale = p.hires.scale
+    body.hr_upscaler = p.hires.upscaler
+    body.hr_second_pass_steps = p.hires.secondPassSteps
+    body.denoising_strength = p.hires.denoisingStrength
+  }
   return body
 }

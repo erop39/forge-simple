@@ -508,6 +508,12 @@ describe('jobs:enqueue boundary', () => {
     ['lora enabled not boolean', { loras: [{ name: 'l', weight: 1, enabled: 1 as never }] }],
     ['empty sampler', { sampler: '' }], ['empty scheduler', { scheduler: ' ' }],
     ['unknown family', { family: 'nope' as never }], ['prototype family', { family: 'toString' as never }],
+    ['hires scale', { hires: { scale: 3, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } as never }],
+    ['hires upscaler', { hires: { scale: 2, upscaler: '', secondPassSteps: 12, denoisingStrength: 0.4 } }],
+    ['hires denoising', { hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 2 } }],
+    ['hires steps', { hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 0, denoisingStrength: 0.4 } }],
+    ['hires target too wide', { width: 4096, hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }],
+    ['hires primitive', { hires: 'on' as never }],
   ]
   test.each(rejections)('rejects %s', async (_name, over) => {
     await addServer(mock.url)
@@ -520,6 +526,14 @@ describe('jobs:enqueue boundary', () => {
     const jobs = (await call('jobs:enqueue', { ...goodParams(), evil: 'x', loras: [{ name: 'l', weight: 1, enabled: true, extra: 1 }] })) as { params: Record<string, unknown> }[]
     expect(jobs[0]!.params).not.toHaveProperty('evil')
     expect(jobs[0]!.params.loras).toEqual([{ name: 'l', weight: 1, enabled: true }])
+  })
+
+  test('stores only checked hires settings', async () => {
+    await addServer(mock.url)
+    const jobs = (await call('jobs:enqueue', {
+      ...goodParams(), hires: { scale: 1.5, upscaler: 'Latent', secondPassSteps: 14, denoisingStrength: 0.45, extra: 'x' },
+    })) as { params: Record<string, unknown> }[]
+    expect(jobs[0]!.params.hires).toEqual({ scale: 1.5, upscaler: 'Latent', secondPassSteps: 14, denoisingStrength: 0.45 })
   })
 })
 

@@ -43,6 +43,11 @@ export interface Txt2ImgBody {
   steps: number
   cfg_scale: number
   distilled_cfg_scale?: number
+  enable_hr?: true
+  hr_scale?: number
+  hr_upscaler?: string
+  hr_second_pass_steps?: number
+  denoising_strength?: number
   sampler_name: string
   scheduler: string
   width: number

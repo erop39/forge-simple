@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { GenerationParams, JobError } from '@shared/types'
 import Database from 'better-sqlite3'
 import { MIGRATIONS, openDb } from './db'
-import { createRepos, DuplicatePresetError, DuplicateServerError } from './repos'
+import { createRepos, DuplicatePresetError, DuplicateServerError, isGenerationParams } from './repos'
 
 const params = (over: Partial<GenerationParams> = {}): GenerationParams => ({
   family: 'sdxl', checkpoint: 'model.safetensors [abc]', modules: [], prompt: 'p', negativePrompt: 'n',
@@ -22,6 +22,14 @@ const setup = (t = 1000) => {
 const imageRow = (jobId: number) => ({
   jobId, filePath: `/i/${jobId}.png`, thumbPath: `/t/${jobId}.jpg`, width: 64, height: 64, seed: 1,
   infotext: 'info', durationMs: null,
+})
+
+test('saved jobs accept absent hires and reject malformed hires settings', () => {
+  expect(isGenerationParams(params())).toBe(true)
+  expect(isGenerationParams(params({ hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }))).toBe(true)
+  expect(isGenerationParams({ ...params(), hires: { scale: 3, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } })).toBe(false)
+  expect(isGenerationParams({ ...params(), hires: { scale: 2, upscaler: 'Latent', secondPassSteps: -1, denoisingStrength: 0.4 } })).toBe(false)
+  expect(isGenerationParams({ ...params(), hires: 'on' })).toBe(false)
 })
 
 test('nextQueued returns the oldest queued job of that server only', () => {

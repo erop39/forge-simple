@@ -214,6 +214,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         negativePrompt: draftNegative ?? defaults.negativePrompt,
         width: current?.width ?? defaults.width,
         height: current?.height ?? defaults.height,
+        hires: current?.hires ?? defaults.hires,
       }
       set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, draftNegative) })
       await refreshParts(params)
@@ -493,6 +494,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           return
         }
         const params = { ...before, ...patch }
+        if (params.hires && params.hires.scale > 1
+          && (params.width * params.hires.scale > 4096 || params.height * params.hires.scale > 4096)) {
+          params.hires = { ...params.hires, scale: 1 }
+        }
         set((s) => ({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, s.draftNegative) }))
         if (params.checkpoint !== before.checkpoint || !sameList(params.modules, before.modules)) {
           void refreshParts(params)

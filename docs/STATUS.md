@@ -6,9 +6,10 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 781 pass; typecheck and build clean (2026-10-15, after plan 2 Task 2).
+- Tests: 811 pass; typecheck and build clean (2026-10-15, after plan 3 Task 1).
 - Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
+- Plan 3 (generation and server tools): `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`. The user chose to pause plan 2 after Task 3's local commit and start plan 3 on 2026-10-15. Restart/Unload were already delivered as U4; plan 3 Task 1 (hires fix) is done, tested against mock Forge, and awaits a live-window check. No mutating request was sent to the user's Forge.
 - Startup prompt delay: fixed (committed with the servers work). The field now renders while the catalog loads and preserves early typing; see `docs/prompt-startup-fix.md` for cause, implementation, checks and the remaining catalog wait. A live-window check has not been done for this fix.
 - Image viewer: implemented ahead of plan 2 (another session, reviewed and committed here). Click or Enter opens the full image, with saved job settings and Copy prompt below it. X closes the dialog; icons and Left/Right keys navigate the gallery, loading older pages as needed. The header reserves space for native Windows caption buttons. Checkpoint changes retain the selected width and height. See `docs/image-viewer.md` for the file map, behavior, checks and open work.
 - Viewer verification on 2026-10-14: full suite (then 516 tests; 521 after the review fixes), typecheck and build passed before the mouse-click follow-up. A later physical-mouse check exposed that the arrows still sat in the top bar's draggable region; `.actions` now opts out with `-webkit-app-region: no-drag`. Physical Next and Previous clicks were reproduced failing before the CSS fix and confirmed working after it in an isolated Electron window against mock Forge. The selected 16:9 ratio also remained after a checkpoint switch in the earlier live run. Plan 2's remaining viewer actions and animation are still open.
@@ -32,6 +33,8 @@ taken, or something starts waiting on the user.
 | Plan 2 Task 3 Virtualized gallery, keyboard, crossfade | in progress |
 | Plan 2 Tasks 4–10, 12 | not started |
 | Plan 2 Task 11 Log panel | done earlier as U4 |
+| Plan 3 Task 1 Hires fix | done; payload, IPC, second-pass progress, panel and viewer covered by tests; live-window check pending |
+| Plan 3 Tasks 2–10 | not started |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -39,11 +42,11 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
 3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
-4. After plan 1: review the written plan 2 (gallery features), write plan 3 (server tools, upscale) from the spec, then execute them the same way.
+4. Continue plan 3 from Task 2 in its tracked plan; plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
 
 ## Waiting on the user
 
-- Next step the user decides: the real-Forge check below, then release 0.1.0. (Plan 2 approved 2026-10-15; the negative now survives server switches — U5.)
+- The user chose plan 3 next on 2026-10-15. The real-Forge check below and release 0.1.0 are deferred until the user returns to them; no real-server generation is authorized by this decision.
 - Leftover throwaway test profiles from viewer checks (mock data only) may sit in the system temp folder and in the ignored `out/viewer-click-profile`; safe to delete.
 - The user's real Forge now runs with `--api-server-stop` (restart from the app is enabled). After a failed checkpoint load (500 `AttributeError`) it returned 500 `TypeError` for every model until restarted; the app now unloads after a 500 and offers a restart.
 - Real-Forge check in Task 17: one generation per model family over VPN, cancel mid-generation, drop the VPN mid-queue. It also confirms that shift really travels in `distilled_cfg_scale` (look for "Shift" in the image's infotext).
@@ -87,4 +90,3 @@ Collected by reviewers and deferred; the final review triages them. The full lis
 - Gallery paging does not retry by itself after a failed page load while the sentinel stays in view.
 - vitest sometimes prints "Timeout terminating forks worker" on this machine; all tests pass. Investigate in the final review.
 - Server delete confirmation puts focus on the panel, not Keep. In the negative-preset Manage dialog, focus falls to the panel after an inline rename/keep/delete; the empty-state line in the preset menu is not announced; preset and server name limits are duplicated between main and renderer; the preset text-update IPC has no UI yet.
-- Switching servers resets the negative prompt to the family default (switching checkpoints keeps it) — ask the user if they want it kept.

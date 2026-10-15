@@ -125,6 +125,21 @@ test('enqueue two images → both done, two files on disk, log has start/finish 
   expect(JSON.stringify(app.oplog.list())).not.toContain('lighthouse')
 })
 
+test('hires fix sends second-pass settings and stores a larger result', async () => {
+  const mock = await mockForge()
+  const app = launch(mock.url)
+  app.runner.start()
+  const [created] = app.runner.enqueue(await app.params({
+    width: 64, height: 96,
+    hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 },
+  }))
+  expect(created).toBeDefined()
+  await vi.waitFor(() => expect(app.job(created!.id).status).toBe('done'), WAIT)
+  const request = mock.requests.find((r) => r.path === '/sdapi/v1/txt2img')
+  expect(request?.body).toMatchObject({ enable_hr: true, hr_scale: 2, hr_upscaler: 'Latent', hr_second_pass_steps: 12, denoising_strength: 0.4 })
+  expect(app.repos.images.list({ limit: 10 }).map((image) => [image.width, image.height])).toEqual([[128, 192]])
+})
+
 test('server goes down mid-queue → first job interrupted, second stays queued; after restart the second completes', async () => {
   const mock = await mockForge()
   const port = Number(new URL(mock.url).port)

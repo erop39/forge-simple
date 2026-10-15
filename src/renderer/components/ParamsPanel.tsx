@@ -1,6 +1,7 @@
 import { Shuffle, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
+import type { HiresSettings } from '@shared/types'
 import { baseName } from '../format'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
@@ -95,6 +96,76 @@ function Modules() {
             onChange={(filename) => setParams({ modules: [...modules, filename] })}
           />
         </div>
+      )}
+    </section>
+  )
+}
+
+function Hires() {
+  const params = useAppStore((s) => s.params)
+  const upscalers = useAppStore((s) => s.catalog?.upscalers ?? [])
+  const setParams = useAppStore((s) => s.setParams)
+  if (!params) return null
+  const hires: HiresSettings = params.hires ?? {
+    scale: 1, upscaler: upscalers[0] ?? 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
+  }
+  const change = (patch: Partial<HiresSettings>) => setParams({ hires: { ...hires, ...patch } })
+  const scales = ([
+    { scale: 1, label: t('params.hiresOff') },
+    { scale: 1.5, label: t('params.hires15') },
+    { scale: 2, label: t('params.hires2') },
+    { scale: 4, label: t('params.hires4') },
+  ] as const).filter(({ scale }) => params.width * scale <= 4096 && params.height * scale <= 4096)
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.heading}>{t('params.hires')}</h3>
+      <ParamRow label={t('params.hiresScale')}>
+        <Select
+          showLabel={false}
+          label={t('params.hiresScale')}
+          value={String(hires.scale)}
+          options={scales.map(({ scale, label }) => ({ value: String(scale), label }))}
+          onChange={(value) => change({ scale: Number(value) as HiresSettings['scale'] })}
+        />
+      </ParamRow>
+      {hires.scale > 1 && (
+        <>
+          <p className={`mono ${styles.hiresTarget}`}>
+            {t('params.hiresTarget', {
+              width: params.width, height: params.height,
+              targetWidth: Math.round(params.width * hires.scale),
+              targetHeight: Math.round(params.height * hires.scale),
+            })}
+          </p>
+          <ParamRow label={t('params.hiresUpscaler')}>
+            <Select
+              showLabel={false}
+              label={t('params.hiresUpscaler')}
+              value={hires.upscaler}
+              options={options(upscalers.length ? upscalers : [hires.upscaler])}
+              onChange={(upscaler) => change({ upscaler })}
+            />
+          </ParamRow>
+          <ParamRow label={t('params.hiresSteps')}>
+            <NumberField
+              label={t('params.hiresSteps')}
+              value={hires.secondPassSteps}
+              min={1}
+              max={150}
+              onCommit={(secondPassSteps) => change({ secondPassSteps })}
+            />
+          </ParamRow>
+          <ParamRow label={t('params.hiresDenoising')}>
+            <Slider
+              label={t('params.hiresDenoising')}
+              value={hires.denoisingStrength}
+              min={0}
+              max={1}
+              step={0.05}
+              onCommit={(denoisingStrength) => change({ denoisingStrength })}
+            />
+          </ParamRow>
+        </>
       )}
     </section>
   )
@@ -203,6 +274,7 @@ function Body() {
           />
         </ParamRow>
       </section>
+      <Hires />
       <Modules />
     </>
   )

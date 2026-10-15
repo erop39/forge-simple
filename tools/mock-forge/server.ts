@@ -50,10 +50,10 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /** A solid-colour RGB PNG, base64-encoded. */
-function solidPng(size: number, [r, g, b]: [number, number, number]): string {
+function solidPng(size: number, [r, g, b]: [number, number, number], height = size): string {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(size, 0)
-  header.writeUInt32BE(size, 4)
+  header.writeUInt32BE(height, 4)
   header[8] = 8 // bit depth
   header[9] = 2 // colour type: RGB
   const row = Buffer.alloc(1 + size * 3)
@@ -62,7 +62,7 @@ function solidPng(size: number, [r, g, b]: [number, number, number]): string {
     row[2 + x * 3] = g
     row[3 + x * 3] = b
   }
-  const raw = Buffer.concat(Array.from({ length: size }, () => row))
+  const raw = Buffer.concat(Array.from({ length: height }, () => row))
   const png = Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', header),
@@ -208,6 +208,8 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
   interface Generation {
     step: number
     steps: number
+    jobNo: number
+    jobCount: number
     interrupted: boolean
     wake: AbortController
   }
@@ -232,13 +234,25 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
     const params = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
     const steps = Math.max(1, Math.floor(Number(params.steps ?? 20)))
     const seed = Number(params.seed ?? -1) >= 0 ? Number(params.seed) : 123456789
-    const gen: Generation = { step: 0, steps, interrupted: false, wake: new AbortController() }
+    const scale = params.enable_hr === true && typeof params.hr_scale === 'number' ? params.hr_scale : 1
+    const secondPassSteps = scale > 1 ? Math.max(1, Math.floor(Number(params.hr_second_pass_steps ?? 12))) : 0
+    const gen: Generation = { step: 0, steps, jobNo: 0, jobCount: secondPassSteps > 0 ? 2 : 1, interrupted: false, wake: new AbortController() }
     current = gen
     const stop = AbortSignal.any([gen.wake.signal, life.signal])
     for (let i = 1; i <= steps; i++) {
       await sleep(stepMs, stop)
       if (gen.interrupted || life.signal.aborted) break
       gen.step = i
+    }
+    if (secondPassSteps > 0 && !gen.interrupted && !life.signal.aborted) {
+      gen.jobNo = 1
+      gen.step = 0
+      gen.steps = secondPassSteps
+      for (let i = 1; i <= secondPassSteps; i++) {
+        await sleep(stepMs, stop)
+        if (gen.interrupted || life.signal.aborted) break
+        gen.step = i
+      }
     }
     current = null
     const prompt = String(params.prompt ?? '')
@@ -249,7 +263,11 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
       steps,
       infotexts: [`${prompt}\nSteps: ${steps}, Seed: ${seed}`],
     })
-    return { images: [solidPng(64, [90, 140, 200])], info }
+    const width = scale > 1 && typeof params.width === 'number'
+      ? Math.max(1, Math.min(4096, Math.round(params.width * scale))) : 64
+    const height = scale > 1 && typeof params.height === 'number'
+      ? Math.max(1, Math.min(4096, Math.round(params.height * scale))) : 64
+    return { images: [solidPng(width, [90, 140, 200], height)], info }
   }
 
   function enqueue(body: unknown): Promise<{ images: string[]; info: string }> {
@@ -271,7 +289,7 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
     return {
       progress: gen.step / gen.steps,
       eta_relative: ((gen.steps - gen.step) * stepMs) / 1000,
-      state: { sampling_step: gen.step, sampling_steps: gen.steps, job_no: 0, job_count: 1 },
+      state: { sampling_step: gen.step, sampling_steps: gen.steps, job_no: gen.jobNo, job_count: gen.jobCount },
       current_image: skipImage ? null : solidPng(8, [40 + ((gen.step * 7) % 200), 120, 160]),
     }
   }

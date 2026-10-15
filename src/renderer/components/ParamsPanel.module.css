@@ -76,6 +76,12 @@
   font-weight: 500;
 }
 
+.hiresTarget {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
 .seed {
   width: 96px;
   height: var(--h-control);

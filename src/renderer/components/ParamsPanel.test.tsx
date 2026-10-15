@@ -121,6 +121,25 @@ test('size accepts multiples of 8 from 64 to 4096 only', async () => {
   expect(store.getState().params?.width).toBe(1024)
 })
 
+test('hires scale reveals second-pass controls and target size', async () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
+  expect(screen.queryByRole('slider', { name: en['params.hiresDenoising'] })).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['params.hiresScale']) }))
+  await userEvent.click(await screen.findByRole('menuitemradio', { name: '2×' }))
+  expect(store.getState().params?.hires?.scale).toBe(2)
+  expect(screen.getByText('896×1152 → 1792×2304')).toBeDefined()
+  expect(screen.getByRole('slider', { name: en['params.hiresDenoising'] })).toBeDefined()
+})
+
+test('hires turns off when a size change would exceed its target limit', () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
+  store.getState().setParams({ width: 512, height: 512 })
+  store.getState().setParams({ hires: { scale: 4, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } })
+  expect(store.getState().params?.hires?.scale).toBe(4)
+  store.getState().setParams({ height: 1152 })
+  expect(store.getState().params?.hires?.scale).toBe(1) // 1152 × 4 exceeds 4096
+})
+
 test('Escape closes the panel and returns focus to the All parameters button', async () => {
   const { store } = renderWithStore(
     <>

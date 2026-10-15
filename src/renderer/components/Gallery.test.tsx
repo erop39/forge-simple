@@ -210,6 +210,21 @@ test('clicking an image opens the full file, saved settings and Copy prompt; Esc
   expect(document.activeElement).toBe(trigger)
 })
 
+test('viewer shows the saved hires settings for a finished image', async () => {
+  vi.stubGlobal('api', {
+    images: { details: vi.fn(async () => ({
+      image: image(7),
+      params: { ...params, hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } },
+      jobType: 'txt2img',
+    })) },
+  })
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)] })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await waitFor(() => expect(screen.getByText(en['params.hires']).nextElementSibling?.textContent).toBe(en['params.hires2']))
+  expect(screen.getByText(en['params.hiresUpscaler']).nextElementSibling?.textContent).toBe('Latent')
+  expect(screen.getByText(en['params.hiresSteps']).nextElementSibling?.textContent).toBe('12')
+})
+
 test('a copy that settles after moving to another image does not mark that image as copied', async () => {
   let finish!: () => void
   const copy = vi.fn(() => new Promise<void>((r) => { finish = r }))

@@ -61,6 +61,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const current = details?.image.id === image.id ? details : null
   const params = current?.params
   const profile = params ? PROFILES[params.family] : null
+  const hires = params?.hires?.scale && params.hires.scale > 1 ? params.hires : null
   const metadata = params ? [
     [t('params.model'), baseName(params.checkpoint)],
     [t('params.scheduler'), params.scheduler],
@@ -72,6 +73,12 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     ...(profile?.distilledCfg ? [[t('params.distilledCfg'), String(params.distilledCfg)]] : []),
     ...(profile?.shift && params.shift !== null ? [[t('params.shift'), String(params.shift)]] : []),
     ...(profile?.clipSkip && params.clipSkip !== null ? [[t('params.clipSkip'), String(params.clipSkip)]] : []),
+    ...(hires ? [
+      [t('params.hires'), hires.scale === 1.5 ? t('params.hires15') : hires.scale === 2 ? t('params.hires2') : t('params.hires4')],
+      [t('params.hiresUpscaler'), hires.upscaler],
+      [t('params.hiresSteps'), String(hires.secondPassSteps)],
+      [t('params.hiresDenoising'), String(hires.denoisingStrength)],
+    ] : []),
     ...(image.durationMs === null ? [] : [[t('viewer.time'), t('viewer.seconds', { n: Math.round(image.durationMs / 1000) })]]),
     [t('viewer.created'), fullTime(image.createdAt)],
     ...(params.loras.filter((lora) => lora.enabled).length > 0

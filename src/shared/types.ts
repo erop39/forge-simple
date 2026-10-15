@@ -2,6 +2,12 @@ export type Family = 'sdxl' | 'zimage' | 'qwen' | 'lumina' | 'krea2' | 'anima';
 export type JobType = 'txt2img' | 'img2img' | 'upscale';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'interrupted' | 'cancelled';
 export interface LoraRef { name: string; weight: number; enabled: boolean }
+export interface HiresSettings {
+  scale: 1 | 1.5 | 2 | 4;
+  upscaler: string;
+  secondPassSteps: number;
+  denoisingStrength: number;
+}
 export interface GenerationParams {
   family: Family;
   checkpoint: string;          // поле title из /sd-models
@@ -18,6 +24,8 @@ export interface GenerationParams {
   seed: number;                // -1 = случайный
   count: number;               // сколько задач создать, 1..8
   loras: LoraRef[];
+  /** Optional so jobs saved before hires fix remain valid. Scale 1 means Off. */
+  hires?: HiresSettings;
 }
 export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'unexpected';
 /** detail carries server or system text verbatim; missing carries the unavailable file values. */

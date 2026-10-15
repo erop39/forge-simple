@@ -101,7 +101,7 @@ function pick(preferred: string, available: string[]): string {
 export function defaultParams(
   family: Family,
   checkpoint: string,
-  available: { samplers: string[]; schedulers: string[] },
+  available: { samplers: string[]; schedulers: string[]; upscalers?: string[] },
   modules?: string[],
 ): GenerationParams {
   const d = PROFILES[family].defaults
@@ -123,5 +123,6 @@ export function defaultParams(
     seed: -1,
     count: 1,
     loras: [],
+    hires: { scale: 1, upscaler: pick('Latent', available.upscalers ?? []), secondPassSteps: 12, denoisingStrength: 0.4 },
   }
 }

@@ -18,7 +18,7 @@ import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, normalizeTag, type createRepos, type ImageRow,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, normalizeTag, type createRepos, type ImageRow,
   type Server,
 } from '../storage/repos'
 
@@ -135,12 +135,15 @@ function validateEnqueue(p: unknown): GenerationParams {
   const shift = isOptionalNumber(o.shift)
   const clipSkip = isOptionalNumber(o.clipSkip)
   const loras = o.loras
+  const hires = o.hires
+  const validHires = hires === undefined || isHiresSettings(hires, o.width, o.height)
   if (!Object.hasOwn(PROFILES, o.family)
     || !isNonEmptyString(o.prompt) || o.prompt.length > MAX_TEXT || o.negativePrompt.length > MAX_TEXT
     || !isNonEmptyString(o.checkpoint) || !isNonEmptyString(o.sampler) || !isNonEmptyString(o.scheduler)
     || !isInt(o.count, 1, 8) || !isInt(o.width, 64, 4096) || !isInt(o.height, 64, 4096) || !isInt(o.steps, 1, 200)
     || !isInt(o.seed, -1, MAX_ID) || !isNumberIn(o.cfgScale, 0, 30) || !isNumberIn(o.distilledCfg, 0, 30)
     || shift === undefined || clipSkip === undefined
+    || !validHires
     || o.modules.length > 8 || !o.modules.every((m) => typeof m === 'string')
     || loras.length > 16
     || !loras.every((l) => typeof l === 'object' && l !== null && isNonEmptyString(l.name)
@@ -152,6 +155,10 @@ function validateEnqueue(p: unknown): GenerationParams {
     width: o.width, height: o.height, steps: o.steps, cfgScale: o.cfgScale, distilledCfg: o.distilledCfg,
     shift, clipSkip, sampler: o.sampler, scheduler: o.scheduler, seed: o.seed, count: o.count,
     loras: loras.map((l) => ({ name: l.name, weight: l.weight, enabled: l.enabled })),
+    ...(hires ? { hires: {
+      scale: hires.scale, upscaler: hires.upscaler, secondPassSteps: hires.secondPassSteps,
+      denoisingStrength: hires.denoisingStrength,
+    } } : {}),
   }
 }
 
@@ -463,7 +470,7 @@ export function registerIpc(
     if (typeof title !== 'string') return fail('error.invalidParams')
     const catalog = await loadCatalog()
     const ckpt = catalog.checkpoints.find((c) => c.title === title) ?? fail('error.notFound')
-    return defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers },
+    return defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers, upscalers: catalog.upscalers },
       catalog.familyModules[ckpt.family] ?? [])
   })
 

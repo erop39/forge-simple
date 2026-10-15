@@ -91,6 +91,14 @@ test('seed -1 and explicit seed are passed as is', () => {
   expect(buildTxt2ImgBody({ ...base, seed: 12345 }, F).seed).toBe(12345)
 })
 
+test('hires fix adds Forge second-pass fields only when enabled', () => {
+  const off = buildTxt2ImgBody({ ...base, hires: { scale: 1, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }, F)
+  expect(off).not.toHaveProperty('enable_hr')
+  const on = buildTxt2ImgBody({ ...base, hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }, F)
+  expect(on).toMatchObject({ enable_hr: true, hr_scale: 2, hr_upscaler: 'Latent', hr_second_pass_steps: 12, denoising_strength: 0.4 })
+  expect(buildTxt2ImgBody(base, F)).not.toHaveProperty('enable_hr') // older saved jobs have no hires settings
+})
+
 test('the input params are not mutated', () => {
   const p: GenerationParams = {
     ...base, prompt: 'a cat', modules: ['m'], loras: [{ name: 'film', weight: 0.8, enabled: true }],
