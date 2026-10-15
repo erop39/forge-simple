@@ -34,10 +34,25 @@ Forge's HTTP API. One user, no login.
 ## Install
 
 ```
+git clone https://github.com/erop39/forge-simple.git forge-neo-client
+cd forge-neo-client
+git checkout feature/core
 pnpm install
 ```
 
-The `postinstall` step rebuilds `better-sqlite3` for Electron's ABI.
+Development happens on `feature/core`; `main` holds the spec and plans. The `postinstall` step
+rebuilds `better-sqlite3` for Electron's ABI. Keep the checkout outside cloud-synced folders
+(OneDrive, Dropbox): `node_modules` and the build output are large and change constantly.
+
+## Start
+
+- `pnpm dev` - development mode with hot reload.
+- Windows without a terminal: `scripts\start-windows.cmd` builds the current code and opens the app
+  (make a desktop shortcut to it). It does not need `pnpm` on the PATH, only a completed `pnpm install`.
+
+On first start, open the server dialog (the connection chip, top left) and add your Forge address,
+for example `http://100.x.y.z:7860`. Servers, images and the log live in this PC's user data folder
+(see Where data lives); they are not part of the repository and do not move between PCs.
 
 ## Commands
 
@@ -94,12 +109,12 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 ## Known limitations
 
-Version 0.1.0 is the core: connect, generate, queue, gallery. Not in it yet (planned for later versions):
+Not in the app yet (planned, see `docs/superpowers/plans/` and `docs/STATUS.md`):
 
 - img2img, hires fix and upscaling of a finished image.
 - LoRA selection in the interface (the request builder supports LoRAs, the screens do not).
-- Tags, search, "Reuse settings" and "Save as" for an image.
-- Presets.
+- Tags, search, hidden images, "Reuse settings" and "Save as" for an image.
+- Settings presets (negative-prompt presets exist).
 - A checkpoint gallery with previews.
-- A server status panel (VRAM, resources).
-- Export and import.
+- A server status panel (VRAM, CPU, GPU).
+- Export and import of presets and servers.

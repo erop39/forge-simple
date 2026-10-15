@@ -5,13 +5,14 @@ taken, or something starts waiting on the user.
 
 ## Where things stand
 
-- Branch `feature/core` (local only, never pushed). `main` holds only the spec and plan docs.
+- Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
+- Tests: 661 pass (45 files); typecheck and build clean (2026-10-15).
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Startup prompt delay: fixed (committed with the servers work). The field now renders while the catalog loads and preserves early typing; see `docs/prompt-startup-fix.md` for cause, implementation, checks and the remaining catalog wait. A live-window check has not been done for this fix.
 - Image viewer: implemented ahead of plan 2 (another session, reviewed and committed here). Click or Enter opens the full image, with saved job settings and Copy prompt below it. X closes the dialog; icons and Left/Right keys navigate the gallery, loading older pages as needed. The header reserves space for native Windows caption buttons. Checkpoint changes retain the selected width and height. See `docs/image-viewer.md` for the file map, behavior, checks and open work.
 - Viewer verification on 2026-10-14: full suite (then 516 tests; 521 after the review fixes), typecheck and build passed before the mouse-click follow-up. A later physical-mouse check exposed that the arrows still sat in the top bar's draggable region; `.actions` now opts out with `-webkit-app-region: no-drag`. Physical Next and Previous clicks were reproduced failing before the CSS fix and confirmed working after it in an isolated Electron window against mock Forge. The selected 16:9 ratio also remained after a checkpoint switch in the earlier live run. Plan 2's remaining viewer actions and animation are still open.
 - Review of that code: `docs/code-review-2026-10-14.md` — one server-switch gate, two async races and a PromptBar duplication. All four are fixed with tests (see its Resolution section).
-- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done, reviewed and checked live with two mock servers; U3 (negative-prompt presets) done, reviewed and checked live.
+- Plan 2 (gallery and library) is written in `docs/superpowers/plans/2026-10-14-plan-2-gallery.md`; the requested image-viewer slice was implemented ahead of its scheduled task. Other plan 2 features remain planned; the plan waits for the user's review before execution. Tasks outside the plans, from user requests: U1 (prompt bar fit, sliders, scrollable grouped menus) done; U2 (saved servers) done, reviewed and checked live with two mock servers; U3 (negative-prompt presets) done, reviewed and checked live; U4 (Forge 500 recovery, Restart Forge / Unload model, operation-log panel = plan 2 Task 11, generation timestamps, mouse-wheel stepping) done and reviewed (one fix round), checked live on the mock only.
 
 | Task | State |
 |---|---|
@@ -23,23 +24,24 @@ taken, or something starts waiting on the user.
 | U1 Prompt bar fit, sliders, grouped scrollable menus | done, reviewed |
 | U2 Saved servers list | done, reviewed, checked live |
 | U3 Negative-prompt presets | done, reviewed, checked live |
+| U4 500 recovery, Restart/Unload Forge, log panel, timestamps, wheel stepping | done, reviewed; live check on the mock only |
 | Final whole-branch review | not started |
 
 ## How to resume
 
 1. Read `CLAUDE.md`, then this file.
-2. If `.superpowers/sdd/2026-10-13-plan-1-core/progress.md` exists, it is the detailed ledger (task briefs, review reports, every fix round). Resume at the first task without a `complete` line.
-3. Without the ledger: use `git log` and the table above; regenerate a task brief with the subagent-driven-development `task-brief` script from the plan file.
+2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
+3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
 4. After plan 1: review the written plan 2 (gallery features), write plan 3 (server tools, upscale) from the spec, then execute them the same way.
 
 ## Waiting on the user
 
-- The mock-only temporary profiles used for viewer checks could not be deleted: automatic command review blocked cleanup. All test processes are stopped. The first profile is under the user's system temp directory; the physical-click check's profile is under the ignored `out/viewer-click-profile` directory.
+- Next steps the user decides: (1) the real-Forge check below, then release 0.1.0; (2) review and approve plan 2 before it is executed; (3) whether switching servers should keep the negative prompt (now it resets to the family default).
+- Leftover throwaway test profiles from viewer checks (mock data only) may sit in the system temp folder and in the ignored `out/viewer-click-profile`; safe to delete.
+- The user's real Forge now runs with `--api-server-stop` (restart from the app is enabled). After a failed checkpoint load (500 `AttributeError`) it returned 500 `TypeError` for every model until restarted; the app now unloads after a 500 and offers a restart.
 - Real-Forge check in Task 17: one generation per model family over VPN, cancel mid-generation, drop the VPN mid-queue. It also confirms that shift really travels in `distilled_cfg_scale` (look for "Shift" in the image's infotext).
 - Rest of the Task 17 manual walkthrough (on the mock or during the real-Forge session): cancel a waiting job, delete with Undo, images still there after restart, Tab order with visible focus, 1100×700 window, "Slow" state, animations, failed and interrupted tiles, native caption buttons. Already seen on 2026-10-14: connect, model pick, Ctrl+Enter with Images 2, live preview and progress, queued tile, finished tiles. The walkthrough stopped when someone at the desktop took over the test window and pointed it at the real Forge.
-- That test window ran from a throwaway profile in the controller's temp scratchpad (it now holds real model names and images); close it and delete that profile when the user is done with it.
 - Small UI issues seen in that window (Ctrl+Enter in the Negative field and the running-tile caption wrapping) were fixed after the walkthrough; they still need a live-window recheck.
-- Before anything is pushed: commit `d84ab06` on this branch contains the user's real model names and paths (HEAD is clean). Offer to squash or rewrite the branch so they never leave the machine.
 
 ## Decisions taken during plan 1
 
@@ -59,6 +61,13 @@ Each was taken where the plan was silent or wrong; the user can reverse any of t
 - From the probe: modules are sent as full paths; shift is sent in `distilled_cfg_scale` (inferred from Forge's option names, not yet observed — verify); default modules per family come from Forge's own per-preset settings; the LoRA list gets a 60 s timeout and its failure no longer fails the model list; a checkpoint's family is detected from its title including folders (base name first).
 - The user's real paths and model names are never committed.
 - Process: the no-literals guard uses an AST parser (`@babel/parser`); small independent tasks were sometimes implemented and reviewed in pairs (8+9, 10+11).
+- vitest runs with `globals: true`; work happens on `feature/core` in the main checkout (no separate worktree).
+- After a generation fails with HTTP 500 the runner unloads the checkpoint (15 s timeout) before the next job; two 500s in a row raise an "unhealthy" notice. The app never restarts Forge by itself — only after the user confirms.
+- Forge's error text for a failed job is kept on the job row and shown on the tile and in the log panel's job box; it is never copied into the operation log. Exported log files record only their file name.
+- Model menu groups use `CheckpointInfo.family` (so later manual overrides apply), sorted by family then name.
+- Extra Distilled CFG and Shift also became sliders (the user asked for Steps and CFG); Steps slider range 1..150.
+- Saved servers are soft-deleted (`removed_at`) so finished jobs and images keep their server; deleting removes only queued jobs.
+- Pulled forward from later plans at the user's request: image viewer, log panel (plan 2 Task 11), Restart Forge / Unload model (plan 3).
 
 ## Known minor follow-ups (not blocking)
 

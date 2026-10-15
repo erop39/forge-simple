@@ -7,10 +7,17 @@ Forge Neo on a home PC and connects from a laptop over VPN (Tailscale/WireGuard)
 taken so far and what is waiting on the user. Talk to the user in Russian; code, comments, commits,
 UI strings, README and CHANGELOG are English.
 
+## Repository and machines
+
+- Remote: `https://github.com/erop39/forge-simple` (**public**). Work branch `feature/core`; `main` holds the spec and plans. Pull before starting, push when a task is done.
+- **Before every push, scan everything being pushed for private data** — the user's Forge address and any LAN IPs, Windows user paths, real model/VAE/LoRA file names, emails, tokens and keys (`gh?_`, `sk-`, `AKIA`, `BEGIN … PRIVATE KEY`, passwords, `.env`), databases, images, `tools/probe/probe-report.json`. If anything is found, stop and tell the user. Docs and tests use fictional names (`exampleMix_v10`, `http://100.x.y.z:7860`).
+- The detailed task ledger (`.superpowers/sdd/…/progress.md`, briefs, review reports) is git-ignored and exists only on the PC where it was written. Everything another PC needs must be in `docs/STATUS.md`.
+- New PC: clone, `git checkout feature/core`, `pnpm install` (it rebuilds better-sqlite3). If `pnpm` is broken on the PATH, `scripts/start-windows.cmd` starts the app without it. Keep the checkout outside OneDrive.
+
 ## Documents
 
 - Spec (approved, the binding authority): `docs/superpowers/specs/2026-10-13-forge-neo-client-design.md`
-- Plans: `docs/superpowers/plans/` — plan 1 (core) is being executed; plan 2 (gallery features) is written and its requested image-viewer slice has been implemented ahead of schedule; plan 3 (server tools, upscale) is not written yet.
+- Plans: `docs/superpowers/plans/` — plan 1 (core) is done except its release step; plan 2 (gallery features) is written and waits for the user's review (its viewer slice and Task 11, the log panel, are already done); plan 3 (server tools, upscale) is not written yet (restart/unload from it are already done).
 - Real-server facts from the probe: `docs/forge-api-notes.md`
 - Status, decisions, open items: `docs/STATUS.md`
 - Startup prompt delay and implementation handoff: `docs/prompt-startup-fix.md`
