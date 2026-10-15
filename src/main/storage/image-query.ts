@@ -18,14 +18,16 @@ export function buildImageQuery(q: ImageQuery, revealHidden: boolean): { sql: st
   }
   if (text) {
     const like = `%${escapeLike(text)}%`
-    where.push(`(json_extract(jobs.params, '$.prompt') LIKE ? ESCAPE '\\'
-      OR json_extract(jobs.params, '$.checkpoint') LIKE ? ESCAPE '\\'
-      OR EXISTS (SELECT 1 FROM json_each(jobs.params, '$.loras') WHERE json_extract(value, '$.name') LIKE ? ESCAPE '\\'))`)
+    // ulower (registered in db.ts) folds case beyond ASCII, which LIKE alone does not.
+    where.push(`(ulower(json_extract(jobs.params, '$.prompt')) LIKE ulower(?) ESCAPE '\\'
+      OR ulower(json_extract(jobs.params, '$.checkpoint')) LIKE ulower(?) ESCAPE '\\'
+      OR EXISTS (SELECT 1 FROM json_each(jobs.params, '$.loras')
+        WHERE ulower(json_extract(value, '$.name')) LIKE ulower(?) ESCAPE '\\'))`)
     args.push(like, like, like)
   }
   for (const tag of tags) {
     where.push(`EXISTS (SELECT 1 FROM image_tags it JOIN tags t ON t.id = it.tag_id
-      WHERE it.image_id = images.id AND t.name = ?)`)
+      WHERE it.image_id = images.id AND ulower(t.name) = ulower(?))`)
     args.push(tag)
   }
   if ((text || tags.length > 0) && !revealHidden) where.push('images.hidden = 0')

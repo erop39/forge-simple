@@ -97,3 +97,42 @@ test('LIKE wildcards in text are literal: "50%" does not match everything', () =
   expect(ids({ limit: 10, text: 'a_b' })).toEqual([c])
   expect(ids({ limit: 10, text: '\\' })).toEqual([d])
 })
+
+test('Cyrillic tags differing only in case are one tag, and a tag filter matches it in any case', () => {
+  const { repos, add, ids } = setup()
+  const a = add()
+  const b = add()
+  repos.tags.add([a], ['Кот'])
+  repos.tags.add([b], ['кот'])
+  expect(repos.tags.forImages([a, b])).toEqual(new Map([[a, ['Кот']], [b, ['Кот']]]))
+  expect(ids({ limit: 10, tags: ['КОТ'] })).toEqual([b, a])
+  repos.tags.remove([a, b], ['кОт'])
+  expect(repos.tags.forImages([a, b]).size).toBe(0)
+})
+
+test('text search folds Cyrillic case: "ЗАКАТ" finds the prompt "закат"', () => {
+  const { add, ids } = setup()
+  const a = add({ prompt: 'красный закат' })
+  const b = add({ loras: [{ name: 'Закат_стиль', weight: 1, enabled: true }] })
+  add({ prompt: 'рассвет' })
+  expect(ids({ limit: 10, text: 'ЗАКАТ' })).toEqual([b, a])
+})
+
+test('tag suggestions fold Cyrillic case and ignore spaces around the prefix', () => {
+  const { repos, add } = setup()
+  repos.tags.add([add()], ['Кот'])
+  expect(repos.tags.suggest('  кО ', 10, { revealHidden: false })).toEqual(['Кот'])
+})
+
+test('beforeId combines with tags and with hidden filtering', () => {
+  const { repos, add, ids } = setup()
+  const all = Array.from({ length: 6 }, () => add())
+  repos.tags.add(all, ['t'])
+  repos.images.setHidden([all[3]!], true)
+  const [, , , , e, f] = all
+  // Newest first: f, e, (d hidden), c, b, a. A cursor at e continues with c.
+  expect(ids({ limit: 2, tags: ['t'] })).toEqual([f, e])
+  expect(ids({ limit: 2, tags: ['t'], beforeId: e! })).toEqual([all[2], all[1]])
+  expect(ids({ limit: 2, tags: ['t'], beforeId: e! }, true)).toEqual([all[3], all[2]])
+  expect(ids({ limit: 10, beforeId: all[4]! })).toEqual([all[3], all[2], all[1], all[0]])
+})

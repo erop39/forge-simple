@@ -1,5 +1,6 @@
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageRecord, Job, JobProgress, NegativePreset, PartStatus,
+  Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ServerInfo,
 } from './types'
 
@@ -9,7 +10,7 @@ import type {
  */
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
-  'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken',
+  'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -51,6 +52,10 @@ export interface AppEvents {
   'forge:health': ForgeHealth
   /** A new operation-log entry. */
   'oplog:added': OplogEntry
+  /** The lock opened or closed, or its password was set: what the gallery may show changed. */
+  'lock': LockState
+  /** These images were hidden or unhidden. */
+  'images:changed': { ids: number[] }
 }
 
 export interface Api {
@@ -92,10 +97,34 @@ export interface Api {
     /** Any stored job (e.g. to show why a logged job failed); error.notFound when it is gone. */
     get(id: number): Promise<Job>
   }
+  /**
+   * While the lock is closed a hidden image comes back as a `locked` record (no addresses, infotext, seed or
+   * tags), text and tag queries leave hidden images out, and `details` refuses one with error.notFound.
+   */
   images: {
+    /** The newest images: a `query` without text or tags. */
     list(opts: { limit: number; beforeId?: number }): Promise<ImageRecord[]>
+    /** One page, newest first; `limit` is clamped to 1..200. */
+    query(q: ImageQuery): Promise<ImageRecord[]>
     details(id: number): Promise<ImageDetails>
     delete(id: number): Promise<void>
+    /**
+     * Hiding is refused with error.noPassword until a password is set; unhiding with error.notFound while the
+     * lock is closed. Pushes 'images:changed'.
+     */
+    setHidden(ids: number[], hidden: boolean): Promise<void>
+  }
+  /** The session lock over hidden images; closed at every start. Each change pushes 'lock'. */
+  lock: {
+    state(): Promise<LockState>
+    /** A wrong password is refused with error.wrongPassword. */
+    open(password: string): Promise<void>
+    close(): Promise<void>
+    /**
+     * At least 4 characters (else error.invalidParams). Once a password is set, changing it needs the old one
+     * (error.wrongPassword otherwise).
+     */
+    setPassword(oldPassword: string | null, next: string): Promise<void>
   }
   clipboard: { writeText(text: string): Promise<void> }
   connection: { get(): Promise<ConnectionStatus> }
@@ -133,7 +162,8 @@ export const CHANNELS = [
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:get',
-  'images:list', 'images:details', 'images:delete', 'clipboard:writeText',
+  'images:list', 'images:query', 'images:details', 'images:delete', 'images:setHidden', 'clipboard:writeText',
+  'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',
   'connection:get',
   'forge:capabilities', 'forge:health', 'forge:restart', 'forge:unload',
   'oplog:list', 'oplog:export', 'oplog:retention', 'oplog:setRetention',
@@ -142,7 +172,7 @@ export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'servers',
-  'forge:capabilities', 'forge:health', 'oplog:added',
+  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

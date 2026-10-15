@@ -3,6 +3,7 @@ import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { IconButton } from './ui/IconButton'
 import { ConnectionChip } from './ConnectionChip'
+import { LockButton } from './LockButton'
 import { LOG_TOGGLE_ID } from './LogPanel'
 import styles from './TopBar.module.css'
 
@@ -20,13 +21,14 @@ export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
         onClick={onOpenServer}
         className={styles.noDrag}
       />
+      <LockButton className={`${styles.noDrag} ${styles.end}`} />
       <IconButton
         id={LOG_TOGGLE_ID}
         label={t('topbar.log')}
         icon={<Scroll size={20} />}
         aria-expanded={logOpen}
         onClick={toggleLog}
-        className={`${styles.noDrag} ${styles.end}`}
+        className={styles.noDrag}
       />
       <IconButton
         label={t('topbar.settings')}

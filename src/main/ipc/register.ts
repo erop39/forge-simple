@@ -4,12 +4,13 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type ConnectionStatus, type ForgeCapabilities, type GenerationParams, type ImageRecord,
+  type Catalog, type ConnectionStatus, type ForgeCapabilities, type GenerationParams, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
+import { LockError, type Lock } from '../lock/lock'
 import {
   isRetentionDays, retentionDays, RETENTION_KEY, toJsonLines, type Oplog, type OplogFilter,
 } from '../oplog/oplog'
@@ -17,7 +18,8 @@ import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, type createRepos, type ImageRow, type Server,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, normalizeTag, type createRepos, type ImageRow,
+  type Server,
 } from '../storage/repos'
 
 export interface IpcDeps {
@@ -42,6 +44,8 @@ export interface IpcDeps {
   capabilities: { current(): ForgeCapabilities; refresh(): Promise<ForgeCapabilities>; reset(): void }
   /** Forge on this PC; defaults to LOCAL_FORGE_URL, injectable for tests and manual checks. */
   localUrl?: string
+  /** The session lock over hidden images (see lock/lock.ts). */
+  lock: Lock
 }
 
 /** Forge Neo's default address on the same PC. */
@@ -51,7 +55,11 @@ const LOCAL_PING_TIMEOUT_MS = 1500
 
 type Send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]) => void
 
-const MAX_IMAGE_PAGE = 500
+const MAX_IMAGE_PAGE = 200
+const MAX_QUERY_TEXT = 500
+const MAX_QUERY_TAGS = 20
+/** Images one hide or unhide may name. */
+const MAX_IMAGE_BATCH = 1000
 const MAX_LOG_PAGE = 5000
 const MAX_ID = Number.MAX_SAFE_INTEGER
 
@@ -176,10 +184,44 @@ function validateLogQuery(q: unknown): OplogFilter {
 const localDay = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-export function toImageRecord(row: ImageRow, imagesDir: string): ImageRecord {
+/**
+ * Checks a gallery query from the renderer: the page size is clamped to 1..200, the cursor is a positive id,
+ * the text is trimmed (at most 500 characters; empty means none) and tags are normalised as stored
+ * (at most 20, each 1..40 characters after trimming and collapsing spaces).
+ */
+export function validateImageQuery(q: unknown): ImageQuery {
+  if (typeof q !== 'object' || q === null) return fail('error.invalidParams')
+  const { limit, beforeId, text, tags } = q as Record<string, unknown>
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) return fail('error.invalidParams')
+  const out: ImageQuery = { limit: Math.min(MAX_IMAGE_PAGE, Math.max(1, Math.trunc(limit))) }
+  if (beforeId !== undefined) out.beforeId = isInt(beforeId, 1, MAX_ID) ? beforeId : fail('error.invalidParams')
+  if (text !== undefined) {
+    if (typeof text !== 'string') return fail('error.invalidParams')
+    const trimmed = text.trim()
+    if (trimmed.length > MAX_QUERY_TEXT) return fail('error.invalidParams')
+    if (trimmed !== '') out.text = trimmed
+  }
+  if (tags !== undefined) {
+    if (!Array.isArray(tags) || tags.length > MAX_QUERY_TAGS) return fail('error.invalidParams')
+    const clean = tags.map((tag: unknown) => (typeof tag === 'string' ? normalizeTag(tag) : null) ?? fail('error.invalidParams'))
+    if (clean.length > 0) out.tags = clean
+  }
+  return out
+}
+
+/**
+ * The renderer's copy of an image row. A `locked` row (a hidden image while the lock is closed) keeps only what
+ * its tile needs for its place in the grid: no addresses, infotext, seed or tags.
+ */
+export function toImageRecord(
+  row: ImageRow, imagesDir: string, opts: { tags?: string[]; locked?: boolean } = {},
+): ImageRecord {
   const { filePath, thumbPath, ...rest } = row
-  // Tags and the lock are wired in by a later task.
-  return { ...rest, tags: [], locked: false, url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir) }
+  if (opts.locked) return { ...rest, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
+  return {
+    ...rest, tags: opts.tags ?? [], locked: false,
+    url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir),
+  }
 }
 
 export function registerIpc(
@@ -187,7 +229,7 @@ export function registerIpc(
   deps: IpcDeps,
   send: Send,
 ): void {
-  const { repos, runner, oplog } = deps
+  const { repos, runner, oplog, lock } = deps
 
   // Handlers ignore the Electron event argument. Anything that is not an IpcError becomes
   // 'error.unexpected' so internal (English) messages never reach the renderer.
@@ -463,22 +505,51 @@ export function registerIpc(
     return repos.jobs.get(id) ?? fail('error.notFound')
   })
 
+  /** Rows as the renderer may see them now: tags read in one query, hidden rows redacted while locked. */
+  function toRecords(rows: ImageRow[]): ImageRecord[] {
+    const open = lock.isOpen()
+    const tags = repos.tags.forImages(rows.filter((r) => open || !r.hidden).map((r) => r.id))
+    const dir = deps.imagesDir()
+    return rows.map((r) => toImageRecord(r, dir, { tags: tags.get(r.id) ?? [], locked: r.hidden && !open }))
+  }
+
+  const queryImages = (q: unknown): ImageRecord[] =>
+    toRecords(repos.images.query(validateImageQuery(q), { revealHidden: lock.isOpen() }))
+
+  handle('images:query', (q) => queryImages(q))
+
+  // The gallery's unfiltered pages: a query without text or tags.
   handle('images:list', (opts) => {
     if (typeof opts !== 'object' || opts === null) return fail('error.invalidParams')
     const { limit, beforeId } = opts as { limit?: unknown; beforeId?: unknown }
-    if (typeof limit !== 'number' || !Number.isFinite(limit)) return fail('error.invalidParams')
-    if (beforeId !== undefined && !isInt(beforeId, 0, MAX_ID)) return fail('error.invalidParams')
-    const clamped = Math.min(MAX_IMAGE_PAGE, Math.max(1, Math.trunc(limit)))
-    const rows = repos.images.list(beforeId === undefined ? { limit: clamped } : { limit: clamped, beforeId })
-    const dir = deps.imagesDir()
-    return rows.map((r) => toImageRecord(r, dir))
+    return queryImages(beforeId === undefined ? { limit } : { limit, beforeId })
   })
 
   handle('images:details', (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
     const row = repos.images.get(id) ?? fail('error.notFound')
+    // A hidden image does not exist for the renderer while the lock is closed.
+    if (row.hidden && !lock.isOpen()) return fail('error.notFound')
     const job = repos.jobs.get(row.jobId) ?? fail('error.notFound')
-    return { image: toImageRecord(row, deps.imagesDir()), params: validateEnqueue(job.params), jobType: job.type }
+    return { image: toRecords([row])[0]!, params: validateEnqueue(job.params), jobType: job.type }
+  })
+
+  handle('images:setHidden', (ids, hidden) => {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_IMAGE_BATCH
+      || !ids.every((id: unknown) => isInt(id, 1, MAX_ID)) || typeof hidden !== 'boolean') {
+      return fail('error.invalidParams')
+    }
+    // Hiding needs a password to exist (the renderer asks for one at the first hide). Unhiding needs the lock
+    // open: otherwise it would show hidden images without the password.
+    if (hidden && !lock.state().hasPassword) return fail('error.noPassword')
+    if (!hidden && !lock.isOpen()) return fail('error.notFound')
+    const existing = [...new Set(ids as number[])].filter((id) => repos.images.get(id) !== null)
+    repos.images.setHidden(existing, hidden)
+    oplog.write({
+      level: 'info', category: 'storage', messageKey: hidden ? 'log.storage.imagesHidden' : 'log.storage.imagesUnhidden',
+      details: { ids: existing, count: existing.length },
+    })
+    send('images:changed', { ids: existing })
   })
 
   handle('clipboard:writeText', (value) => {
@@ -505,6 +576,35 @@ export function registerIpc(
   })
 
   handle('connection:get', () => deps.monitor.current())
+
+  // ---- the lock over hidden images ----------------------------------------
+  // Passwords never reach the log. Each change of the state is pushed as 'lock'.
+
+  async function lockCall(call: () => Promise<void> | void): Promise<void> {
+    try {
+      await call()
+    } catch (err) {
+      if (err instanceof LockError) return fail(err.key)
+      throw err
+    }
+    send('lock', lock.state())
+  }
+
+  handle('lock:state', () => lock.state())
+
+  handle('lock:open', (password) => {
+    if (typeof password !== 'string') return fail('error.invalidParams')
+    return lockCall(() => lock.open(password))
+  })
+
+  handle('lock:close', () => lockCall(() => lock.close()))
+
+  handle('lock:setPassword', (oldPassword, next) => {
+    if ((oldPassword !== null && typeof oldPassword !== 'string') || typeof next !== 'string') {
+      return fail('error.invalidParams')
+    }
+    return lockCall(() => lock.setPassword(oldPassword, next))
+  })
 
   // ---- operation log -----------------------------------------------------
 

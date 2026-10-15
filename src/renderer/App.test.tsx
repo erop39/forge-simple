@@ -37,7 +37,10 @@ function setup(
       parts: vi.fn(async () => []),
     },
     jobs: { enqueue: vi.fn(), cancel: vi.fn(), retry: vi.fn(), listActive: vi.fn(async () => []) },
-    images: { list: vi.fn(async () => []), delete: vi.fn() },
+    images: { list: vi.fn(async () => []), delete: vi.fn(), setHidden: vi.fn() },
+    lock: {
+      state: vi.fn(async () => ({ hasPassword: false, open: false })), open: vi.fn(), close: vi.fn(), setPassword: vi.fn(),
+    },
     connection: { get: vi.fn(async () => ({ state: 'connected', latencyMs: 38, attempts: 0, lastOkAt: 1 })) },
     forge: {
       capabilities: vi.fn(async () => ({ canRestart: false })),

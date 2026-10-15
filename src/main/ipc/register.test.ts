@@ -10,6 +10,7 @@ import { createCapabilities } from '../forge/capabilities'
 import { createForgeClient } from '../forge/client'
 import { createConnectionMonitor } from '../forge/connection'
 import { FINDINGS } from '../forge/findings'
+import { createLock } from '../lock/lock'
 import { createOplog } from '../oplog/oplog'
 import { createRunner } from '../queue/runner'
 import { openDb, type Db } from '../storage/db'
@@ -27,6 +28,7 @@ let handlers: Map<string, (...args: unknown[]) => Promise<unknown>>
 let sent: { e: string; p: unknown }[]
 let repos: ReturnType<typeof createRepos>
 let oplog: ReturnType<typeof createOplog>
+let lock: ReturnType<typeof createLock>
 let runner: ReturnType<typeof createRunner>
 let kicks: number
 let samples: number
@@ -48,6 +50,7 @@ beforeEach(async () => {
   const now = () => 1000
   repos = createRepos(db, now)
   oplog = createOplog(db, now)
+  lock = createLock(repos.settings, oplog)
   const forge = createActiveForge({
     activeUrl: () => repos.servers.active()?.url ?? null, familyOverride: () => null, oplog, now,
   })
@@ -87,6 +90,7 @@ beforeEach(async () => {
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
+      lock,
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
       exportPageSize: 3,
       get localUrl() { return localServer },
@@ -470,7 +474,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
     images: imageStore, oplog, imagesDir: () => dir, createClient: () => { throw boom },
     copyToClipboard: () => undefined,
     capabilities: { current: () => ({ canRestart: false }), refresh: async () => ({ canRestart: false }), reset: () => undefined },
-    chooseExportPath: async () => null,
+    chooseExportPath: async () => null, lock: createLock(repos.settings, oplog),
   }, () => undefined)
   const err = await h.get('jobs:listActive')!({}).catch((e: Error) => e)
   expect((err as Error).message).toBe('error.unexpected')
@@ -747,4 +751,150 @@ test('jobs:get returns any stored job, with its error; unknown ids are error.not
   expect(await call('jobs:get', job.id)).toMatchObject({ id: job.id, status: 'failed', error: { code: 'forgeHttp', status: 500, detail: 'TypeError: x' } })
   await expect(call('jobs:get', 999)).rejects.toThrow('error.notFound')
   await expect(call('jobs:get', 'x')).rejects.toThrow('error.invalidParams')
+})
+
+describe('images:query', () => {
+  const ids = async (q: unknown) => ((await call('images:query', q)) as { id: number }[]).map((r) => r.id)
+
+  test('filters by text and tags, newest first, with each record carrying its tags', async () => {
+    const a = seedImage().row.id
+    const b = seedImage().row.id
+    repos.tags.add([a], ['night', 'cat'])
+    const list = (await call('images:query', { limit: 10 })) as { id: number; tags: string[]; locked: boolean }[]
+    expect(list.map((r) => [r.id, r.tags, r.locked])).toEqual([[b, [], false], [a, ['cat', 'night'], false]])
+    expect(await ids({ limit: 10, text: '  A CAT  ' })).toEqual([b, a])
+    expect(await ids({ limit: 10, tags: ['  NIGHT '] })).toEqual([a])
+  })
+
+  test('limit is clamped to 1..200', async () => {
+    const all = Array.from({ length: 3 }, () => seedImage().row.id).reverse()
+    expect(await ids({ limit: 0 })).toEqual([all[0]])
+    expect(await ids({ limit: -5 })).toEqual([all[0]])
+    expect(await ids({ limit: 1e9 })).toEqual(all)
+    expect(await ids({ limit: 2.7 })).toEqual(all.slice(0, 2))
+  })
+
+  test.each([
+    ['not an object', 5],
+    ['a limit that is not a number', { limit: '10' }],
+    ['an infinite limit', { limit: Infinity }],
+    ['a zero cursor', { limit: 10, beforeId: 0 }],
+    ['a negative cursor', { limit: 10, beforeId: -1 }],
+    ['a fractional cursor', { limit: 10, beforeId: 1.5 }],
+    ['text that is not a string', { limit: 10, text: 5 }],
+    ['text over 500 characters', { limit: 10, text: 'x'.repeat(501) }],
+    ['tags that are not a list', { limit: 10, tags: 'cat' }],
+    ['more than 20 tags', { limit: 10, tags: Array.from({ length: 21 }, (_, i) => `t${i}`) }],
+    ['a tag that is not a string', { limit: 10, tags: [5] }],
+    ['an empty tag', { limit: 10, tags: ['   '] }],
+    ['a tag over 40 characters', { limit: 10, tags: ['x'.repeat(41)] }],
+  ])('refuses %s with error.invalidParams', async (_name, q) => {
+    await expect(call('images:query', q)).rejects.toThrow('error.invalidParams')
+  })
+
+  test('text of 500 characters after trimming, 20 tags and a 40-character tag are accepted', async () => {
+    await expect(call('images:query', { limit: 10, text: ` ${'x'.repeat(500)} ` })).resolves.toEqual([])
+    await expect(call('images:query', { limit: 10, tags: Array.from({ length: 20 }, (_, i) => `t${i}`) })).resolves.toEqual([])
+    await expect(call('images:query', { limit: 10, tags: [`  ${'x'.repeat(40)}  `] })).resolves.toEqual([])
+  })
+
+  test('beforeId pages through a tag filter while hidden images stay out', async () => {
+    const all = Array.from({ length: 5 }, () => seedImage().row.id)
+    repos.tags.add(all, ['t'])
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [all[2]], true)
+    expect(await ids({ limit: 2, tags: ['t'] })).toEqual([all[4], all[3]])
+    expect(await ids({ limit: 2, tags: ['t'], beforeId: all[3] })).toEqual([all[1], all[0]])
+  })
+})
+
+describe('hidden images and the lock', () => {
+  const record = async (id: number) =>
+    ((await call('images:list', { limit: 100 })) as Record<string, unknown>[]).find((r) => r['id'] === id)!
+
+  test('while locked a hidden image is a redacted row; text and tag queries skip it; details refuse it', async () => {
+    const { row } = seedImage()
+    repos.tags.add([row.id], ['secret-tag'])
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    expect(await record(row.id)).toEqual({
+      id: row.id, jobId: row.jobId, width: 64, height: 64, createdAt: row.createdAt, durationMs: 1, hidden: true,
+      sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
+    })
+    expect(await call('images:query', { limit: 10, text: 'cat' })).toEqual([])
+    expect(await call('images:query', { limit: 10, tags: ['secret-tag'] })).toEqual([])
+    await expect(call('images:details', row.id)).rejects.toThrow('error.notFound')
+  })
+
+  test('with the lock open the hidden image comes back whole, with its tags, and details work', async () => {
+    const { row } = seedImage()
+    repos.tags.add([row.id], ['secret-tag'])
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    await call('lock:open', 'secret-pass')
+    expect(await record(row.id)).toMatchObject({
+      hidden: true, locked: false, url: 'fnc-img://local/2026-10/1-5.png', seed: 5, infotext: 'i', tags: ['secret-tag'],
+    })
+    expect(await call('images:query', { limit: 10, tags: ['secret-tag'] })).toHaveLength(1)
+    expect(await call('images:details', row.id)).toMatchObject({ image: { id: row.id, locked: false }, params: { prompt: 'a cat' } })
+    await call('lock:close')
+    await expect(call('images:details', row.id)).rejects.toThrow('error.notFound')
+  })
+
+  test('hiding needs a password to be set first', async () => {
+    const { row } = seedImage()
+    await expect(call('images:setHidden', [row.id], true)).rejects.toThrow('error.noPassword')
+    expect(repos.images.get(row.id)!.hidden).toBe(false)
+    expect(sentOf('images:changed')).toEqual([])
+  })
+
+  test('hiding while locked works without the password, logs ids only and pushes images:changed', async () => {
+    const a = seedImage().row.id
+    const b = seedImage().row.id
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [a, b, a, 999], true)
+    expect(repos.images.get(a)!.hidden).toBe(true)
+    expect(repos.images.get(b)!.hidden).toBe(true)
+    expect(sentOf('images:changed')).toEqual([{ ids: [a, b] }])
+    expect(oplog.list({ category: 'storage' })[0]).toMatchObject({
+      messageKey: 'log.storage.imagesHidden', details: { ids: [a, b], count: 2 },
+    })
+    expect(JSON.stringify(oplog.list())).not.toContain('a cat')
+  })
+
+  test('unhiding needs the lock open', async () => {
+    const { row } = seedImage()
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    await expect(call('images:setHidden', [row.id], false)).rejects.toThrow('error.notFound')
+    expect(repos.images.get(row.id)!.hidden).toBe(true)
+    await call('lock:open', 'secret-pass')
+    await call('images:setHidden', [row.id], false)
+    expect(repos.images.get(row.id)!.hidden).toBe(false)
+    expect(oplog.list({ category: 'storage' })[0]).toMatchObject({ messageKey: 'log.storage.imagesUnhidden' })
+  })
+
+  test.each([
+    [[], true], [[0], true], [[1.5], true], ['1', true], [[1], 'yes'], [Array.from({ length: 1001 }, (_, i) => i + 1), true],
+  ])('setHidden refuses ids %j with hidden %j', async (ids, hidden) => {
+    await lock.setPassword(null, 'secret-pass')
+    await expect(call('images:setHidden', ids, hidden)).rejects.toThrow('error.invalidParams')
+  })
+
+  test('lock calls push the new state; a wrong password is error.wrongPassword and changes nothing', async () => {
+    expect(await call('lock:state')).toEqual({ hasPassword: false, open: false })
+    await expect(call('lock:setPassword', null, 'abc')).rejects.toThrow('error.invalidParams')
+    await call('lock:setPassword', null, 'secret-pass')
+    expect(sentOf('lock')).toEqual([{ hasPassword: true, open: false }])
+    await expect(call('lock:open', 'bad-guess')).rejects.toThrow('error.wrongPassword')
+    expect(sentOf('lock')).toHaveLength(1)
+    await call('lock:open', 'secret-pass')
+    await call('lock:close')
+    expect(sentOf('lock').slice(1)).toEqual([{ hasPassword: true, open: true }, { hasPassword: true, open: false }])
+    await expect(call('lock:setPassword', 'bad-guess', 'new-pass')).rejects.toThrow('error.wrongPassword')
+    await call('lock:setPassword', 'secret-pass', 'new-pass')
+    await expect(call('lock:open', 5)).rejects.toThrow('error.invalidParams')
+    await expect(call('lock:setPassword', 5, 'new-pass')).rejects.toThrow('error.invalidParams')
+    expect(JSON.stringify(oplog.list())).not.toMatch(/secret-pass|new-pass|bad-guess/)
+  })
 })

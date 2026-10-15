@@ -66,6 +66,9 @@ export function Gallery() {
   const viewRequest = useAppStore((s) => s.viewRequest)
   const today = useToday()
   const clearViewRequest = useAppStore((s) => s.clearViewRequest)
+  const setHidden = useAppStore((s) => s.setHidden)
+  const openLockDialog = useAppStore((s) => s.openLockDialog)
+  const hasPassword = useAppStore((s) => s.lock.hasPassword)
   const [columnsRef, columnCount] = useColumnCount()
   const { hidden, toastOpen, request, undo } = usePendingDelete(deleteImage)
   const [viewerImage, setViewerImage] = useState<ImageRecord | null>(null)
@@ -87,8 +90,9 @@ export function Gallery() {
       .filter((i) => i.kind !== 'image' || !hidden.has(i.image.id)),
     [jobs, progress, images, activeServerId, hidden],
   )
+  // The viewer pages through the images it can show: a locked tile has nothing to open.
   const visibleImages = useMemo(
-    () => items.flatMap((item) => item.kind === 'image' ? [item.image] : []),
+    () => items.flatMap((item) => item.kind === 'image' && !item.image.locked ? [item.image] : []),
     [items],
   )
   const viewerIndex = visibleImages.findIndex((image) => image.id === viewerImage?.id)
@@ -106,6 +110,14 @@ export function Gallery() {
       setPendingNextId(null)
     }
   }, [pendingNextId, visibleImages, loadingOlder])
+
+  // The lock closed while a hidden image was on screen: the viewer goes with it.
+  useEffect(() => {
+    if (viewerImage && images.some((i) => i.id === viewerImage.id && i.locked)) {
+      setPendingNextId(null)
+      setViewerImage(null)
+    }
+  }, [images, viewerImage])
 
   // Another part of the window (the activity log) asked to show an image: open it when it is loaded.
   useEffect(() => {
@@ -139,6 +151,9 @@ export function Gallery() {
     setLoadingOlder(true)
     void loadMoreImages().finally(() => setLoadingOlder(false))
   }
+  const toggleHidden = (image: ImageRecord): void => void setHidden([image.id], !image.hidden)
+  // Without a password (it was reset) a new one is set first; it then unlocks as usual.
+  const unlock = (): void => openLockDialog(hasPassword ? 'open' : 'set')
   const serverName = (id: number): string | null => servers.find((s) => s.id === id)?.name ?? null
   const columns = useMemo(() => layoutColumns(items, columnCount, aspectOfItem), [items, columnCount])
 
@@ -154,7 +169,15 @@ export function Gallery() {
         now={today}
       />
     ) : (
-      <ImageTile key={itemKey(item)} image={item.image} onOpen={openViewer} onDelete={request} now={today} />
+      <ImageTile
+        key={itemKey(item)}
+        image={item.image}
+        onOpen={openViewer}
+        onDelete={request}
+        onToggleHidden={toggleHidden}
+        onUnlock={unlock}
+        now={today}
+      />
     )
 
   return (

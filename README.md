@@ -19,6 +19,7 @@ Forge's HTTP API. One user, no login.
 - A gallery of everything generated, with live progress and preview for the running job, delete with
   Undo, and older images loaded as you scroll. Images are kept on this machine, not on the server
   (Forge is asked not to save them).
+- Hides chosen images behind a session lock with a password (see Hidden images).
 - Recovers from a broken Forge model state: after a generation fails with HTTP 500 the model is unloaded so
   the next job loads it afresh; when generations keep failing, a notice suggests restarting Forge.
 - Restarts Forge and unloads the model from the server dialog (restart needs Forge's `--api-server-stop` flag).
@@ -83,6 +84,25 @@ generation then fails with HTTP 500, whichever checkpoint you pick, until Forge 
 - A Forge that hangs and no longer answers HTTP requests cannot be restarted from the app: restart it
   on the home PC.
 
+## Hidden images
+
+Any image can be hidden with the eye button on its tile or the `H` key on a focused tile. The first time,
+the app asks for a password (at least 4 characters, typed twice); only its scrypt hash (with a random salt)
+is stored, in the `settings` table under `lock.hash`.
+
+While the lock is closed, a hidden image is a hatched tile with a lock and no picture: its prompt, tags and
+seed are not sent to the window, text and tag searches do not find it, and its files are not served to the
+window. The lock button in the top bar (or a click on a locked tile) asks for the password; the lock then stays
+open, with hidden images marked Hidden, until you lock it again or quit the app. Unhiding needs the lock open.
+Change password is in the unlock dialog and needs the current password.
+
+This keeps hidden images from a glance at the screen. It is not encryption: the PNG and thumbnail files are
+ordinary files in the images folder, readable by anyone with access to this user account.
+
+Forgot the password? Quit the app and delete the `lock.hash` row from the `settings` table of
+`forge-neo-client.db` (for example with the sqlite3 tool: `DELETE FROM settings WHERE key = 'lock.hash';`).
+No image is lost: hidden images stay hidden, and the lock button then asks for a new password, which opens them.
+
 ## Probe
 
 `node tools/probe/probe.mjs http://HOST:7860` asks a live Forge instance read-only questions and writes
@@ -99,14 +119,14 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 ## Screens
 
-- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button, which both open the server dialog, and the Activity log button.
+- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button, which both open the server dialog, the lock button for hidden images (closed or open padlock; it asks for the password, locks at once when open, or offers to set a password when none is set) and the Activity log button.
 - **Activity log** - a side panel on the right (`Esc` closes it) with the operation log, newest first: time, level (icon and word), category, the message and the duration where there is one. Filter by level, category and period (last hour, 24 hours, 7 days, all time) and search the shown text; new entries appear while it is open. Clicking an entry that belongs to a job shows, for a failed job, its stored error (code, HTTP status and Forge's message, which is kept with the job and never copied into the log), and for a finished job opens its image if the gallery has it loaded. Export writes every entry matching the level, category and period filters (not only those loaded in the panel), or exactly the rows shown while a text search is active, to a JSON Lines file you choose (the log records only its file name); Keep for sets how many days entries are kept. Forge's own console output is not in it: it stays on the home PC, the API does not expose it.
 - **Server dialog** - the saved Forge Neo servers (each started with `--api --listen`), each with a name and address; the active one is marked. Add, edit, delete (with confirmation) or Use a server. A new or changed address is tested before it is saved, and a wrong one shows what to check under the field. Switching is refused while a job runs. Under the list, Unload model and Restart Forge act on the active server (see Restarting Forge). Queued jobs stay with the server they were queued on: those of an inactive server show "Waiting for <name>" and run once it is active again. Deleting a server removes its queued jobs; its images stay. With no saved server the dialog opens by itself on the add form. The add form starts with "This PC" and `http://127.0.0.1:7860` (Forge on the same PC), both editable; Use this PC puts that address back after a change. When that address is already saved, the form starts empty.
 - **Prompt bar** - floats at the bottom centre. The prompt field grows to six lines; `Ctrl+Enter` generates (from the prompt or the negative prompt) and `Up Arrow` in an empty prompt field brings back the last prompt. The row below holds the checkpoint (grouped by model family in its menu), aspect ratio, a steps slider, image count, a Negative toggle (not offered for families without a negative prompt), the All parameters button and Generate; in a narrow window the controls move to a second line under the checkpoint. Switching checkpoints keeps the selected image dimensions and proportions. The bookmark button next to the Negative toggle holds saved negative prompts: choosing one replaces the negative text (and opens the field), "Save current as preset…" names the current negative, and "Manage presets…" renames or deletes them. Switching checkpoints or servers keeps the negative text, also through a model family without a negative prompt.
 - The prompt field appears as soon as the window opens. You can type while models load; Generate becomes available once a model is ready.
 - **Wheel adjustment** - with the pointer over a slider or number field (in the prompt bar, the parameters panel or the log panel), the mouse wheel steps the value: up increases, down decreases, Shift+wheel moves ten steps. Values stay within their limits (width and height on multiples of 8) and the page does not scroll while you do it.
 - **Parameters panel** - slides in from the right over the canvas (`Esc` closes it). It shows the model card (checkpoint and modules, each marked found or not found), the sampling parameters of the model family (CFG, Distilled CFG and Shift as sliders), seed, size, and the list of VAE and text encoder modules.
-- **Gallery** - the canvas. Tiles sit in columns (at least two, about one per 226 px) and new ones appear at the top-left. A waiting job has a dashed border and its place in the queue; the running one shows the live preview, stage, step count, speed and elapsed time with a progress line, and both have Cancel. A failed or interrupted job shows what happened and when, with Retry and Dismiss (and a Restart Forge icon after a Forge 500, when Forge allows restarts). A finished image shows its frame marking (number, seconds, size, and the local time it was made, with the date when not today) and a Delete button on hover or keyboard focus; deleting hides the image and Undo stays available for 5 seconds. Older images load as you scroll.
+- **Gallery** - the canvas. Tiles sit in columns (at least two, about one per 226 px) and new ones appear at the top-left. A waiting job has a dashed border and its place in the queue; the running one shows the live preview, stage, step count, speed and elapsed time with a progress line, and both have Cancel. A failed or interrupted job shows what happened and when, with Retry and Dismiss (and a Restart Forge icon after a Forge 500, when Forge allows restarts). A finished image shows its frame marking (number, seconds, size, and the local time it was made, with the date when not today) and Hide and Delete buttons on hover or keyboard focus (`H` on a focused tile hides or unhides it); deleting hides the image and Undo stays available for 5 seconds. A hidden image is a hatched tile with a lock while the lock is closed, and carries a Hidden label while it is open (see Hidden images). Older images load as you scroll.
 - **Image viewer** - click a finished image or focus it and press Enter to see the full-size file. The panel below shows the saved prompt, negative prompt when present, model, scheduler, sampler, steps, dimensions, actual seed, relevant guidance settings, generation time, creation date and time, and enabled LoRAs. Copy prompt writes the saved positive prompt to the system clipboard. The arrow icons or Left/Right keys move through gallery images, loading older images as needed. The X icon or Escape closes the viewer and returns focus to the opening tile.
 
 ## Known limitations
@@ -115,7 +135,7 @@ Not in the app yet (planned, see `docs/superpowers/plans/` and `docs/STATUS.md`)
 
 - img2img, hires fix and upscaling of a finished image.
 - LoRA selection in the interface (the request builder supports LoRAs, the screens do not).
-- Tags, search, hidden images, "Reuse settings" and "Save as" for an image.
+- Tags and search in the interface (the storage and the `images.query` call support them), "Reuse settings" and "Save as" for an image.
 - Settings presets (negative-prompt presets exist).
 - A checkpoint gallery with previews.
 - A server status panel (VRAM, CPU, GPU).

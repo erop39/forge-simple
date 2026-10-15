@@ -11,7 +11,7 @@ const image = (over: Partial<ImageRecord> = {}): ImageRecord => ({
 })
 
 test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', () => {
-  const { container } = render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} />)
+  const { container } = render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} onToggleHidden={() => {}} onUnlock={() => {}} />)
   const img = container.querySelector('img')!
   expect(img.getAttribute('src')).toBe('fnc-img://local/thumbs/a.jpg')
   expect(img.getAttribute('loading')).toBe('lazy')
@@ -21,7 +21,7 @@ test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', 
 })
 
 test("frame caption formats id, seconds, size and today's generation time", () => {
-  render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} />)
+  render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} onToggleHidden={() => {}} onUnlock={() => {}} />)
   expect(screen.getByText('№ 0412 · 41 s · 832×1216 · 14:03')).toBeDefined()
   expect(screen.getByRole('group', { name: '№ 0412 · 41 s · 832×1216 · 14:03' })).toBeDefined()
 })
@@ -31,17 +31,58 @@ test('the caption pads the id and omits the seconds when the duration is unknown
   expect(frameCaption(image({ id: 12345, durationMs: null }))).toBe('№ 12345 · 832×1216 · 14:03')
 })
 
-test('the image opens by keyboard and Delete remains separate', async () => {
+test('the image opens by keyboard; Hide and Delete remain separate', async () => {
   const onOpen = vi.fn()
   const onDelete = vi.fn()
-  render(<ImageTile image={image()} onOpen={onOpen} onDelete={onDelete} />)
+  render(<ImageTile image={image()} onOpen={onOpen} onDelete={onDelete} onToggleHidden={() => {}} onUnlock={() => {}} />)
   await userEvent.tab()
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open image 412' }))
   await userEvent.keyboard('{Enter}')
   expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 412 }), document.activeElement)
   await userEvent.tab()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: en['image.hide'] }))
+  await userEvent.tab()
   expect(document.activeElement).toBe(screen.getByRole('button', { name: en['image.delete'] }))
   await userEvent.keyboard('{Enter}')
   expect(onDelete).toHaveBeenCalledWith(412)
   expect(onOpen).toHaveBeenCalledTimes(1)
+})
+
+test('a locked tile keeps its size but shows no picture; its button asks to unlock', async () => {
+  const onUnlock = vi.fn()
+  const onOpen = vi.fn()
+  const { container } = render(
+    <ImageTile
+      image={image({ hidden: true, locked: true, url: '', thumbUrl: '' })}
+      onOpen={onOpen} onDelete={() => {}} onToggleHidden={() => {}} onUnlock={onUnlock}
+    />,
+  )
+  expect(container.querySelector('img')).toBeNull()
+  expect((container.firstElementChild as HTMLElement).style.aspectRatio).toBe('832 / 1216')
+  expect(screen.queryByRole('button', { name: en['image.delete'] })).toBeNull()
+  expect(screen.queryByRole('button', { name: en['image.unhide'] })).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: 'Hidden image 412. Unlock to view' }))
+  expect(onUnlock).toHaveBeenCalledWith(screen.getByRole('button', { name: 'Hidden image 412. Unlock to view' }))
+  expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('a hidden image shown while unlocked carries the Hidden label and offers Unhide', async () => {
+  const onToggleHidden = vi.fn()
+  render(<ImageTile image={image({ hidden: true })} onOpen={() => {}} onDelete={() => {}} onToggleHidden={onToggleHidden} onUnlock={() => {}} />)
+  expect(screen.getByText(en['image.hiddenBadge'])).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['image.unhide'] }))
+  expect(onToggleHidden).toHaveBeenCalledWith(expect.objectContaining({ id: 412, hidden: true }))
+})
+
+test('H on a focused tile hides it; with a modifier it does nothing', async () => {
+  const onToggleHidden = vi.fn()
+  render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} onToggleHidden={onToggleHidden} onUnlock={() => {}} />)
+  expect(screen.queryByText(en['image.hiddenBadge'])).toBeNull()
+  await userEvent.tab()
+  await userEvent.keyboard('{Control>}h{/Control}')
+  expect(onToggleHidden).not.toHaveBeenCalled()
+  await userEvent.keyboard('h')
+  expect(onToggleHidden).toHaveBeenCalledWith(expect.objectContaining({ id: 412, hidden: false }))
+  await userEvent.click(screen.getByRole('button', { name: en['image.hide'] }))
+  expect(onToggleHidden).toHaveBeenCalledTimes(2)
 })

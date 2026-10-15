@@ -85,3 +85,5 @@ export interface OplogQuery {
   /** Only these entries (the panel's search results, for export). */
   ids?: number[]
 }
+/** The session lock over hidden images: whether a password is set and whether hidden images are shown now. */
+export interface LockState { hasPassword: boolean; open: boolean }

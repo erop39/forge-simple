@@ -1,5 +1,12 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { resolveImageRequest, toImageUrl } from './image-protocol'
+import type { GenerationParams } from '@shared/types'
+import { createLock } from '../lock/lock'
+import { createOplog } from '../oplog/oplog'
+import { openDb } from './db'
+import { createImageHandler, hiddenImageBlocker, resolveImageRequest, toImageUrl } from './image-protocol'
+import { createRepos } from './repos'
 
 const base = path.resolve(path.join('tmp-base', 'images'))
 
@@ -64,4 +71,82 @@ test('a wrong scheme returns null', () => {
   expect(resolveImageRequest('http://local/a.png', base)).toBeNull()
   expect(resolveImageRequest('file://local/a.png', base)).toBeNull()
   expect(resolveImageRequest('fnc-img:/local/a.png', base)).toBeNull()
+})
+
+test.each([
+  'fnc-img://local/thumbs/12345-~1.jpg',
+  'fnc-img://local/thumbs/a.jpg.',
+  'fnc-img://local/thumbs/a.jpg%20',
+  'fnc-img://local/thumbs./a.jpg',
+])('resolveImageRequest rejects Windows aliases of another name: %s', (u) => {
+  expect(resolveImageRequest(u, base)).toBeNull()
+})
+
+describe('the fnc-img handler and the lock', () => {
+  let dir: string
+  let repos: ReturnType<typeof createRepos>
+  let lock: ReturnType<typeof createLock>
+  let handle: (url: string) => Promise<Response>
+  let hiddenId: number
+
+  beforeEach(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'fnc-proto-'))
+    const db = openDb(':memory:')
+    repos = createRepos(db, () => 1)
+    lock = createLock(repos.settings, createOplog(db, () => 1))
+    await lock.setPassword(null, 'secret-pass')
+    const job = repos.jobs.insert(repos.servers.setActiveUrl('http://a:7860').id, 'txt2img', {} as GenerationParams)
+    mkdirSync(path.join(dir, '2026-10'))
+    mkdirSync(path.join(dir, 'thumbs'))
+    const add = (name: string) => {
+      const filePath = path.join(dir, '2026-10', `${name}.png`)
+      const thumbPath = path.join(dir, 'thumbs', `${name}.jpg`)
+      writeFileSync(filePath, `png ${name}`)
+      writeFileSync(thumbPath, `jpg ${name}`)
+      return repos.images.insert({ jobId: job.id, filePath, thumbPath, width: 1, height: 1, seed: 1, infotext: '', durationMs: null }).id
+    }
+    hiddenId = add('1-1')
+    add('1-2')
+    repos.images.setHidden([hiddenId], true)
+    handle = createImageHandler({ baseDir: () => dir, isBlocked: hiddenImageBlocker(repos.images, lock, () => dir) })
+  })
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  const status = async (url: string) => (await handle(url)).status
+
+  test('while the lock is closed a hidden image and its thumbnail answer 404, in any letter case', async () => {
+    expect(await status('fnc-img://local/2026-10/1-1.png')).toBe(404)
+    expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(404)
+    expect(await status('fnc-img://local/THUMBS/1-1.JPG')).toBe(404)
+    expect(await status('fnc-img://local/2026-10/1-1.png?x#y')).toBe(404)
+  })
+
+  test('a visible image is served while the lock is closed', async () => {
+    const res = await handle('fnc-img://local/thumbs/1-2.jpg')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/jpeg')
+    expect(await res.text()).toBe('jpg 1-2')
+  })
+
+  test('once the lock is open the hidden files are served; closing it blocks them again', async () => {
+    await lock.open('secret-pass')
+    const res = await handle('fnc-img://local/2026-10/1-1.png')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('png 1-1')
+    expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(200)
+    lock.close()
+    expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(404)
+  })
+
+  test('unhiding makes the files available again', async () => {
+    repos.images.setHidden([hiddenId], false)
+    expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(200)
+  })
+
+  test('an unsafe request is refused, a missing file is 404', async () => {
+    expect(await status('fnc-img://local/../x.png')).toBe(403)
+    expect(await status('fnc-img://local/thumbs/1-1.txt')).toBe(403)
+    expect(await status('fnc-img://local/thumbs/9-9.jpg')).toBe(404)
+  })
 })

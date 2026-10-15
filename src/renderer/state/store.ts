@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset,
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -25,6 +25,13 @@ export function logQuery(f: LogFilters, now: number): OplogQuery {
     limit: LOG_LIMIT,
   }
 }
+
+/** Which lock dialog is open: setting the first password, unlocking, or changing the password. */
+export type LockDialogMode = 'set' | 'open' | 'change'
+
+/** A hidden image as main sends it while locked: nothing that shows or describes the picture. */
+export const lockedCopy = (image: ImageRecord): ImageRecord =>
+  ({ ...image, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
 
 export interface AppState {
   connection: ConnectionStatus
@@ -65,6 +72,9 @@ export interface AppState {
   logFilters: LogFilters
   /** An image another part of the window asked the gallery to show in the viewer. */
   viewRequest: number | null
+  /** The session lock over hidden images, as main last reported it. */
+  lock: LockState
+  lockDialog: LockDialogMode | null
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
   setParams(patch: Partial<GenerationParams>): void
@@ -115,6 +125,19 @@ export interface AppState {
   getJob(id: number): Promise<Job>
   requestView(imageId: number): void
   clearViewRequest(): void
+  /** Opens a lock dialog; a hide waiting for a first password is dropped. */
+  openLockDialog(mode: LockDialogMode): void
+  closeLockDialog(): void
+  /** Rejects with the error key (error.wrongPassword); closes the dialog on success. */
+  unlock(password: string): Promise<void>
+  lockNow(): Promise<void>
+  /**
+   * Sets or changes the password; rejects with the error key. Closes the dialog and carries out a hide that
+   * was waiting for the first password.
+   */
+  setLockPassword(oldPassword: string | null, next: string): Promise<void>
+  /** Hides or unhides images; the first hide without a password opens the set-password dialog instead. */
+  setHidden(ids: number[], hidden: boolean): Promise<void>
 }
 
 const OFFLINE: ConnectionStatus = { state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }
@@ -133,6 +156,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   let capabilitiesSeq = 0
   let healthSeq = 0
   let logSeq = 0
+  // Bumped by each 'lock' event and password change: a lock state read earlier is older.
+  let lockSeq = 0
+  // Bumped by each gallery reload: a page requested before it may show what the lock now covers.
+  let imagesSeq = 0
+  /** Images to hide once the first password is set. */
+  let pendingHide: number[] | null = null
   let morePromise: Promise<void> | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -301,11 +330,48 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         healthSeq++
         set({ forgeUnhealthy: unhealthy })
       })
+      api.on('lock', (lock) => {
+        lockSeq++
+        // Covered at once, before the reload answers (and even if it fails).
+        set((s) => ({ lock, images: lock.open ? s.images : s.images.map((i) => (i.hidden ? lockedCopy(i) : i)) }))
+        void reloadImages()
+      })
+      api.on('images:changed', () => void reloadImages())
       api.on('oplog:added', (entry) =>
         set((s) => (!s.logOpen || !matchesLog(entry, s.logFilters) || s.logEntries.some((e) => e.id === entry.id)
           ? s
           : { logEntries: [entry, ...s.logEntries].slice(0, LOG_LIMIT) })),
       )
+    }
+
+    /**
+     * Reads the gallery again from the newest image down to the oldest one loaded before, so the pages already
+     * scrolled through stay. Only the newest reload may set the images.
+     */
+    async function reloadImages(): Promise<void> {
+      const seq = ++imagesSeq
+      const before = get().images
+      const loadedIds = new Set(before.map((i) => i.id))
+      const oldest = before.length > 0 ? Math.min(...loadedIds) : null
+      const pages: ImageRecord[] = []
+      let exhausted = false
+      for (;;) {
+        const last = pages[pages.length - 1]
+        const page = await attempt(() => api.images.list(last ? { limit: IMAGE_PAGE, beforeId: last.id } : { limit: IMAGE_PAGE }))
+        if (!page || seq !== imagesSeq) return
+        pages.push(...page)
+        if (page.length < IMAGE_PAGE) {
+          exhausted = true
+          break
+        }
+        if (oldest === null || page[page.length - 1]!.id <= oldest) break
+      }
+      const top = pages[0]?.id ?? 0
+      // Images added while the reload ran are newer than its first page.
+      set((s) => ({
+        images: [...s.images.filter((i) => i.id > top && !loadedIds.has(i.id)), ...pages],
+        imagesExhausted: exhausted,
+      }))
     }
 
     /** Reloads the log for the current filters; only the newest request may set the entries. */
@@ -334,13 +400,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
     async function load(): Promise<void> {
       subscribe()
-      const [settings, servers, connection, active, images] = await Promise.all([
+      const lockAt = lockSeq
+      const [settings, servers, connection, active, images, lock] = await Promise.all([
         attempt(() => api.settings.get()),
         attempt(() => api.servers.list()),
         attempt(() => api.connection.get()),
         attempt(() => api.jobs.listActive()),
         attempt(() => api.images.list({ limit: IMAGE_PAGE })),
+        attempt(() => api.lock.state()),
       ])
+      if (lock && lockAt === lockSeq) set({ lock })
       set((s) => ({
         servers: servers ?? s.servers,
         connection: connection ?? s.connection,
@@ -394,6 +463,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       logEntries: [],
       logFilters: { level: 'all', category: 'all', period: '24h' },
       viewRequest: null,
+      lock: { hasPassword: false, open: false },
+      lockDialog: null,
 
       init() {
         initPromise ??= load()
@@ -460,9 +531,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           try {
             const { images, imagesExhausted } = get()
             if (imagesExhausted || images.length === 0) return
+            const seq = imagesSeq
             const beforeId = Math.min(...images.map((i) => i.id))
             const page = await attempt(() => api.images.list({ limit: IMAGE_PAGE, beforeId }))
-            if (!page) return
+            if (!page || seq !== imagesSeq) return
             set((s) => ({
               images: [...s.images, ...page.filter((p) => !s.images.some((i) => i.id === p.id))],
               imagesExhausted: page.length < IMAGE_PAGE,
@@ -549,6 +621,48 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       clearViewRequest() {
         set({ viewRequest: null })
+      },
+
+      openLockDialog(mode) {
+        pendingHide = null
+        set({ lockDialog: mode })
+      },
+
+      closeLockDialog() {
+        pendingHide = null
+        set({ lockDialog: null })
+      },
+
+      async unlock(password) {
+        await api.lock.open(password)
+        set({ lockDialog: null })
+      },
+
+      async lockNow() {
+        await attempt(() => api.lock.close())
+      },
+
+      async setLockPassword(oldPassword, next) {
+        await api.lock.setPassword(oldPassword, next)
+        lockSeq++
+        set((s) => ({ lockDialog: null, lock: { ...s.lock, hasPassword: true } }))
+        const ids = pendingHide
+        pendingHide = null
+        if (ids) await attempt(() => api.images.setHidden(ids, true))
+      },
+
+      async setHidden(ids, hidden) {
+        const askPassword = (): void => {
+          pendingHide = ids
+          set({ lockDialog: 'set' })
+        }
+        if (hidden && !get().lock.hasPassword) return askPassword()
+        try {
+          await api.images.setHidden(ids, hidden)
+        } catch (e) {
+          if (errorKeyOf(e) === 'error.noPassword') askPassword()
+          else fail(e)
+        }
       },
 
       askRestart() {

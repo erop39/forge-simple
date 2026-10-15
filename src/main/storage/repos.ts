@@ -95,6 +95,24 @@ const toImage = (r: ImageSql): ImageRow => ({
   hidden: r.hidden === 1, sourceImageId: r.source_image_id,
 })
 
+export const TAG_MAX = 40
+/** One tag name as stored: trimmed, inner whitespace collapsed; null when empty or longer than TAG_MAX. */
+export function normalizeTag(raw: string): string | null {
+  const name = raw.trim().replace(/\s+/g, ' ')
+  return name.length >= 1 && name.length <= TAG_MAX ? name : null
+}
+/** Normalised names (see normalizeTag); invalid ones dropped, duplicates in any case merged. */
+export function normalizeTags(names: readonly string[]): string[] {
+  const seen = new Map<string, string>()
+  for (const raw of names) {
+    const name = normalizeTag(raw)
+    if (name === null) continue
+    const key = name.toLowerCase()
+    if (!seen.has(key)) seen.set(key, name)
+  }
+  return [...seen.values()]
+}
+
 export function hostOf(url: string): string {
   try {
     return new URL(url).hostname || url
@@ -280,6 +298,15 @@ export function createRepos(db: Db, now: () => number) {
         return n
       })()
     },
+    /**
+     * True when `absPath` is the file or thumbnail of a hidden image. Letter case is ignored in any script
+     * (Windows and macOS file names are case-insensitive), so another spelling of the name cannot get past it.
+     */
+    isHiddenFile(absPath: string): boolean {
+      return db.prepare(
+        'SELECT 1 FROM images WHERE hidden = 1 AND (ulower(file_path) = ulower(?) OR ulower(thumb_path) = ulower(?)) LIMIT 1',
+      ).get(absPath, absPath) !== undefined
+    },
     delete(id: number): ImageRow | null {
       return db.transaction(() => {
         const r = imageById.get(id) as ImageSql | undefined
@@ -295,19 +322,6 @@ export function createRepos(db: Db, now: () => number) {
   function deleteOrphanTags(): void {
     db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM image_tags)').run()
   }
-  const TAG_MAX = 40
-  /** Trimmed, inner whitespace collapsed; empty or over-long names are dropped; duplicates (any case) merged. */
-  const normalizeTags = (names: string[]): string[] => {
-    const seen = new Map<string, string>()
-    for (const raw of names) {
-      const name = raw.trim().replace(/\s+/g, ' ')
-      if (name.length < 1 || name.length > TAG_MAX) continue
-      const key = name.toLowerCase()
-      if (!seen.has(key)) seen.set(key, name)
-    }
-    return [...seen.values()]
-  }
-
   const tags = {
     /** Tag names per image id, sorted; ids without tags are absent. */
     forImages(ids: number[]): Map<number, string[]> {
@@ -315,7 +329,7 @@ export function createRepos(db: Db, now: () => number) {
       if (ids.length === 0) return out
       const rows = db.prepare(
         `SELECT it.image_id AS image_id, t.name AS name FROM image_tags it JOIN tags t ON t.id = it.tag_id
-         WHERE it.image_id IN (${ids.map(() => '?').join(',')}) ORDER BY t.name COLLATE NOCASE, t.id`,
+         WHERE it.image_id IN (${ids.map(() => '?').join(',')}) ORDER BY ulower(t.name), t.id`,
       ).all(...ids) as { image_id: number; name: string }[]
       for (const r of rows) {
         const list = out.get(r.image_id)
@@ -324,19 +338,22 @@ export function createRepos(db: Db, now: () => number) {
       }
       return out
     },
-    /** Attaches the tags (created when missing) to every existing image in `imageIds`. */
+    /**
+     * Attaches the tags to every existing image in `imageIds`. A tag that exists in another case (any script,
+     * see `ulower` in db.ts) is reused with its stored spelling; a missing one is created.
+     */
     add(imageIds: number[], names: string[]): void {
       const clean = normalizeTags(names)
       if (clean.length === 0) return
       db.transaction(() => {
-        const insertTag = db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)')
-        const tagId = db.prepare('SELECT id FROM tags WHERE name = ?')
+        const findTag = db.prepare('SELECT id FROM tags WHERE ulower(name) = ulower(?) ORDER BY id LIMIT 1')
+        const insertTag = db.prepare('INSERT INTO tags (name) VALUES (?)')
         const link = db.prepare(
           'INSERT OR IGNORE INTO image_tags (image_id, tag_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM images WHERE id = ?)',
         )
         for (const name of clean) {
-          insertTag.run(name)
-          const id = (tagId.get(name) as { id: number }).id
+          const found = findTag.get(name) as { id: number } | undefined
+          const id = found ? found.id : Number(insertTag.run(name).lastInsertRowid)
           for (const imageId of imageIds) link.run(imageId, id, imageId)
         }
         deleteOrphanTags()
@@ -346,18 +363,24 @@ export function createRepos(db: Db, now: () => number) {
     remove(imageIds: number[], names: string[]): void {
       const clean = normalizeTags(names)
       db.transaction(() => {
-        const unlink = db.prepare('DELETE FROM image_tags WHERE image_id = ? AND tag_id = (SELECT id FROM tags WHERE name = ?)')
+        const unlink = db.prepare(
+          'DELETE FROM image_tags WHERE image_id = ? AND tag_id IN (SELECT id FROM tags WHERE ulower(name) = ulower(?))',
+        )
         for (const name of clean) for (const imageId of imageIds) unlink.run(imageId, name)
         deleteOrphanTags()
       })()
     },
-    /** Tags starting with `prefix` (no case), most used first; without `revealHidden` only visible images count. */
+    /**
+     * Tags starting with `prefix` (trimmed; case folded in any script), most used first; without `revealHidden`
+     * only visible images count.
+     */
     suggest(prefix: string, limit: number, opts: { revealHidden: boolean }): string[] {
-      const like = `${escapeLike(prefix)}%`
+      const like = `${escapeLike(prefix.trim())}%`
       const visible = opts.revealHidden ? '' : 'AND i.hidden = 0'
       const rows = db.prepare(
         `SELECT t.name AS name FROM tags t JOIN image_tags it ON it.tag_id = t.id JOIN images i ON i.id = it.image_id
-         WHERE t.name LIKE ? ESCAPE '\\' ${visible} GROUP BY t.id ORDER BY COUNT(*) DESC, t.name COLLATE NOCASE LIMIT ?`,
+         WHERE ulower(t.name) LIKE ulower(?) ESCAPE '\\' ${visible}
+         GROUP BY t.id ORDER BY COUNT(*) DESC, ulower(t.name) LIMIT ?`,
       ).all(like, limit) as { name: string }[]
       return rows.map((r) => r.name)
     },

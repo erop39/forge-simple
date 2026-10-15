@@ -1,5 +1,4 @@
-import { promises as fs } from 'node:fs'
-import { extname, join } from 'node:path'
+import { join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
@@ -8,10 +7,11 @@ import { createForgeClient } from './forge/client'
 import { createConnectionMonitor } from './forge/connection'
 import { FINDINGS } from './forge/findings'
 import { forwardEvents, registerIpc } from './ipc/register'
+import { createLock } from './lock/lock'
 import { createOplog, RETENTION_KEY, retentionDays } from './oplog/oplog'
 import { createRunner } from './queue/runner'
 import { openDb } from './storage/db'
-import { resolveImageRequest } from './storage/image-protocol'
+import { createImageHandler, hiddenImageBlocker } from './storage/image-protocol'
 import { createImageStore, type MakeThumb } from './storage/image-store'
 import { createRepos } from './storage/repos'
 
@@ -19,7 +19,6 @@ const THUMB_WIDTH = 480
 const MONITOR_INTERVAL_MS = 2000
 /** before-quit waits this long for the queue to stop; recover() fixes a still-running job on next start. */
 const SHUTDOWN_TIMEOUT_MS = 5000
-const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }
 
 // Must run before `ready`.
 protocol.registerSchemesAsPrivileged([
@@ -96,6 +95,8 @@ async function boot(): Promise<void> {
   const repos = createRepos(db, now)
   const oplog = createOplog(db, now, (entry) => send('oplog:added', entry))
   const imagesDir = (): string => repos.settings.get('imagesDir') ?? join(userData, 'images')
+  // Closed at every start: whether it is open lives only in memory.
+  const lock = createLock(repos.settings, oplog)
 
   oplog.purgeOlderThan(retentionDays(repos.settings.get(RETENTION_KEY)))
   oplog.write({
@@ -155,6 +156,7 @@ async function boot(): Promise<void> {
     copyToClipboard: (value) => clipboard.writeText(value),
     onServerChanged: syncMonitor,
     capabilities,
+    lock,
     chooseExportPath: async (defaultName) => {
       const options = { defaultPath: join(app.getPath('documents'), defaultName) }
       const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
@@ -162,17 +164,9 @@ async function boot(): Promise<void> {
     },
   }, send)
 
-  protocol.handle('fnc-img', async (request) => {
-    const file = resolveImageRequest(request.url, imagesDir())
-    const type = file ? IMAGE_TYPES[extname(file).toLowerCase()] : undefined
-    if (!file || !type) return new Response(null, { status: 403 })
-    try {
-      return new Response(new Uint8Array(await fs.readFile(file)), { headers: { 'Content-Type': type } })
-    } catch (err) {
-      const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
-      return new Response(null, { status: missing ? 404 : 500 })
-    }
-  })
+  // The files of hidden images answer 404 while the lock is closed.
+  const serveImage = createImageHandler({ baseDir: imagesDir, isBlocked: hiddenImageBlocker(repos.images, lock, imagesDir) })
+  protocol.handle('fnc-img', (request) => serveImage(request.url))
 
   runner.recover()
   runner.start()

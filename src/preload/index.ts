@@ -43,8 +43,16 @@ const api: Api = {
   },
   images: {
     list: (opts) => invoke('images:list', opts),
+    query: (q) => invoke('images:query', q),
     details: (id) => invoke('images:details', id),
     delete: (id) => invoke('images:delete', id),
+    setHidden: (ids, hidden) => invoke('images:setHidden', ids, hidden),
+  },
+  lock: {
+    state: () => invoke('lock:state'),
+    open: (password) => invoke('lock:open', password),
+    close: () => invoke('lock:close'),
+    setPassword: (oldPassword, next) => invoke('lock:setPassword', oldPassword, next),
   },
   clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },

@@ -30,9 +30,44 @@
   object-fit: cover;
 }
 
+/* A hidden image while locked: the same box, hatched, with a lock in the middle. */
+.locked {
+  background: var(--hatch), var(--surface-1);
+}
+
+.unlock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.unlock:hover,
+.unlock:focus-visible {
+  color: var(--text-2);
+}
+
+/* Always visible on a hidden image shown while unlocked: icon and word, never colour alone. */
+.badge {
+  position: absolute;
+  top: var(--sp-1);
+  left: var(--sp-1);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  height: var(--h-control);
+  border-radius: var(--r-tag);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  color: var(--text-2);
+  font-size: 12px;
+  pointer-events: none;
+}
+
 /* Hover-only parts fade with opacity and stay in the tab order, so focus reveals them too. */
 .caption,
-.delete {
+.actions {
   position: absolute;
   opacity: 0;
   transition: opacity var(--dur-hover) ease-out;
@@ -50,15 +85,20 @@
   color: var(--text-2);
 }
 
-.delete {
+.actions {
   top: var(--sp-1);
   right: var(--sp-1);
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.action {
   background: color-mix(in srgb, var(--canvas) 80%, transparent);
 }
 
 .tile:hover .caption,
-.tile:hover .delete,
+.tile:hover .actions,
 .tile:focus-within .caption,
-.tile:focus-within .delete {
+.tile:focus-within .actions {
   opacity: 1;
 }

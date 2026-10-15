@@ -1,6 +1,7 @@
 import type { Api, AppEvents, ConnectionCheck } from '@shared/ipc'
 import type {
-  Catalog, GenerationParams, ImageRecord, Job, JobProgress, NegativePreset, OplogEntry, PartStatus, RestartOutcome, ServerInfo,
+  Catalog, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, OplogEntry, PartStatus, RestartOutcome,
+  ServerInfo,
 } from '@shared/types'
 import { en } from '../locales/en'
 import { createAppStore, LOG_LIMIT, logQuery } from './store'
@@ -73,7 +74,17 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
       listActive: vi.fn(async (): Promise<Job[]> => [job(1, 'running'), job(2, 'queued')]),
       get: vi.fn(async (id: number) => job(id, 'failed')),
     },
-    images: { list: vi.fn(async (): Promise<ImageRecord[]> => [image(5), image(4)]), delete: vi.fn(async () => {}) },
+    images: {
+      list: vi.fn(async (_opts: { limit: number; beforeId?: number }): Promise<ImageRecord[]> => [image(5), image(4)]),
+      delete: vi.fn(async () => {}),
+      setHidden: vi.fn(async (_ids: number[], _hidden: boolean) => {}),
+    },
+    lock: {
+      state: vi.fn(async (): Promise<LockState> => ({ hasPassword: true, open: false })),
+      open: vi.fn(async (_password: string) => {}),
+      close: vi.fn(async () => {}),
+      setPassword: vi.fn(async (_old: string | null, _next: string) => {}),
+    },
     connection: { get: vi.fn(async () => connected) },
     oplog: {
       list: vi.fn(async (): Promise<OplogEntry[]> => [logEntry(2, 'error'), logEntry(1)]),
@@ -194,7 +205,7 @@ test('init is safe to call twice: one load, one set of subscriptions', async () 
   const { api, store } = await ready()
   await store.getState().init()
   expect(api.settings.get).toHaveBeenCalledTimes(1)
-  expect(api.on).toHaveBeenCalledTimes(10)
+  expect(api.on).toHaveBeenCalledTimes(12)
 })
 
 test('params stay null when the catalog has no checkpoints', async () => {
@@ -829,5 +840,126 @@ describe('activity log', () => {
     expect(store.getState().viewRequest).toBe(5)
     store.getState().clearViewRequest()
     expect(store.getState().viewRequest).toBeNull()
+  })
+})
+
+describe('hidden images and the lock', () => {
+  const hiddenOpen = (id: number): ImageRecord => ({ ...image(id), hidden: true, tags: ['secret'], infotext: 'p', seed: 9 })
+  const hiddenLocked = (id: number): ImageRecord => ({
+    ...image(id), hidden: true, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
+  })
+
+  test('init loads the lock state', async () => {
+    const { store } = await ready()
+    expect(store.getState().lock).toEqual({ hasPassword: true, open: false })
+  })
+
+  test('a lock event that closes it covers hidden images at once and reloads the gallery', async () => {
+    const fake = fakeApi()
+    fake.api.images.list.mockResolvedValueOnce([image(5), hiddenOpen(4)])
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    const reload = deferred<ImageRecord[]>()
+    fake.api.images.list.mockReturnValueOnce(reload.promise)
+    fake.emit('lock', { hasPassword: true, open: false })
+    // Before the reload answers, the hidden image already carries nothing to show.
+    expect(store.getState().images.find((i) => i.id === 4)).toEqual(hiddenLocked(4))
+    expect(store.getState().lock.open).toBe(false)
+    expect(fake.api.images.list).toHaveBeenLastCalledWith({ limit: 100 })
+    reload.resolve([image(5), hiddenLocked(4)])
+    await vi.waitFor(() => expect(store.getState().images.map((i) => i.id)).toEqual([5, 4]))
+  })
+
+  test('opening the lock reloads the gallery with the hidden images', async () => {
+    const fake = fakeApi()
+    fake.api.images.list.mockResolvedValueOnce([image(5), hiddenLocked(4)])
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    fake.api.images.list.mockResolvedValueOnce([image(5), hiddenOpen(4)])
+    await store.getState().unlock('secret-pass')
+    expect(fake.api.lock.open).toHaveBeenCalledWith('secret-pass')
+    fake.emit('lock', { hasPassword: true, open: true })
+    await vi.waitFor(() => expect(store.getState().images[1]).toEqual(hiddenOpen(4)))
+    expect(store.getState().lock).toEqual({ hasPassword: true, open: true })
+  })
+
+  test('unlock rejects with the error key on a wrong password', async () => {
+    const { api, store } = await ready()
+    api.lock.open.mockRejectedValueOnce(new Error('error.wrongPassword'))
+    await expect(store.getState().unlock('nope')).rejects.toThrow('error.wrongPassword')
+  })
+
+  test('the reload keeps every page that was loaded before', async () => {
+    const fake = fakeApi()
+    const page = (from: number) => Array.from({ length: 100 }, (_, i) => image(from - i))
+    fake.api.images.list.mockResolvedValueOnce(page(300))
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    fake.api.images.list.mockResolvedValueOnce(page(200))
+    await store.getState().loadMoreImages()
+    expect(store.getState().images).toHaveLength(200)
+    fake.api.images.list.mockClear()
+    fake.api.images.list.mockResolvedValueOnce(page(300)).mockResolvedValueOnce(page(200))
+    fake.emit('images:changed', { ids: [250] })
+    await vi.waitFor(() => expect(fake.api.images.list).toHaveBeenCalledTimes(2))
+    expect(fake.api.images.list.mock.calls.map((c) => c[0])).toEqual([{ limit: 100 }, { limit: 100, beforeId: 201 }])
+    await vi.waitFor(() => expect(store.getState().images).toHaveLength(200))
+  })
+
+  test('an older page that answers after the lock closed is dropped', async () => {
+    const fake = fakeApi()
+    fake.api.images.list.mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => image(200 - i)))
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    const older = deferred<ImageRecord[]>()
+    fake.api.images.list.mockReturnValueOnce(older.promise)
+    const more = store.getState().loadMoreImages()
+    fake.api.images.list.mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => image(200 - i)))
+    fake.emit('lock', { hasPassword: true, open: false })
+    older.resolve([hiddenOpen(100)])
+    await more
+    await vi.waitFor(() => expect(fake.api.images.list).toHaveBeenCalledTimes(3))
+    expect(store.getState().images.some((i) => i.id === 100)).toBe(false)
+  })
+
+  test('the first hide without a password asks for one, then hides', async () => {
+    const fake = fakeApi()
+    fake.api.lock.state.mockResolvedValueOnce({ hasPassword: false, open: false })
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    await store.getState().setHidden([5], true)
+    expect(fake.api.images.setHidden).not.toHaveBeenCalled()
+    expect(store.getState().lockDialog).toBe('set')
+    await store.getState().setLockPassword(null, 'secret-pass')
+    expect(fake.api.lock.setPassword).toHaveBeenCalledWith(null, 'secret-pass')
+    expect(fake.api.images.setHidden).toHaveBeenCalledWith([5], true)
+    expect(store.getState().lockDialog).toBeNull()
+  })
+
+  test('closing the password dialog drops the waiting hide', async () => {
+    const fake = fakeApi()
+    fake.api.lock.state.mockResolvedValueOnce({ hasPassword: false, open: false })
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    await store.getState().setHidden([5], true)
+    store.getState().closeLockDialog()
+    fake.emit('lock', { hasPassword: true, open: false })
+    await store.getState().setLockPassword(null, 'secret-pass')
+    expect(fake.api.images.setHidden).not.toHaveBeenCalled()
+  })
+
+  test('with a password set, hiding goes straight to main; a refusal shows as lastError', async () => {
+    const { api, store } = await ready()
+    await store.getState().setHidden([5, 4], true)
+    expect(api.images.setHidden).toHaveBeenCalledWith([5, 4], true)
+    api.images.setHidden.mockRejectedValueOnce(new Error('error.notFound'))
+    await store.getState().setHidden([5], false)
+    expect(store.getState().lastError).toBe('error.notFound')
+  })
+
+  test('lockNow closes the lock in main', async () => {
+    const { api, store } = await ready()
+    await store.getState().lockNow()
+    expect(api.lock.close).toHaveBeenCalled()
   })
 })

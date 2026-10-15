@@ -36,6 +36,8 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
 
 export function openDb(path: string): Db {
   const db = new Database(path)
+  // SQLite's NOCASE and LIKE fold ASCII only; tag identity and search use this Unicode-aware fold instead.
+  db.function('ulower', { deterministic: true }, (s: unknown) => (s == null ? s : String(s).toLowerCase()))
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   const current = db.pragma('user_version', { simple: true }) as number
