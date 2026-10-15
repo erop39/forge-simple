@@ -162,5 +162,5 @@ describe('wrong-password throttle', () => {
     await lock.open('secret-pass')
     lock.close()
     for (let i = 0; i < MAX_FAILURES - 1; i++) await expect(lock.open('bad-guess')).rejects.toThrow('error.wrongPassword')
-  })
+  }, 30_000) // ten real scrypt runs: slow under a full parallel test run
 })
