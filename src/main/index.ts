@@ -1,5 +1,5 @@
 import { isAbsolute, join, resolve } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol, shell } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
 import { createCapabilities } from './forge/capabilities'
@@ -184,6 +184,7 @@ async function boot(): Promise<void> {
     // Dev builds only: points the first-run check of the local Forge at a mock (manual checks).
     localUrl: !app.isPackaged ? process.env['FNC_LOCAL_SERVER'] || undefined : undefined,
     copyToClipboard: (value) => clipboard.writeText(value),
+    revealFile: (path) => shell.showItemInFolder(path),
     onServerChanged: syncMonitor,
     capabilities,
     lock,

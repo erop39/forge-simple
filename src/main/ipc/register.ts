@@ -38,6 +38,8 @@ export interface IpcDeps {
   /** Builds a throwaway client for a candidate address. */
   createClient(url: string, opts?: { pingTimeoutMs?: number }): ForgeClient
   copyToClipboard(text: string): void
+  /** Shows a file in the system file manager. */
+  revealFile(path: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
   onServerChanged?(): void
   /** Asks the user where to save a log export (a save dialog); null when cancelled. */
@@ -165,6 +167,7 @@ function validateEnqueue(p: unknown): GenerationParams {
     ...(hires ? { hires: {
       scale: hires.scale, upscaler: hires.upscaler, secondPassSteps: hires.secondPassSteps,
       denoisingStrength: hires.denoisingStrength,
+      ...(hires.cfgScale !== undefined ? { cfgScale: hires.cfgScale } : {}),
     } } : {}),
     ...(img2img ? { img2img: {
       sourceImageId: img2img.sourceImageId, denoisingStrength: img2img.denoisingStrength,
@@ -237,7 +240,7 @@ export function validateImageQuery(q: unknown): ImageQuery {
 export function toImageRecord(row: ImageRow, opts: { tags?: string[]; locked?: boolean } = {}): ImageRecord {
   const { filePath: _filePath, thumbPath: _thumbPath, ...rest } = row
   // jobId 0 (no job has it): the job would lead to the prompt.
-  if (opts.locked) return { ...rest, jobId: 0, sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
+  if (opts.locked) return { ...rest, jobId: 0, sourceImageId: null, enhanced: false, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
   return {
     ...rest, tags: opts.tags ?? [], locked: false,
     url: toRecordImageUrl(row.id, 'image'), thumbUrl: toRecordImageUrl(row.id, 'thumb'),
@@ -582,6 +585,12 @@ export function registerIpc(
 
   handle('jobs:listActive', () => repos.jobs.listActive())
 
+  handle('jobs:clearUnfinished', () => {
+    const ids = repos.jobs.clearUnfinished()
+    for (const id of ids) send('job:removed', { id })
+    return ids.length
+  })
+
   handle('jobs:get', (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
     const job = repos.jobs.get(id) ?? fail('error.notFound')
@@ -639,6 +648,13 @@ export function registerIpc(
   handle('clipboard:writeText', (value) => {
     if (typeof value !== 'string' || value.length > MAX_TEXT) return fail('error.invalidParams')
     deps.copyToClipboard(value)
+  })
+
+  handle('images:reveal', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const row = repos.images.get(id) ?? fail('error.notFound')
+    if (row.hidden && !lock.isOpen()) return fail('error.notFound')
+    deps.revealFile(row.filePath)
   })
 
   handle('images:delete', async (id) => {

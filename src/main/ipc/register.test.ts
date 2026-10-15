@@ -38,6 +38,7 @@ let catalogThrows: boolean
 let imageStore: ReturnType<typeof createImageStore>
 let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
+let revealed: string | null
 let exportPath: string | null
 let exportNames: string[]
 let selectedImagesDir: string | null
@@ -77,6 +78,7 @@ beforeEach(async () => {
   handlers = new Map()
   sent = []
   copiedText = null
+  revealed = null
   exportPath = null
   exportNames = []
   selectedImagesDir = null
@@ -92,6 +94,7 @@ beforeEach(async () => {
       imageRoots: () => [dir], chooseImagesDir: async () => selectedImagesDir,
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
+      revealFile: (path) => { revealed = path },
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       lock,
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
@@ -447,6 +450,17 @@ test('clipboard:writeText copies a prompt without logging it', async () => {
   await expect(call('clipboard:writeText', 3)).rejects.toThrow('error.invalidParams')
 })
 
+test('images:reveal shows the saved file and refuses a hidden image while locked', async () => {
+  const { row, filePath } = seedImage()
+  await call('images:reveal', row.id)
+  expect(revealed).toBe(filePath)
+  revealed = null
+  repos.images.setHidden([row.id], true)
+  await expect(call('images:reveal', row.id)).rejects.toThrow('error.notFound')
+  expect(revealed).toBeNull()
+  await expect(call('images:reveal', 0)).rejects.toThrow('error.invalidParams')
+})
+
 test('images:delete removes the row and both files, emits image:removed, logs storage', async () => {
   const { row, filePath, thumbPath } = seedImage()
   await call('images:delete', row.id)
@@ -494,6 +508,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
     monitor: { sampleOnce: () => Promise.reject(new Error('x')), current: () => ({ state: 'offline', latencyMs: null, attempts: 0, lastOkAt: null }) },
     images: imageStore, oplog, imagesDir: () => dir, createClient: () => { throw boom },
     copyToClipboard: () => undefined,
+    revealFile: () => undefined,
     capabilities: { current: () => ({ canRestart: false }), refresh: async () => ({ canRestart: false }), reset: () => undefined },
     chooseExportPath: async () => null, lock: createLock(repos.settings, oplog),
   }, () => undefined)
@@ -922,7 +937,7 @@ describe('hidden images and the lock', () => {
     await call('images:setHidden', [row.id], true)
     expect(await record(row.id)).toEqual({
       id: row.id, jobId: 0, width: 64, height: 64, createdAt: row.createdAt, durationMs: 1, hidden: true,
-      sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
+      sourceImageId: null, enhanced: false, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
     })
     expect(await call('images:query', { limit: 10, text: 'cat' })).toEqual([])
     expect(await call('images:query', { limit: 10, tags: ['secret-tag'] })).toEqual([])
@@ -1042,4 +1057,16 @@ describe('fix round 1: nothing of a hidden image leaks while locked', () => {
     await expect(call('lock:open', 'bad-guess')).rejects.toThrow('error.tooManyAttempts')
     await expect(call('lock:open', 'secret-pass')).rejects.toThrow('error.tooManyAttempts')
   })
+})
+
+test('jobs:clearUnfinished removes failed jobs and tells the renderer', async () => {
+  const server = repos.servers.setActiveUrl('http://a:7860')
+  const job = repos.jobs.insert(server.id, 'txt2img', {
+    family: 'sdxl', checkpoint: 'm', modules: [], prompt: 'p', negativePrompt: '', width: 64, height: 64, steps: 1,
+    cfgScale: 1, distilledCfg: 1, shift: null, clipSkip: null, sampler: 's', scheduler: 'a', seed: 1, count: 1, loras: [],
+  })
+  repos.jobs.setStatus(job.id, 'failed')
+  expect(await call('jobs:clearUnfinished')).toBe(1)
+  expect(repos.jobs.get(job.id)).toBeNull()
+  expect(sent.some((s) => s.e === 'job:removed' && (s.p as { id: number }).id === job.id)).toBe(true)
 })

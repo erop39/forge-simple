@@ -70,6 +70,7 @@ export function Gallery() {
   const clearViewRequest = useAppStore((s) => s.clearViewRequest)
   const setHidden = useAppStore((s) => s.setHidden)
   const openLockDialog = useAppStore((s) => s.openLockDialog)
+  const openHires = useAppStore((s) => s.openHires)
   const hasPassword = useAppStore((s) => s.lock.hasPassword)
   const [viewportRef, viewport] = useViewportSize()
   const scrollArea = useRef<HTMLDivElement | null>(null)
@@ -253,6 +254,7 @@ export function Gallery() {
         image={item.image}
         onOpen={openViewer}
         onDelete={deleteTile}
+        onHires={openHires}
         onToggleHidden={toggleHidden}
         onUnlock={unlock}
         now={today}

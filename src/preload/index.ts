@@ -41,6 +41,7 @@ const api: Api = {
     cancel: (id) => invoke('jobs:cancel', id),
     retry: (id) => invoke('jobs:retry', id),
     listActive: () => invoke('jobs:listActive'),
+    clearUnfinished: () => invoke('jobs:clearUnfinished'),
     get: (id) => invoke('jobs:get', id),
   },
   images: {
@@ -48,6 +49,7 @@ const api: Api = {
     query: (q) => invoke('images:query', q),
     details: (id) => invoke('images:details', id),
     delete: (id) => invoke('images:delete', id),
+    reveal: (id) => invoke('images:reveal', id),
     setHidden: (ids, hidden) => invoke('images:setHidden', ids, hidden),
   },
   lock: {

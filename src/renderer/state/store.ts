@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings,
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -31,7 +31,7 @@ export type LockDialogMode = 'set' | 'open' | 'change'
 
 /** A hidden image as main sends it while locked: nothing that shows or describes the picture. */
 export const lockedCopy = (image: ImageRecord): ImageRecord =>
-  ({ ...image, jobId: 0, sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
+  ({ ...image, jobId: 0, sourceImageId: null, enhanced: false, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
 
 export interface AppState {
   connection: ConnectionStatus
@@ -67,6 +67,8 @@ export interface AppState {
   forgeUnhealthy: boolean
   /** The restart confirmation opened from a job tile or the unhealthy notice. */
   restartAsked: boolean
+  /** The saved image whose Send to hires dialog is open. */
+  hiresFor: number | null
   logOpen: boolean
   /** Newest first, matching logFilters; new entries arrive live while the panel is open. */
   logEntries: OplogEntry[]
@@ -97,6 +99,8 @@ export interface AppState {
   deleteImage(id: number): Promise<void>
   /** Removes a failed or interrupted job from the list; there is nothing to tell the main process. */
   dismissJob(id: number): void
+  /** Removes every failed and interrupted job for good (not only from this session). */
+  clearUnfinished(): Promise<void>
   /** Appends the next page of older images; concurrent calls share one request. */
   loadMoreImages(): Promise<void>
   /** Tests and saves a server; resolves the check (a failed refresh afterwards counts as a failure). */
@@ -113,6 +117,10 @@ export interface AppState {
   dismissError(): void
   togglePanel(): void
   askRestart(): void
+  openHires(id: number): void
+  closeHires(): void
+  /** Re-runs the image's own job (same model, prompt and seed) with a hires second pass. */
+  queueHires(id: number, hires: HiresSettings): Promise<'queued' | 'notTxt2img' | 'failed'>
   closeRestart(): void
   /** Rejects with the error key when the request fails (e.g. error.network). */
   restartForge(): Promise<RestartOutcome>
@@ -492,6 +500,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       capabilities: { canRestart: false },
       forgeUnhealthy: false,
       restartAsked: false,
+      hiresFor: null,
       logOpen: false,
       logEntries: [],
       logFilters: { level: 'all', category: 'all', period: '24h' },
@@ -628,6 +637,13 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       dismissJob(id) {
         forgetJob(id)
+      },
+
+      async clearUnfinished() {
+        if (await attempt(() => api.jobs.clearUnfinished()) === undefined) return
+        for (const job of Object.values(get().jobs)) {
+          if (job.status === 'failed' || job.status === 'interrupted') forgetJob(job.id)
+        }
       },
 
       loadMoreImages() {
@@ -767,6 +783,34 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           if (errorKeyOf(e) === 'error.noPassword') askPassword()
           else fail(e)
         }
+      },
+
+      openHires(id) {
+        set({ hiresFor: id })
+      },
+
+      closeHires() {
+        set({ hiresFor: null })
+      },
+
+      async queueHires(id, hires) {
+        const { images, catalog } = get()
+        const image = images.find((item) => item.id === id && !item.locked)
+        if (!image || image.seed < 0) return 'failed'
+        const details = await attempt(() => api.images.details(id))
+        if (!details) return 'failed'
+        if (details.jobType !== 'txt2img') return 'notTxt2img'
+        const { width, height } = details.params
+        if (!catalog?.upscalers.includes(hires.upscaler) || hires.scale <= 1
+          || width * hires.scale > 4096 || height * hires.scale > 4096) return 'failed'
+        // The saved job carries every setting but the seed (a batch holds several); the image knows its own.
+        const params: GenerationParams = {
+          ...details.params, count: 1, seed: image.seed, img2img: undefined, upscale: undefined, hires,
+        }
+        const created = await attempt(() => api.jobs.enqueue(params))
+        if (!created) return 'failed'
+        set((s) => ({ lastError: null, hiresFor: null, jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
+        return 'queued'
       },
 
       askRestart() {

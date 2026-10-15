@@ -3,6 +3,7 @@ import { t } from './i18n/t'
 import { useAppStore } from './state/StoreProvider'
 import { EmptyState, NoModelsState } from './components/EmptyState'
 import { RestartDialog } from './components/ForgeRestart'
+import { HiresDialog } from './components/HiresDialog'
 import { LockDialog } from './components/LockDialog'
 import { LogPanel } from './components/LogPanel'
 import { Gallery } from './components/Gallery'
@@ -47,6 +48,7 @@ export function App() {
       <LogPanel />
       <ServerDialog open={dialogOpen || noServer} onOpenChange={setDialogOpen} />
       <RestartDialog />
+      <HiresDialog />
       <LockDialog />
     </div>
   )

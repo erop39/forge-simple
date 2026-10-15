@@ -103,6 +103,8 @@ export interface Api {
     cancel(id: number): Promise<void>
     retry(id: number): Promise<Job>
     listActive(): Promise<Job[]>
+    /** Removes every failed and interrupted job (all servers) and pushes job:removed for each; resolves with the count. */
+    clearUnfinished(): Promise<number>
     /** Any stored job (e.g. to show why a logged job failed); error.notFound when it is gone. */
     get(id: number): Promise<Job>
   }
@@ -117,6 +119,8 @@ export interface Api {
     query(q: ImageQuery): Promise<ImageRecord[]>
     details(id: number): Promise<ImageDetails>
     delete(id: number): Promise<void>
+    /** Shows the saved file in the system file manager; a hidden image while locked is error.notFound. */
+    reveal(id: number): Promise<void>
     /**
      * Hiding is refused with error.noPassword until a password is set; unhiding with error.notFound while the
      * lock is closed. Pushes 'images:changed'.
@@ -173,8 +177,8 @@ export const CHANNELS = [
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',
-  'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:get',
-  'images:list', 'images:query', 'images:details', 'images:delete', 'images:setHidden', 'clipboard:writeText',
+  'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
+  'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',
   'connection:get',
   'forge:capabilities', 'forge:health', 'forge:restart', 'forge:unload',

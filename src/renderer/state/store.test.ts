@@ -908,7 +908,7 @@ describe('activity log', () => {
 describe('hidden images and the lock', () => {
   const hiddenOpen = (id: number): ImageRecord => ({ ...image(id), hidden: true, tags: ['secret'], infotext: 'p', seed: 9 })
   const hiddenLocked = (id: number): ImageRecord => ({
-    ...image(id), jobId: 0, hidden: true, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
+    ...image(id), jobId: 0, hidden: true, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true, enhanced: false,
   })
 
   test('init loads the lock state', async () => {
@@ -1072,4 +1072,29 @@ test('selecting a model replaces a hires upscaler the catalog does not list and 
   }))
   await store.getState().selectCheckpoint('a.safetensors')
   expect(store.getState().params?.hires).toEqual({ scale: 2, upscaler: listed, secondPassSteps: 9, denoisingStrength: 0.3 })
+})
+
+test('queueHires re-runs the saved job with the image seed and the chosen second pass', async () => {
+  const { api, store } = await ready()
+  const saved = { ...store.getState().params!, seed: 5, count: 3, prompt: 'kept' }
+  store.setState((s) => ({ catalog: { ...s.catalog!, upscalers: ['Latent'] },
+    images: [{ id: 9, jobId: 1, url: '', thumbUrl: '', width: 512, height: 512, seed: 777, infotext: '', createdAt: 1,
+      durationMs: 1, hidden: false, sourceImageId: null, tags: [], locked: false }] }))
+  api.images.details = vi.fn(async () => ({ image: store.getState().images[0]!, params: saved, jobType: 'txt2img' as const }))
+  const hires = { scale: 2 as const, upscaler: 'Latent', secondPassSteps: 10, denoisingStrength: 0.45, cfgScale: 4 }
+  expect(await store.getState().queueHires(9, hires)).toBe('queued')
+  expect(api.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'kept', seed: 777, count: 1, hires }))
+  api.images.details = vi.fn(async () => ({ image: store.getState().images[0]!, params: saved, jobType: 'img2img' as const }))
+  expect(await store.getState().queueHires(9, hires)).toBe('notTxt2img')
+})
+
+test('clearUnfinished asks main and drops failed and interrupted tiles, keeping queued ones', async () => {
+  const { api, store } = await ready()
+  const job = (id: number, status: Job['status']): Job => ({ id, serverId: 1, type: 'txt2img', status,
+    params: store.getState().params!, error: null, createdAt: 1, finishedAt: null, durationMs: null, stepsPerSec: null, peakVram: null })
+  store.setState({ jobs: { 1: job(1, 'failed'), 2: job(2, 'interrupted'), 3: job(3, 'queued') } })
+  api.jobs.clearUnfinished = vi.fn(async () => 2)
+  await store.getState().clearUnfinished()
+  expect(api.jobs.clearUnfinished).toHaveBeenCalledOnce()
+  expect(Object.keys(store.getState().jobs)).toEqual(['3'])
 })

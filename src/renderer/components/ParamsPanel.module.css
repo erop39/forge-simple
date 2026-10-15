@@ -76,6 +76,12 @@
   font-weight: 500;
 }
 
+/* A button that belongs to the row above it, on its own line so the panel never overflows. */
+.rowAction {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .hiresTarget {
   margin: 0;
   color: var(--text-2);

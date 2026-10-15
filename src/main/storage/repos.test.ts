@@ -530,3 +530,37 @@ test('images.setHidden counts existing images and flips the flag both ways', () 
   expect(repos.images.setHidden([ids[0]!], false)).toBe(1)
   expect(repos.images.get(ids[0]!)?.hidden).toBe(false)
 })
+
+test('images carry enhanced when their job was an upscale or ran hires', () => {
+  const { repos } = setup()
+  const server = repos.servers.setActiveUrl('http://a:7860')
+  const hires = (scale: 1 | 2) => ({ scale, upscaler: 'Latent', secondPassSteps: 8, denoisingStrength: 0.4 })
+  const jobs = [
+    repos.jobs.insert(server.id, 'txt2img', params()),
+    repos.jobs.insert(server.id, 'txt2img', params({ hires: hires(2) })),
+    repos.jobs.insert(server.id, 'txt2img', params({ hires: hires(1) })),
+    repos.jobs.insert(server.id, 'upscale', params({ upscale: { sourceImageId: 1, upscaler: 'x', scale: 2 } })),
+  ]
+  const images = jobs.map((j) => repos.images.insert(imageRow(j.id)))
+  expect(images.map((i) => i.enhanced)).toEqual([false, true, false, true])
+  expect(repos.images.list({ limit: 10 }).map((i) => i.enhanced).reverse()).toEqual([false, true, false, true])
+})
+
+test('clearUnfinished removes failed and interrupted jobs without images and keeps the rest', () => {
+  const { repos } = setup()
+  const server = repos.servers.setActiveUrl('http://a:7860')
+  const add = (status: 'failed' | 'interrupted' | 'queued' | 'done') => {
+    const job = repos.jobs.insert(server.id, 'txt2img', params())
+    return status === 'queued' ? job : repos.jobs.setStatus(job.id, status)
+  }
+  const failed = add('failed')
+  const interrupted = add('interrupted')
+  const queued = add('queued')
+  const done = add('done')
+  repos.images.insert(imageRow(done.id))
+  expect(repos.jobs.clearUnfinished()).toEqual([failed.id, interrupted.id])
+  expect(repos.jobs.get(failed.id)).toBeNull()
+  expect(repos.jobs.get(queued.id)).not.toBeNull()
+  expect(repos.jobs.get(done.id)).not.toBeNull()
+  expect(repos.jobs.clearUnfinished()).toEqual([])
+})

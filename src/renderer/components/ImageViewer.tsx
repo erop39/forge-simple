@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ArrowLeft, ArrowRight, Check, Copy, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, Check, Copy, FolderOpen, MagnifyingGlassMinus, MagnifyingGlassPlus, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { PROFILES } from '@shared/profiles'
 import type { ImageDetails, ImageRecord, UpscaleSettings } from '@shared/types'
@@ -10,6 +10,14 @@ import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import { Select } from './ui/Select'
 import styles from './ImageViewer.module.css'
+
+/** Zoom steps; 1 is the picture fitted to the window. */
+export const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8] as const
+const zoomStep = (zoom: number, direction: 1 | -1): number => {
+  const index = ZOOMS.findIndex((value) => value >= zoom)
+  const next = Math.min(ZOOMS.length - 1, Math.max(0, (index === -1 ? ZOOMS.length - 1 : index) + direction))
+  return ZOOMS[next]!
+}
 
 type Props = {
   image: ImageRecord | null
@@ -41,6 +49,9 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const [defaultSaved, setDefaultSaved] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [zoom, setZoom] = useState(1)
+  const [revealFailed, setRevealFailed] = useState(false)
+  const stage = useRef<HTMLDivElement>(null)
   const id = image?.id
   // The image on screen now: a copy that settles after navigation or close must not mark another image.
   const shownId = useRef(id)
@@ -50,6 +61,8 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (id === undefined) return
     let cancelled = false
     setCopyState('idle')
+    setZoom(1)
+    setRevealFailed(false)
     setUpscaleOpen(false)
     setUpscaleFailed(false)
     setDefaultSaved(false)
@@ -77,6 +90,9 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (id === undefined) return
     const onArrow = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement && event.target.type === 'range') return
+      if (event.key === '+' || event.key === '=') setZoom((value) => zoomStep(value, 1))
+      else if (event.key === '-') setZoom((value) => zoomStep(value, -1))
+      else if (event.key === '0') setZoom(1)
       if (event.key === 'ArrowLeft' && hasPrevious) {
         event.preventDefault()
         onPrevious()
@@ -88,6 +104,19 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     document.addEventListener('keydown', onArrow)
     return () => document.removeEventListener('keydown', onArrow)
   }, [id, hasPrevious, hasNext, onPrevious, onNext])
+
+  // The wheel zooms the picture; a native listener, because React's wheel handlers are passive.
+  const comparing = image !== null && sourceId !== null
+  useEffect(() => {
+    const element = stage.current
+    if (!element || comparing) return
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      setZoom((value) => zoomStep(value, event.deltaY < 0 ? 1 : -1))
+    }
+    element.addEventListener('wheel', onWheel, { passive: false })
+    return () => element.removeEventListener('wheel', onWheel)
+  }, [comparing, id])
 
   if (image === null) return null
   const current = details?.image.id === image.id ? details : null
@@ -140,6 +169,29 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (shownId.current === copiedId) setCopyState(state)
   }
 
+  async function reveal(): Promise<void> {
+    setRevealFailed(false)
+    try { await window.api.images.reveal(image!.id) } catch { setRevealFailed(true) }
+  }
+
+  /** Drag pans a zoomed picture. */
+  function pan(event: React.PointerEvent<HTMLDivElement>): void {
+    const element = stage.current
+    if (!element || zoom === 1 || event.button !== 0) return
+    const startX = event.clientX + element.scrollLeft
+    const startY = event.clientY + element.scrollTop
+    const move = (e: PointerEvent): void => {
+      element.scrollLeft = startX - e.clientX
+      element.scrollTop = startY - e.clientY
+    }
+    const stop = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
   async function queueUpscale(): Promise<void> {
     if (!params || !selectedScale || !selectedMethod) return
     setUpscaleFailed(false)
@@ -163,6 +215,19 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
             <Dialog.Description className="sr-only">{t('viewer.description')}</Dialog.Description>
             <div className={styles.actions}>
               <span className={`mono ${styles.position}`}>{t('viewer.position', { current: position, total: loadedCount })}</span>
+              {!visibleBefore && (
+                <>
+                  <button type="button" className={styles.iconButton} aria-label={t('viewer.zoomOut')} title={t('viewer.zoomOut')} disabled={zoom === ZOOMS[0]} onClick={() => setZoom((value) => zoomStep(value, -1))}>
+                    <MagnifyingGlassMinus size={20} aria-hidden="true" />
+                  </button>
+                  <button type="button" className={`mono ${styles.zoomLevel}`} aria-label={t('viewer.zoomFit')} title={t('viewer.zoomFit')} onClick={() => setZoom(1)}>
+                    {t('viewer.zoomLevel', { percent: Math.round(zoom * 100) })}
+                  </button>
+                  <button type="button" className={styles.iconButton} aria-label={t('viewer.zoomIn')} title={t('viewer.zoomIn')} disabled={zoom === ZOOMS[ZOOMS.length - 1]} onClick={() => setZoom((value) => zoomStep(value, 1))}>
+                    <MagnifyingGlassPlus size={20} aria-hidden="true" />
+                  </button>
+                </>
+              )}
               <button type="button" className={styles.iconButton} aria-label={t('viewer.previous')} title={t('viewer.previous')} disabled={!hasPrevious} onClick={onPrevious}>
                 <ArrowLeft size={20} aria-hidden="true" />
               </button>
@@ -174,7 +239,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
               </button>
             </div>
           </div>
-          <div className={styles.stage}>
+          <div ref={stage} className={`${styles.stage} ${zoom > 1 && !visibleBefore ? styles.zoomed : ''}`} onPointerDown={pan}>
             {visibleBefore ? (
               <div className={styles.comparison}
                 style={{ aspectRatio: `${image.width} / ${image.height}`,
@@ -188,7 +253,11 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                 <input className={styles.comparisonSlider} type="range" min={0} max={100} value={comparison}
                   aria-label={t('viewer.compare')} onChange={(event) => setComparison(Number(event.target.value))} />
               </div>
-            ) : <img className={styles.image} src={image.url} alt={t('viewer.imageAlt', { n: image.id })} />}
+            ) : (
+              <img className={styles.image} src={image.url} alt={t('viewer.imageAlt', { n: image.id })} draggable={false}
+                style={zoom > 1 ? { width: `calc(min(100cqw - 2 * var(--sp-3), (100cqh - 2 * var(--sp-3)) * ${image.width / image.height}) * ${zoom})`,
+                  maxWidth: 'none', maxHeight: 'none' } : undefined} />
+            )}
           </div>
           <div className={styles.details}>
             {params ? (
@@ -201,6 +270,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                       <Button disabled={allowedScales.length === 0} onClick={() => setUpscaleOpen((open) => !open)}>{t('viewer.upscale')}</Button>
                     )}
                     {methods.length > 0 && allowedScales.length === 0 && <span className={styles.state}>{t('viewer.upscaleLimit')}</span>}
+                    <Button icon={<FolderOpen size={16} />} onClick={() => void reveal()}>{t('viewer.openFolder')}</Button>
                     <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
                       {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
                     </Button>
@@ -221,13 +291,16 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                     {upscaleFailed && <span role="alert" className={styles.error}>{t('viewer.upscaleFailed')}</span>}
                   </div>
                 )}
-                <p className={styles.prompt}>{params.prompt}</p>
-                {params.negativePrompt && (
-                  <p className={styles.negative}>
-                    <span className={styles.label}>{t('viewer.negativePrompt')}: </span>{params.negativePrompt}
-                  </p>
-                )}
+                <div className={styles.promptScroll}>
+                  <p className={styles.prompt}>{params.prompt}</p>
+                  {params.negativePrompt && (
+                    <p className={styles.negative}>
+                      <span className={styles.label}>{t('viewer.negativePrompt')}: </span>{params.negativePrompt}
+                    </p>
+                  )}
+                </div>
                 {copyState === 'failed' && <p role="alert" className={styles.error}>{t('viewer.copyFailed')}</p>}
+                {revealFailed && <p role="alert" className={styles.error}>{t('viewer.revealFailed')}</p>}
                 <dl className={styles.metadata}>
                   {metadata.map(([label, value]) => (
                     <div className={styles.fact} key={label}>

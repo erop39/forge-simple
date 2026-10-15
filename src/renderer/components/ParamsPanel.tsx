@@ -148,10 +148,12 @@ function Hires() {
               options={options(upscalers.length ? upscalers : [hires.upscaler])}
               onChange={(upscaler) => { change({ upscaler }); setDefaultSaved(false) }}
             />
+          </ParamRow>
+          <div className={styles.rowAction}>
             <Button onClick={() => void setDefaultUpscaler('hires', hires.upscaler).then(setDefaultSaved)}>
               {defaultSaved ? t('viewer.upscalerDefaultSaved') : t('viewer.saveUpscalerDefault')}
             </Button>
-          </ParamRow>
+          </div>
           <ParamRow label={t('params.hiresSteps')}>
             <NumberField
               label={t('params.hiresSteps')}
@@ -171,6 +173,18 @@ function Hires() {
               onCommit={(denoisingStrength) => change({ denoisingStrength })}
             />
           </ParamRow>
+          {(PROFILES[params.family].cfg || PROFILES[params.family].distilledCfg) && (
+            <ParamRow label={t('params.hiresCfg')}>
+              <Slider
+                label={t('params.hiresCfg')}
+                value={hires.cfgScale ?? params.cfgScale}
+                min={1}
+                max={30}
+                step={0.5}
+                onCommit={(cfgScale) => change({ cfgScale })}
+              />
+            </ParamRow>
+          )}
         </>
       )}
     </section>

@@ -1,5 +1,9 @@
 import type { ImageQuery } from '@shared/types'
 
+/** 1 when the image's job was an upscale or ran a hires second pass. */
+export const ENHANCED_SQL = `(SELECT CASE WHEN j.type = 'upscale' OR COALESCE(json_extract(j.params, '$.hires.scale'), 1) > 1 THEN 1 ELSE 0 END
+  FROM jobs j WHERE j.id = images.job_id) AS enhanced`
+
 /** Escapes LIKE wildcards so user text matches literally (pair with ESCAPE '\'). */
 export const escapeLike = (text: string): string => text.replace(/[\\%_]/g, '\\$&')
 
@@ -31,7 +35,7 @@ export function buildImageQuery(q: ImageQuery, revealHidden: boolean): { sql: st
     args.push(tag)
   }
   if ((text || tags.length > 0) && !revealHidden) where.push('images.hidden = 0')
-  const sql = `SELECT images.* FROM images JOIN jobs ON jobs.id = images.job_id
+  const sql = `SELECT images.*, ${ENHANCED_SQL} FROM images JOIN jobs ON jobs.id = images.job_id
     ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY images.id DESC LIMIT ?`
   args.push(q.limit)
   return { sql, args }

@@ -7,6 +7,8 @@ export interface HiresSettings {
   upscaler: string;
   secondPassSteps: number;
   denoisingStrength: number;
+  /** Second-pass CFG (hr_cfg, or hr_distilled_cfg for distilled families); absent = the first pass value. */
+  cfgScale?: number;
 }
 export interface Img2ImgSettings {
   sourceImageId: number;
@@ -56,6 +58,8 @@ export interface ImageRecord {
   width: number; height: number; seed: number; infotext: string;
   createdAt: number; durationMs: number | null; hidden: boolean; sourceImageId: number | null;
   tags: string[];
+  /** The image came out of a hires second pass or an upscale (the HD badge). */
+  enhanced?: boolean;
   /** Hidden image while hidden images are locked: url, thumbUrl, infotext are empty, seed and jobId are 0, tags are empty. */
   locked: boolean;
 }

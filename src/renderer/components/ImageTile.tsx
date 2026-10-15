@@ -1,4 +1,4 @@
-import { Eye, EyeSlash, LockSimple, Trash } from '@phosphor-icons/react'
+import { ArrowsOut, Eye, EyeSlash, LockSimple, Trash } from '@phosphor-icons/react'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import type { ImageRecord } from '@shared/types'
 import { frameCaption } from '../format'
@@ -12,6 +12,8 @@ type ImageTileProps = {
   onOpen(image: ImageRecord, trigger: HTMLButtonElement): void
   /** Delete (the button, or `Delete` on the focused tile). */
   onDelete(id: number): void
+  /** Opens the Send to hires dialog for this image. */
+  onHires(id: number): void
   /** Hide or unhide (the button, or `H` on the focused tile). */
   onToggleHidden(image: ImageRecord): void
   /** A locked tile asks for the password instead of opening. */
@@ -33,7 +35,7 @@ export const REVEAL_MS = 260
  * The open (or unlock) button is the tile's focus target (`data-primary`) for the gallery's keyboard navigation.
  */
 export function ImageTile({
-  image, onOpen, onDelete, onToggleHidden, onUnlock, now, tabStop = true, revealFrom = null, onRevealed,
+  image, onOpen, onDelete, onHires, onToggleHidden, onUnlock, now, tabStop = true, revealFrom = null, onRevealed,
 }: ImageTileProps) {
   const caption = frameCaption(image, now)
   const ratio = { aspectRatio: `${image.width} / ${image.height}` }
@@ -99,6 +101,9 @@ export function ImageTile({
           onError={() => setLoaded(true)}
         />
       </button>
+      {image.enhanced && (
+        <span className={`mono ${styles.hd}`} title={t('image.hdTitle')}>{t('image.hd')}</span>
+      )}
       {image.hidden && (
         <span className={styles.badge}>
           <EyeSlash size={16} aria-hidden="true" />
@@ -109,6 +114,13 @@ export function ImageTile({
         {caption}
       </span>
       <div className={styles.actions}>
+        <IconButton
+          className={styles.action}
+          label={t('image.hires')}
+          icon={<ArrowsOut size={16} />}
+          tabIndex={tabIndex}
+          onClick={() => onHires(image.id)}
+        />
         <IconButton
           className={styles.action}
           label={image.hidden ? t('image.unhide') : t('image.hide')}

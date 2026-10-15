@@ -80,6 +80,33 @@
   container-type: size;
 }
 
+/* A zoomed picture overflows the stage: it scrolls, and a drag pans it. */
+.zoomed {
+  overflow: auto;
+  cursor: grab;
+}
+
+.zoomed .image {
+  margin: auto;
+}
+
+.zoomLevel {
+  min-width: 52px;
+  height: var(--h-bar);
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.zoomLevel:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
 .image {
   display: block;
   max-width: 100%;
@@ -143,11 +170,15 @@
   outline-offset: -2px;
 }
 
+/* Fixed area under the picture: actions and facts stay put, only the prompt text scrolls in its own box. */
 .details {
+  display: flex;
   flex: none;
-  max-height: 38vh;
-  overflow-y: auto;
-  padding: var(--sp-3) var(--sp-6) var(--sp-4);
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 26vh;
+  overflow: hidden;
+  padding: var(--sp-3) var(--sp-6);
   border-top: 1px solid var(--line);
   background: var(--surface-1);
 }
@@ -179,6 +210,12 @@
   font-size: 12px;
 }
 
+.promptScroll {
+  flex: 1 1 auto;
+  min-height: 3em;
+  overflow-y: auto;
+}
+
 .prompt,
 .negative {
   margin: var(--sp-1) 0 0;
@@ -192,10 +229,11 @@
 
 .metadata {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
-  gap: var(--sp-3) var(--sp-6);
-  margin: var(--sp-3) 0 0;
-  padding-top: var(--sp-3);
+  gap: var(--sp-1) var(--sp-6);
+  margin: 0;
+  padding-top: var(--sp-2);
   border-top: 1px solid var(--line);
 }
 

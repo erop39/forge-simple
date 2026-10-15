@@ -85,6 +85,29 @@
 }
 
 /* Hover-only parts fade with opacity and stay in the tab order, so focus reveals them too. */
+/* The HD mark sits where the actions appear on hover, and gives way to them. */
+.hd {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  padding: 0 var(--sp-2);
+  height: var(--h-control);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-tag);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) ease-out;
+}
+
+.tile:hover .hd,
+.tile:focus-within .hd {
+  opacity: 0;
+}
+
 .caption,
 .actions {
   position: absolute;

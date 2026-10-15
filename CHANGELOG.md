@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Send to hires on a gallery tile: the image's own job (model, prompt, seed) runs again with a hires second pass; the dialog sets scale, upscaler, second-pass steps, denoising and CFG. Hires settings gained an optional second-pass CFG (`hr_cfg` / `hr_distilled_cfg`), also in the parameters panel.
+- HD mark in the top right of images made with hires fix or upscale.
+- Image viewer: zoom (buttons, +/-/0 keys, mouse wheel, drag to pan) and Show in folder.
+- Clear all failed and interrupted: a broom button in the top bar removes those jobs for good.
 - Image storage selection in the server dialog: choose a writable folder for future PNGs and thumbnails. Existing images keep their original paths and remain readable across folder changes and restarts; an unavailable old volume leaves its records visible. Image URLs resolve database IDs, and reads/deletes check the approved managed folders before touching a file.
 - Resource monitor panel, opened by a gauge button in the top bar (it no longer sits in the bar): four ring gauges (VRAM, RAM, CPU, GPU) and the details below. VRAM and Forge-process RAM from `/memory`, one-minute graphs and peaks, model/cache VRAM, OOM count, server details and Unload/Restart controls. The optional read-only Forge extension adds CPU, system RAM, GPU activity/sensors and versions; an absent extension leaves those readings blank. The panel was checked in an isolated Electron window with mock Forge.
 - Read-only Forge memory sampling while the window is visible: 60 readings stay in memory, with 2-second idle and 1-second running intervals. A sampled VRAM peak is saved with the job and its completion log; polling failures do not affect the generation queue.
@@ -69,6 +73,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The hires settings' Save as default button no longer overflows the parameters panel (it has its own line).
+- Image viewer: the area under the picture is fixed (actions and facts stay, only the prompt text scrolls), so the picture gets more room.
 - The upscaler list in the image viewer could not be opened (it sat under the dialog); it now opens above it, and None and latent methods are no longer offered for a finished image.
 - A hires upscaler the server does not list now fails the job as "missing on the server" instead of sending it to Forge, and a model switch replaces such an upscaler with the default.
 - An upscaled image keeps the seed and infotext of its source instead of seed -1 and an empty infotext.

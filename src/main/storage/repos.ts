@@ -2,7 +2,7 @@ import type {
   GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
 } from '@shared/types'
 import type { Db } from './db'
-import { buildImageQuery, escapeLike } from './image-query'
+import { buildImageQuery, ENHANCED_SQL, escapeLike } from './image-query'
 
 export interface Server extends ServerInfo { lastConnectedAt: number | null }
 export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' | 'locked'> { filePath: string; thumbPath: string }
@@ -42,7 +42,7 @@ interface JobSql {
 interface ImageSql {
   id: number; job_id: number; file_path: string; thumb_path: string; width: number; height: number
   seed: number; infotext: string; created_at: number; duration_ms: number | null
-  hidden: number; source_image_id: number | null
+  hidden: number; source_image_id: number | null; enhanced: number
 }
 
 const FINISHED: readonly JobStatus[] = ['done', 'failed', 'interrupted', 'cancelled']
@@ -83,6 +83,7 @@ export function isHiresSettings(value: unknown, width: number, height: number): 
     && h.secondPassSteps >= 1 && h.secondPassSteps <= 150
     && typeof h.denoisingStrength === 'number' && Number.isFinite(h.denoisingStrength)
     && h.denoisingStrength >= 0 && h.denoisingStrength <= 1
+    && (h.cfgScale === undefined || (typeof h.cfgScale === 'number' && Number.isFinite(h.cfgScale) && h.cfgScale >= 0 && h.cfgScale <= 30))
     && Number.isFinite(width) && Number.isFinite(height)
     && width * scale <= 4096 && height * scale <= 4096
 }
@@ -126,7 +127,7 @@ const toJob = (r: JobSql): Job => ({
 const toImage = (r: ImageSql): ImageRow => ({
   id: r.id, jobId: r.job_id, filePath: r.file_path, thumbPath: r.thumb_path, width: r.width, height: r.height,
   seed: r.seed, infotext: r.infotext, createdAt: r.created_at, durationMs: r.duration_ms,
-  hidden: r.hidden === 1, sourceImageId: r.source_image_id,
+  hidden: r.hidden === 1, sourceImageId: r.source_image_id, enhanced: r.enhanced === 1,
 })
 
 export const TAG_MAX = 40
@@ -158,7 +159,7 @@ export function hostOf(url: string): string {
 export function createRepos(db: Db, now: () => number) {
   const serverByUrl = db.prepare('SELECT * FROM servers WHERE url = ?')
   const jobById = db.prepare('SELECT * FROM jobs WHERE id = ?')
-  const imageById = db.prepare('SELECT * FROM images WHERE id = ?')
+  const imageById = db.prepare(`SELECT images.*, ${ENHANCED_SQL} FROM images WHERE id = ?`)
 
   const getJob = (id: number): Job | null => {
     const r = jobById.get(id) as JobSql | undefined
@@ -293,6 +294,18 @@ export function createRepos(db: Db, now: () => number) {
       ).all() as JobSql[]
       return rows.map(toJob)
     },
+    /** Deletes failed and interrupted jobs that left no image behind; returns their ids. */
+    clearUnfinished(): number[] {
+      return db.transaction(() => {
+        const ids = (db.prepare(
+          `SELECT id FROM jobs WHERE status IN ('failed', 'interrupted')
+             AND NOT EXISTS (SELECT 1 FROM images WHERE images.job_id = jobs.id) ORDER BY id`,
+        ).all() as { id: number }[]).map((r) => r.id)
+        const remove = db.prepare('DELETE FROM jobs WHERE id = ?')
+        for (const id of ids) remove.run(id)
+        return ids
+      })()
+    },
     markRunningInterrupted(): number {
       return db.prepare("UPDATE jobs SET status = 'interrupted', finished_at = ?, error = ? WHERE status = 'running'")
         .run(now(), JSON.stringify({ code: 'stopped' } satisfies JobError)).changes
@@ -313,8 +326,8 @@ export function createRepos(db: Db, now: () => number) {
     },
     list(opts: { limit: number; beforeId?: number }): ImageRow[] {
       const rows = (opts.beforeId === undefined
-        ? db.prepare('SELECT * FROM images ORDER BY id DESC LIMIT ?').all(opts.limit)
-        : db.prepare('SELECT * FROM images WHERE id < ? ORDER BY id DESC LIMIT ?').all(opts.beforeId, opts.limit)
+        ? db.prepare(`SELECT images.*, ${ENHANCED_SQL} FROM images ORDER BY id DESC LIMIT ?`).all(opts.limit)
+        : db.prepare(`SELECT images.*, ${ENHANCED_SQL} FROM images WHERE id < ? ORDER BY id DESC LIMIT ?`).all(opts.beforeId, opts.limit)
       ) as ImageSql[]
       return rows.map(toImage)
     },
