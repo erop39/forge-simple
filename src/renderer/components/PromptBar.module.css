@@ -110,7 +110,7 @@
 /* Fixed-size controls stay together, keep their size and sit at the right edge. */
 .controls {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   align-items: center;
   gap: var(--sp-2);
   margin-left: auto;
@@ -118,6 +118,16 @@
 
 .controls > * {
   flex-shrink: 0;
+}
+
+/* The guidance slider takes the room left in the row, so nothing is left empty under the model menu. */
+.controls > .cfg {
+  flex: 1 1 140px;
+  min-width: 140px;
+}
+
+.cfg > * {
+  width: 100%;
 }
 
 .generate {

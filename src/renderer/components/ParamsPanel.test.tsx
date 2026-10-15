@@ -15,24 +15,6 @@ function expectSlider(name: string, min: string, max: string): HTMLElement {
   return slider
 }
 
-test('CFG is a slider from 1 to 30 in steps of 0.5', async () => {
-  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
-  store.getState().setParams({ cfgScale: 7 })
-  const cfg = expectSlider(en['params.cfg'], '1', '30')
-  cfg.focus()
-  await userEvent.keyboard('{ArrowRight}')
-  expect(store.getState().params?.cfgScale).toBe(7.5)
-})
-
-test('Distilled CFG is a slider from 0 to 30 in steps of 0.5', async () => {
-  const { store } = renderWithStore(<ParamsPanel />, 'krea2', open)
-  store.getState().setParams({ distilledCfg: 3 })
-  const slider = expectSlider(en['params.distilledCfg'], '0', '30')
-  slider.focus()
-  await userEvent.keyboard('{ArrowLeft}')
-  expect(store.getState().params?.distilledCfg).toBe(2.5)
-})
-
 test('Shift is a slider from 0 to 20 in steps of 0.5', async () => {
   const { store } = renderWithStore(<ParamsPanel />, 'zimage', open)
   store.getState().setParams({ shift: 3 })
@@ -42,17 +24,17 @@ test('Shift is a slider from 0 to 20 in steps of 0.5', async () => {
   expect(store.getState().params?.shift).toBe(3.5)
 })
 
-test('sdxl shows CFG and Clip skip, hides Distilled CFG and Shift', () => {
+test('CFG now lives in the prompt bar: sdxl shows Clip skip here, no CFG rows', () => {
   renderWithStore(<ParamsPanel />, 'sdxl', open)
-  expect(row(en['params.cfg'])).not.toBeNull()
+  expect(row(en['params.cfg'])).toBeNull()
   expect(row(en['params.clipSkip'])).not.toBeNull()
   expect(row(en['params.distilledCfg'])).toBeNull()
   expect(row(en['params.shift'])).toBeNull()
 })
 
-test('krea2 shows Distilled CFG, hides CFG and Clip skip', () => {
+test('krea2 shows neither Clip skip nor CFG rows here', () => {
   renderWithStore(<ParamsPanel />, 'krea2', open)
-  expect(row(en['params.distilledCfg'])).not.toBeNull()
+  expect(row(en['params.distilledCfg'])).toBeNull()
   expect(row(en['params.cfg'])).toBeNull()
   expect(row(en['params.clipSkip'])).toBeNull()
 })
@@ -177,4 +159,18 @@ test('Escape closes the panel and returns focus to the All parameters button', a
   expect(store.getState().panelOpen).toBe(false)
   expect(document.activeElement).toBe(screen.getByRole('button', { name: en['prompt.allParams'] }))
   await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
+})
+
+test('hires presets: a saved one applies all values at once, shows as selected, and a name clash is reported', async () => {
+  const saved = { id: 1, name: 'Soft', createdAt: 1,
+    settings: { scale: 2 as const, upscaler: 'Latent', secondPassSteps: 9, denoisingStrength: 0.3, cfgScale: 3 } }
+  const saveHiresPreset = vi.fn(async () => { throw new Error('error.presetNameTaken') })
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', { ...open, hiresPresets: [saved], saveHiresPreset })
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['hiresPreset.label']) }))
+  await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Soft' }))
+  expect(store.getState().params?.hires).toEqual(saved.settings)
+  await userEvent.click(screen.getByRole('button', { name: en['hiresPreset.save'] }))
+  await userEvent.type(screen.getByRole('textbox', { name: en['hiresPreset.name'] }), 'Soft{Enter}')
+  expect(saveHiresPreset).toHaveBeenCalledWith('Soft', saved.settings)
+  expect(await screen.findByText(en['hiresPreset.taken'])).toBeDefined()
 })

@@ -32,6 +32,12 @@ const api: Api = {
     update: (id, patch) => invoke('negativePresets:update', id, patch),
     remove: (id) => invoke('negativePresets:remove', id),
   },
+  hiresPresets: {
+    list: () => invoke('hiresPresets:list'),
+    add: (input) => invoke('hiresPresets:add', input),
+    rename: (id, name) => invoke('hiresPresets:rename', id, name),
+    remove: (id) => invoke('hiresPresets:remove', id),
+  },
   models: {
     setFavorite: (kind, id, favorite) => invoke('models:setFavorite', kind, id, favorite),
     setNote: (kind, id, note) => invoke('models:setNote', kind, id, note),

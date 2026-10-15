@@ -1,5 +1,5 @@
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -109,6 +109,13 @@ export interface Api {
     /** null returns to the words found in the file's metadata. */
     setTriggers(loraPath: string, triggers: string[] | null): Promise<void>
   }
+  /** Named hires second passes; a name already taken (ignoring case) is error.presetNameTaken. */
+  hiresPresets: {
+    list(): Promise<HiresPreset[]>
+    add(input: { name: string; settings: HiresSettings }): Promise<HiresPreset>
+    rename(id: number, name: string): Promise<HiresPreset>
+    remove(id: number): Promise<void>
+  }
   catalog: {
     get(refresh?: boolean): Promise<Catalog>
     defaults(checkpointTitle: string): Promise<GenerationParams>
@@ -192,7 +199,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

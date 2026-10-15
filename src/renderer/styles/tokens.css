@@ -54,6 +54,7 @@
   --z-dialog: 40;
   /* A select list opens above the dialog it can sit in (the viewer's upscaler choice). */
   --z-popup: 45;
+  --scroll-thumb: rgba(255, 255, 255, 0.22);
   --z-tooltip: 50;
 
   --scrim: rgba(0, 0, 0, 0.5);

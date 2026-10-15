@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind,
+  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind, HiresPreset,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
 import type { Db } from './db'
@@ -510,6 +510,43 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
+  interface HiresPresetSql { id: number; name: string; settings: string; created_at: number }
+  const toHiresPreset = (r: HiresPresetSql): HiresPreset | null => {
+    let settings: unknown
+    try { settings = JSON.parse(r.settings) } catch { return null }
+    return isHiresSettings(settings, 0, 0) ? { id: r.id, name: r.name, settings, createdAt: r.created_at } : null
+  }
+  const hiresPresetById = db.prepare('SELECT * FROM hires_presets WHERE id = ?')
+  const getHiresPreset = (id: number): HiresPreset | null => {
+    const r = hiresPresetById.get(id) as HiresPresetSql | undefined
+    return r ? toHiresPreset(r) : null
+  }
+  const hiresPresets = {
+    /** Ordered by name; a row whose settings no longer validate is left out. */
+    list(): HiresPreset[] {
+      const rows = db.prepare('SELECT * FROM hires_presets ORDER BY name COLLATE NOCASE, id').all() as HiresPresetSql[]
+      return rows.map(toHiresPreset).filter((p): p is HiresPreset => p !== null)
+    },
+    get: getHiresPreset,
+    /** Throws DuplicatePresetError when the name is taken (ignoring case). */
+    add(name: string, settings: HiresSettings): HiresPreset {
+      const res = uniqueName(() => db.prepare('INSERT INTO hires_presets (name, settings, created_at) VALUES (?, ?, ?)')
+        .run(name, JSON.stringify(settings), now()))
+      return getHiresPreset(Number(res.lastInsertRowid)) as HiresPreset
+    },
+    rename(id: number, name: string): HiresPreset | null {
+      if (!getHiresPreset(id)) return null
+      uniqueName(() => db.prepare('UPDATE hires_presets SET name = ? WHERE id = ?').run(name, id))
+      return getHiresPreset(id)
+    },
+    remove(id: number): HiresPreset | null {
+      const before = getHiresPreset(id)
+      if (!before) return null
+      db.prepare('DELETE FROM hires_presets WHERE id = ?').run(id)
+      return before
+    },
+  }
+
   const metaGet = db.prepare('SELECT * FROM model_meta WHERE server_id = ? AND kind = ? AND filename = ?')
   const metaUpsert = (column: 'family' | 'favorite' | 'note' | 'preview' | 'triggers', value: string | number | null) =>
     (serverId: number, kind: ModelKind, filename: string): void => {
@@ -543,5 +580,5 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, tags, settings, negativePresets, modelMeta }
+  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, modelMeta }
 }

@@ -82,6 +82,34 @@
   justify-content: flex-end;
 }
 
+.presetName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.presetInput {
+  flex: 1;
+  min-width: 100px;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.presetInput:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.presetError {
+  flex-basis: 100%;
+  color: var(--blocked);
+  font-size: 12px;
+}
+
 .hiresTarget {
   margin: 0;
   color: var(--text-2);

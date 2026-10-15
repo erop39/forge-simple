@@ -241,6 +241,32 @@ export function PromptBar() {
         <div className={styles.controls}>
           {model && (
             <>
+              {model.profile.cfg && (
+                <div className={styles.cfg}>
+                <Slider
+                  inline
+                  label={t('params.cfg')}
+                  value={model.params.cfgScale}
+                  min={1}
+                  max={30}
+                  step={0.5}
+                  onCommit={(cfgScale) => setParams({ cfgScale })}
+                />
+                </div>
+              )}
+              {model.profile.distilledCfg && (
+                <div className={styles.cfg}>
+                <Slider
+                  inline
+                  label={t('params.distilledCfg')}
+                  value={model.params.distilledCfg}
+                  min={0}
+                  max={30}
+                  step={0.5}
+                  onCommit={(distilledCfg) => setParams({ distilledCfg })}
+                />
+                </div>
+              )}
               <Select
                 label={t('prompt.ratio')}
                 value={ratio}

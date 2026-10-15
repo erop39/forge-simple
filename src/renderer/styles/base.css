@@ -10,6 +10,16 @@ body,
   height: 100%;
 }
 
+/* Thin dark scrollbars everywhere, in the colours of the UI (Chromium's standard properties). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+:root {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   background: var(--canvas);

@@ -103,17 +103,39 @@ function Modules() {
   )
 }
 
+/** A second pass counts as a preset when every value matches (a missing CFG follows the first pass). */
+function sameHires(a: HiresSettings, b: HiresSettings): boolean {
+  return a.scale === b.scale && a.upscaler === b.upscaler && a.secondPassSteps === b.secondPassSteps
+    && a.denoisingStrength === b.denoisingStrength && (a.cfgScale ?? null) === (b.cfgScale ?? null)
+}
+
 function Hires() {
   const params = useAppStore((s) => s.params)
   const upscalers = useAppStore((s) => s.catalog?.upscalers ?? [])
   const setParams = useAppStore((s) => s.setParams)
   const setDefaultUpscaler = useAppStore((s) => s.setDefaultUpscaler)
   const [defaultSaved, setDefaultSaved] = useState(false)
+  const presets = useAppStore((s) => s.hiresPresets)
+  const savePreset = useAppStore((s) => s.saveHiresPreset)
+  const deletePreset = useAppStore((s) => s.deleteHiresPreset)
+  const [naming, setNaming] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const [presetError, setPresetError] = useState(false)
   if (!params || params.img2img) return null
   const hires: HiresSettings = params.hires ?? {
     scale: 1, upscaler: upscalers[0] ?? 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
   }
   const change = (patch: Partial<HiresSettings>) => setParams({ hires: { ...hires, ...patch } })
+  async function commitPreset(): Promise<void> {
+    const name = presetName.trim()
+    if (name === '') return
+    try {
+      await savePreset(name, hires)
+      setNaming(false)
+    } catch {
+      setPresetError(true)
+    }
+  }
   const scales = ([
     { scale: 1, label: t('params.hiresOff') },
     { scale: 1.5, label: t('params.hires15') },
@@ -132,6 +154,27 @@ function Hires() {
           onChange={(value) => change({ scale: Number(value) as HiresSettings['scale'] })}
         />
       </ParamRow>
+      {presets.length > 0 && (
+        <ParamRow label={t('hiresPreset.label')}>
+          <Select
+            showLabel={false}
+            label={t('hiresPreset.label')}
+            value={presets.find((p) => sameHires(p.settings, hires))?.id.toString() ?? ''}
+            options={[{ value: '', label: t('hiresPreset.none') }, ...presets.map((p) => ({ value: String(p.id), label: p.name }))]}
+            onChange={(id) => {
+              const preset = presets.find((p) => String(p.id) === id)
+              if (preset) change(preset.settings)
+            }}
+          />
+          {presets.find((p) => sameHires(p.settings, hires)) && (
+            <IconButton
+              label={t('hiresPreset.delete', { name: presets.find((p) => sameHires(p.settings, hires))!.name })}
+              icon={<X size={16} />}
+              onClick={() => void deletePreset(presets.find((p) => sameHires(p.settings, hires))!.id)}
+            />
+          )}
+        </ParamRow>
+      )}
       {hires.scale > 1 && (
         <>
           <p className={`mono ${styles.hiresTarget}`}>
@@ -185,6 +228,30 @@ function Hires() {
                 onCommit={(cfgScale) => change({ cfgScale })}
               />
             </ParamRow>
+          )}
+          {naming ? (
+            <div className={styles.presetName}>
+              <input
+                className={styles.presetInput}
+                aria-label={t('hiresPreset.name')}
+                placeholder={t('hiresPreset.name')}
+                autoFocus
+                maxLength={60}
+                value={presetName}
+                onChange={(event) => { setPresetName(event.target.value); setPresetError(false) }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') { event.stopPropagation(); setNaming(false) }
+                  if (event.key === 'Enter') void commitPreset()
+                }}
+              />
+              <Button onClick={() => void commitPreset()}>{t('hiresPreset.confirm')}</Button>
+              <Button onClick={() => setNaming(false)}>{t('hiresPreset.cancel')}</Button>
+              {presetError && <span role="alert" className={styles.presetError}>{t('hiresPreset.taken')}</span>}
+            </div>
+          ) : (
+            <div className={styles.rowAction}>
+              <Button onClick={() => { setPresetName(''); setPresetError(false); setNaming(true) }}>{t('hiresPreset.save')}</Button>
+            </div>
           )}
         </>
       )}
@@ -242,30 +309,6 @@ function Body() {
             onChange={(scheduler) => setParams({ scheduler })}
           />
         </ParamRow>
-        {profile.cfg && (
-          <ParamRow label={t('params.cfg')}>
-            <Slider
-              label={t('params.cfg')}
-              value={params.cfgScale}
-              min={1}
-              max={30}
-              step={0.5}
-              onCommit={(cfgScale) => setParams({ cfgScale })}
-            />
-          </ParamRow>
-        )}
-        {profile.distilledCfg && (
-          <ParamRow label={t('params.distilledCfg')}>
-            <Slider
-              label={t('params.distilledCfg')}
-              value={params.distilledCfg}
-              min={0}
-              max={30}
-              step={0.5}
-              onCommit={(distilledCfg) => setParams({ distilledCfg })}
-            />
-          </ParamRow>
-        )}
         {profile.shift && params.shift !== null && (
           <ParamRow label={t('params.shift')}>
             <Slider

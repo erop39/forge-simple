@@ -130,6 +130,8 @@ export interface PartStatus { role: 'model' | 'module' | 'upscaler' | 'lora'; va
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }
 /** A saved negative prompt; its text replaces the Negative field when applied. */
 export interface NegativePreset { id: number; name: string; text: string; createdAt: number }
+/** A saved second pass: scale, upscaler, steps, denoising and CFG to apply together. */
+export interface HiresPreset { id: number; name: string; settings: HiresSettings; createdAt: number }
 /** What the active Forge allows: restart needs it to run with --api-server-stop. */
 export interface ForgeCapabilities { canRestart: boolean }
 /** Unhealthy: generations failed with HTTP 500 several times in a row; a restart is advised. */

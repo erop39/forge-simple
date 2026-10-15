@@ -508,6 +508,37 @@ export function registerIpc(
 
   handle('negativePresets:list', () => repos.negativePresets.list())
 
+  // ---- hires presets (the log carries names only) --------------------------
+
+  handle('hiresPresets:list', () => repos.hiresPresets.list())
+
+  handle('hiresPresets:add', (input) => {
+    if (typeof input !== 'object' || input === null) return fail('error.invalidParams')
+    const { name, settings } = input as { name?: unknown; settings?: unknown }
+    const clean = presetName(name) ?? fail('error.invalidParams')
+    if (!isHiresSettings(settings, 0, 0)) return fail('error.invalidParams')
+    const saved = {
+      scale: settings.scale, upscaler: settings.upscaler, secondPassSteps: settings.secondPassSteps,
+      denoisingStrength: settings.denoisingStrength,
+      ...(settings.cfgScale !== undefined ? { cfgScale: settings.cfgScale } : {}),
+    }
+    const preset = presetNameFree(() => repos.hiresPresets.add(clean, saved))
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.hiresCreated', details: { name: preset.name } })
+    return preset
+  })
+
+  handle('hiresPresets:rename', (id, name) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const clean = presetName(name) ?? fail('error.invalidParams')
+    return presetNameFree(() => repos.hiresPresets.rename(id, clean)) ?? fail('error.notFound')
+  })
+
+  handle('hiresPresets:remove', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const removed = repos.hiresPresets.remove(id) ?? fail('error.notFound')
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.hiresDeleted', details: { name: removed.name } })
+  })
+
   handle('negativePresets:add', (input) => {
     const { name, text } = validatePresetInput(input, false) as { name: string; text: string }
     const preset = presetNameFree(() => repos.negativePresets.add(name, text))

@@ -37,6 +37,9 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   `CREATE TABLE model_meta (server_id INTEGER NOT NULL, kind TEXT NOT NULL, filename TEXT NOT NULL,
   family TEXT, favorite INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', preview TEXT, triggers TEXT,
   PRIMARY KEY (server_id, kind, filename));`,
+  // 6: named hires second-pass settings (the settings are JSON, validated on the way in).
+  `CREATE TABLE hires_presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  settings TEXT NOT NULL, created_at INTEGER NOT NULL);`,
 ]
 
 export function openDb(path: string): Db {

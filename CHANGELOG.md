@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Hires presets: save the second pass (scale, upscaler, steps, denoising, CFG) under a name, pick one to apply everything at once, delete the selected one.
 - Checkpoint gallery (grid button next to the model menu): previews from Forge, search by name or folder, filters by family (with counts), favorites and folder, a details panel with path, hash, note, favorite and a hand-set model family (it decides the defaults the checkpoint starts with), Use selects the checkpoint.
 - LoRA: a stack in the parameters panel (switch, weight -2..2, trigger words that insert into the prompt, remove, warnings for a LoRA that is not on the server or was made for another family) and a LoRA gallery to add from, with trigger words read from the file's training tags and editable. An enabled LoRA the server does not list fails the job as "missing on the server" before Forge is called.
 - Model library groundwork: checkpoint and LoRA previews through Forge's thumb route (cached, looked up once), favorites, notes, a hand-set model family, LoRA trigger words and base family read from the file's training metadata, saved per file and server (`models:*` IPC, `fnc-model://` previews). The LoRA list timeout is now 3 minutes (a large library took 61 s). The galleries that use it follow.
@@ -82,6 +83,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- CFG (or Distilled CFG) is a slider in the bottom row of the prompt bar that takes the free room, so nothing is left empty under the model menu; it is no longer in the parameters panel.
+- Scrollbars are thin and dark everywhere, in the colours of the UI.
 - The hires settings' Save as default button no longer overflows the parameters panel (it has its own line).
 - Image viewer: the area under the picture is fixed (actions and facts stay, only the prompt text scrolls), so the picture gets more room.
 - The upscaler list in the image viewer could not be opened (it sat under the dialog); it now opens above it, and None and latent methods are no longer offered for a finished image.

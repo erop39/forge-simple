@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, ModelKind, NegativePreset, UpscaleSettings, HiresSettings,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, LockState, ModelKind, NegativePreset, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -41,6 +41,7 @@ export interface AppState {
   servers: ServerInfo[]
   /** Saved negative prompts, ordered by name. */
   negativePresets: NegativePreset[]
+  hiresPresets: HiresPreset[]
   catalog: Catalog | null
   /** Why the catalog could not be loaded, as an error key; null when it loaded or was not requested. */
   catalogError: IpcErrorKey | null
@@ -123,6 +124,9 @@ export interface AppState {
   askRestart(): void
   openHires(id: number): void
   openModelGallery(kind: ModelKind): void
+  /** Rejects with error.presetNameTaken when the name exists. */
+  saveHiresPreset(name: string, settings: HiresSettings): Promise<void>
+  deleteHiresPreset(id: number): Promise<void>
   closeModelGallery(): void
   setModelFavorite(kind: ModelKind, id: string, favorite: boolean): Promise<void>
   setModelNote(kind: ModelKind, id: string, note: string): Promise<void>
@@ -341,6 +345,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     async function changePresets(call: () => Promise<unknown>): Promise<void> {
       await call()
       await loadPresets()
+      void attempt(() => api.hiresPresets.list()).then((list) => { if (list) set({ hiresPresets: list }) })
     }
 
     function forgetJob(id: number): void {
@@ -513,6 +518,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       settings: null,
       servers: [],
       negativePresets: [],
+      hiresPresets: [],
       catalog: null,
       catalogError: null,
       lastError: null,
@@ -830,6 +836,18 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       openModelGallery(kind) {
         set({ modelGallery: kind })
+      },
+
+      async saveHiresPreset(name, settings) {
+        await api.hiresPresets.add({ name, settings })
+        const list = await attempt(() => api.hiresPresets.list())
+        if (list) set({ hiresPresets: list })
+      },
+
+      async deleteHiresPreset(id) {
+        await attempt(() => api.hiresPresets.remove(id))
+        const list = await attempt(() => api.hiresPresets.list())
+        if (list) set({ hiresPresets: list })
       },
 
       closeModelGallery() {

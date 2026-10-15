@@ -1136,3 +1136,20 @@ describe('model marks', () => {
     expect(repos.modelMeta.get(server.id, 'checkpoint', SDXL_FILE)?.preview).toBeNull()
   })
 })
+
+test('hires presets: add, list ordered, duplicate name refused, rename, remove; malformed settings refused', async () => {
+  const hires = { scale: 2, upscaler: 'Latent', secondPassSteps: 10, denoisingStrength: 0.45, cfgScale: 4, junk: 1 }
+  const a = (await call('hiresPresets:add', { name: ' Soft ', settings: hires })) as { id: number; name: string; settings: object }
+  expect(a.name).toBe('Soft')
+  expect(a.settings).toEqual({ scale: 2, upscaler: 'Latent', secondPassSteps: 10, denoisingStrength: 0.45, cfgScale: 4 })
+  await expect(call('hiresPresets:add', { name: 'soft', settings: hires })).rejects.toThrow('error.presetNameTaken')
+  await expect(call('hiresPresets:add', { name: 'Bad', settings: { ...hires, scale: 3 } })).rejects.toThrow('error.invalidParams')
+  await expect(call('hiresPresets:add', { name: '', settings: hires })).rejects.toThrow('error.invalidParams')
+  const b = (await call('hiresPresets:add', { name: 'Alpha', settings: { ...hires, scale: 1.5 } })) as { id: number }
+  expect(((await call('hiresPresets:list')) as { name: string }[]).map((p) => p.name)).toEqual(['Alpha', 'Soft'])
+  expect(((await call('hiresPresets:rename', b.id, 'Zeta')) as { name: string }).name).toBe('Zeta')
+  await call('hiresPresets:remove', a.id)
+  expect(((await call('hiresPresets:list')) as { name: string }[]).map((p) => p.name)).toEqual(['Zeta'])
+  await expect(call('hiresPresets:remove', a.id)).rejects.toThrow('error.notFound')
+  expect(JSON.stringify(oplog.list())).toContain('log.preset.hiresCreated')
+})
