@@ -154,6 +154,7 @@ export const en = {
   'resources.gib': '{value} GiB',
   'resources.percent': '{value}%',
   'resources.celsius': '{value} °C',
+  'resources.latency': 'Latency',
   'resources.ms': '{value} ms',
   'resources.forgeVersion': 'Forge',
   'resources.torchVersion': 'PyTorch',

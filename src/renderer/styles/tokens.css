@@ -59,11 +59,7 @@
   --hatch: repeating-linear-gradient(135deg, var(--line-strong) 0 1px, transparent 1px 10px);
 
   --shadow-edge-glow: 0 0 6px var(--canvas);
-  --w-meter: 80px;
-  --w-meter-compact: 68px;
-  --w-resources-panel: 500px;
-  --w-res-label: 48px;
-  --w-res-value: 144px;
-  --w-res-peak: 88px;
+  --w-resources-panel: 360px;
+  --w-gauge: 56px;
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
 }
