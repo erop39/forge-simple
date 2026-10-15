@@ -538,3 +538,13 @@ describe('reveal', () => {
     expect(tile.querySelector('img')!.className).not.toMatch(/reveal/)
   })
 })
+
+test('viewer explains why Upscale is unavailable for an image already at the size limit', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: { ...image(7), width: 3000, height: 3000 }, params, jobType: 'txt2img' })) } })
+  renderWithStore(<Gallery />, 'sdxl', { images: [{ ...image(7), width: 3000, height: 3000 }],
+    catalog: { ...catalog, upscalers: ['Latent'] } })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  const action = await screen.findByRole('button', { name: en['viewer.upscale'] })
+  expect((action as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByText(en['viewer.upscaleLimit'])).toBeDefined()
+})

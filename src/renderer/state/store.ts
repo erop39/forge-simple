@@ -224,7 +224,11 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         negativePrompt: draftNegative ?? defaults.negativePrompt,
         width: current?.width ?? defaults.width,
         height: current?.height ?? defaults.height,
-        hires: current?.hires ?? defaults.hires,
+        // An upscaler the new server does not list gives way to its default; the other second-pass values stay.
+        hires: current?.hires
+          ? { ...current.hires, upscaler: get().catalog?.upscalers.includes(current.hires.upscaler)
+            ? current.hires.upscaler : defaults.hires?.upscaler ?? current.hires.upscaler }
+          : defaults.hires,
         img2img: current?.img2img,
       }
       set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, draftNegative) })

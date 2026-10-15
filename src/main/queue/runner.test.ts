@@ -18,7 +18,7 @@ const avail = { samplers: ['Euler a'], schedulers: ['Automatic'] }
 
 const catalogWith = (titles: string[]): Catalog => ({
   checkpoints: titles.map((title) => ({ title, name: title, filename: title, family: 'sdxl' as const })),
-  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: ['R-ESRGAN 4x+'], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
+  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: ['Latent', 'R-ESRGAN 4x+'], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
 })
 
 const SECRET = 'SECRET-PROMPT-TEXT'
@@ -1247,4 +1247,30 @@ test('an upscale over the size limit fails with its own code', async () => {
   const job = h.runner.enqueue(params({ prompt: '', upscale: { sourceImageId: big.id, upscaler: 'R-ESRGAN 4x+', scale: 4 } }))[0]!
   await h.runner.tick()
   expect(h.repos.jobs.get(job.id)?.error?.code).toBe('sizeLimit')
+})
+
+test('an upscaled image keeps the seed and infotext of its source', async () => {
+  const h = setup({ autoComplete: true })
+  const original = h.repos.jobs.insert(h.repos.servers.active()!.id, 'txt2img', params())
+  h.repos.jobs.setStatus(original.id, 'done')
+  const source = h.repos.images.insert({ jobId: original.id, filePath: '/img/o.png', thumbPath: '/img/t/o.jpg',
+    width: 64, height: 64, seed: 4242, infotext: 'a cat\nSteps: 4', durationMs: 10 })
+  // Extras answers with the image only, as the real client does.
+  h.client.upscale.mockResolvedValueOnce({ images: ['png0'], info: '' })
+  h.runner.enqueue(params({ prompt: '', upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }))
+  expect(await h.runner.tick()).toBe('ran')
+  const result = h.repos.images.list({ limit: 1 })[0]!
+  expect(result.sourceImageId).toBe(source.id)
+  expect(result.seed).toBe(4242)
+  expect(result.infotext).toBe('a cat\nSteps: 4')
+})
+
+test('a hires upscaler the server does not list fails before Forge is called', async () => {
+  const h = setup({ autoComplete: true })
+  const job = h.runner.enqueue(params({
+    hires: { scale: 2, upscaler: 'Gone 4x', secondPassSteps: 8, denoisingStrength: 0.5 },
+  }))[0]!
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'missingParts', missing: ['Gone 4x'] })
+  expect(h.client.txt2img).not.toHaveBeenCalled()
 })

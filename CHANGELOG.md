@@ -69,6 +69,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A hires upscaler the server does not list now fails the job as "missing on the server" instead of sending it to Forge, and a model switch replaces such an upscaler with the default.
+- An upscaled image keeps the seed and infotext of its source instead of seed -1 and an empty infotext.
+- The viewer's Upscale button stays visible but disabled, with a note, when the image is already at the 4096 px limit.
 - A long file name in a failed job tile (missing VAE or text encoder) wraps instead of being clipped.
 - Images made by img2img or upscale from a hidden image are now hidden too (they carried the hidden prompt); a retry after a crash no longer fails on a leftover file name; an upscale over the size limit reports its own error.
 - A failed job now shows Forge's error message (for example `TypeError: 'NoneType' object is not callable`), not only the error class name.

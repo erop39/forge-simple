@@ -185,3 +185,13 @@ test('checkParts reports found for present parts', () => {
   ])
   expect(checkParts(params('a.safetensors [1]', ['ae.safetensors']), catalog, findings('name'))[1]?.found).toBe(true)
 })
+
+test('checkParts flags a hires upscaler the server does not list, and ignores it when hires is off', () => {
+  const withUp = { ...catalog, upscalers: ['Latent'] }
+  const hires = (upscaler: string, scale: 1 | 2): GenerationParams => ({
+    ...params('a.safetensors [1]', []), hires: { scale, upscaler, secondPassSteps: 8, denoisingStrength: 0.5 },
+  })
+  expect(checkParts(hires('Gone 4x', 2), withUp, findings('path'))[1]).toEqual({ role: 'upscaler', value: 'Gone 4x', found: false })
+  expect(checkParts(hires('Latent', 2), withUp, findings('path'))[1]).toEqual({ role: 'upscaler', value: 'Latent', found: true })
+  expect(checkParts(hires('Gone 4x', 1), withUp, findings('path'))).toHaveLength(1)
+})

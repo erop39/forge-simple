@@ -292,6 +292,7 @@ export const en = {
   'img2img.resize2': 'Resize and fill',
   'img2img.resize3': 'Latent upscale',
   'viewer.upscale': 'Upscale',
+  'viewer.upscaleLimit': 'Already at the 4096 px limit',
   'viewer.upscaleQueue': 'Queue upscale',
   'viewer.upscaleScale': 'Scale',
   'viewer.upscaleMethod': 'Upscaler',

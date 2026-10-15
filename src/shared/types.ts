@@ -102,7 +102,7 @@ export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[];
   samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number
   /** Per-preset default module lists from the server's options (full paths). */
   familyModules: Partial<Record<Family, string[]>> }
-export interface PartStatus { role: 'model' | 'module'; value: string; found: boolean }
+export interface PartStatus { role: 'model' | 'module' | 'upscaler'; value: string; found: boolean }
 /** A saved Forge server as the renderer sees it. Exactly one (or none) is active. */
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }
 /** A saved negative prompt; its text replaces the Negative field when applied. */

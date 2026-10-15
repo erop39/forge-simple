@@ -196,9 +196,10 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                   <span className={styles.label}>{t('viewer.prompt')}</span>
                   <div className={styles.promptActions}>
                     <Button onClick={() => { if (attachImageSource(image.id)) onClose() }}>{t('img2img.send')}</Button>
-                    {methods.length > 0 && allowedScales.length > 0 && (
-                      <Button onClick={() => setUpscaleOpen((open) => !open)}>{t('viewer.upscale')}</Button>
+                    {methods.length > 0 && (
+                      <Button disabled={allowedScales.length === 0} onClick={() => setUpscaleOpen((open) => !open)}>{t('viewer.upscale')}</Button>
                     )}
+                    {methods.length > 0 && allowedScales.length === 0 && <span className={styles.state}>{t('viewer.upscaleLimit')}</span>}
                     <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
                       {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
                     </Button>

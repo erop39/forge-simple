@@ -499,13 +499,15 @@ export function createRunner(deps: RunnerDeps): {
     // What comes out of a hidden source carries its prompt and look, so it is hidden from the start.
     const hidden = (job.type === 'img2img' || job.type === 'upscale')
       && repos.images.get((params.img2img ?? params.upscale)!.sourceImageId)?.hidden === true
+    // Extras returns no infotext or seed: an upscaled image keeps those of its source.
+    const upscaleSource = job.type === 'upscale' ? repos.images.get(params.upscale!.sourceImageId) : undefined
     let failingPath: string | undefined
     try {
       for (const [i, image] of response.images.entries()) {
         const seedRaw = info.seeds[i]
-        const seed = typeof seedRaw === 'number' && Number.isFinite(seedRaw) ? seedRaw : -1
+        const seed = typeof seedRaw === 'number' && Number.isFinite(seedRaw) ? seedRaw : upscaleSource?.seed ?? -1
         const infotextRaw = info.infotexts[i]
-        const infotext = typeof infotextRaw === 'string' ? infotextRaw : ''
+        const infotext = typeof infotextRaw === 'string' ? infotextRaw : upscaleSource?.infotext ?? ''
         let file: Awaited<ReturnType<typeof deps.images.save>>
         try {
           file = await deps.images.save(image, { jobId: job.id, seed, createdAt: deps.now() })

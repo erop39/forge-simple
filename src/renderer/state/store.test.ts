@@ -1061,3 +1061,15 @@ describe('fix round 1: the gallery never shows a stale unlocked copy', () => {
     await vi.waitFor(() => expect(store.getState().images.find((i) => i.id === 5)!.locked).toBe(true))
   })
 })
+
+test('selecting a model replaces a hires upscaler the catalog does not list and keeps the other second-pass values', async () => {
+  const { api, store } = await ready()
+  const listed = 'Latent'
+  store.setState((s) => ({ catalog: { ...s.catalog!, upscalers: [listed] } }))
+  store.getState().setParams({ hires: { scale: 2, upscaler: 'Gone 4x', secondPassSteps: 9, denoisingStrength: 0.3 } })
+  api.catalog.defaults.mockResolvedValueOnce(paramsFor('a.safetensors', {
+    hires: { scale: 1, upscaler: listed, secondPassSteps: 12, denoisingStrength: 0.5 },
+  }))
+  await store.getState().selectCheckpoint('a.safetensors')
+  expect(store.getState().params?.hires).toEqual({ scale: 2, upscaler: listed, secondPassSteps: 9, denoisingStrength: 0.3 })
+})
