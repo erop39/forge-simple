@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, HiresSettings, Img2ImgSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
 } from '@shared/types'
 import type { Db } from './db'
 import { buildImageQuery, escapeLike } from './image-query'
@@ -96,6 +96,14 @@ export function isImg2ImgSettings(value: unknown): value is Img2ImgSettings {
     && typeof o.resizeMode === 'number' && [0, 1, 2, 3].includes(o.resizeMode)
 }
 
+export function isUpscaleSettings(value: unknown): value is UpscaleSettings {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const o = value as Record<string, unknown>
+  return typeof o.sourceImageId === 'number' && Number.isSafeInteger(o.sourceImageId) && o.sourceImageId > 0
+    && typeof o.upscaler === 'string' && o.upscaler.trim() !== '' && o.upscaler.length <= 200
+    && typeof o.scale === 'number' && [1.5, 2, 4].includes(o.scale)
+}
+
 export function isGenerationParams(p: unknown): p is GenerationParams {
   if (typeof p !== 'object' || p === null) return false
   const o = p as Record<string, unknown>
@@ -106,6 +114,7 @@ export function isGenerationParams(p: unknown): p is GenerationParams {
     && num('distilledCfg') && str('sampler') && str('scheduler') && num('seed') && Array.isArray(o.loras)
     && (o.hires === undefined || isHiresSettings(o.hires, o.width as number, o.height as number))
     && (o.img2img === undefined || isImg2ImgSettings(o.img2img))
+    && (o.upscale === undefined || isUpscaleSettings(o.upscale))
 }
 
 const toJob = (r: JobSql): Job => ({
@@ -337,6 +346,8 @@ export function createRepos(db: Db, now: () => number) {
       return db.transaction(() => {
         const r = imageById.get(id) as ImageSql | undefined
         if (!r) return null
+        // A derivative remains a usable image when its original is removed.
+        db.prepare('UPDATE images SET source_image_id = NULL WHERE source_image_id = ?').run(id)
         db.prepare('DELETE FROM images WHERE id = ?').run(id)
         deleteOrphanTags()
         return toImage(r)

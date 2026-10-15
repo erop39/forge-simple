@@ -18,7 +18,7 @@ import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, normalizeTag, type createRepos, type ImageRow,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, isUpscaleSettings, normalizeTag, type createRepos, type ImageRow,
   type Server,
 } from '../storage/repos'
 
@@ -137,14 +137,16 @@ function validateEnqueue(p: unknown): GenerationParams {
   const loras = o.loras
   const hires = o.hires
   const img2img = o.img2img
+  const upscale = o.upscale
   const validHires = hires === undefined || isHiresSettings(hires, o.width, o.height)
   if (!Object.hasOwn(PROFILES, o.family)
-    || !isNonEmptyString(o.prompt) || o.prompt.length > MAX_TEXT || o.negativePrompt.length > MAX_TEXT
+    || (!upscale && !isNonEmptyString(o.prompt)) || o.prompt.length > MAX_TEXT || o.negativePrompt.length > MAX_TEXT
     || !isNonEmptyString(o.checkpoint) || !isNonEmptyString(o.sampler) || !isNonEmptyString(o.scheduler)
     || !isInt(o.count, 1, 8) || !isInt(o.width, 64, 4096) || !isInt(o.height, 64, 4096) || !isInt(o.steps, 1, 200)
     || !isInt(o.seed, -1, MAX_ID) || !isNumberIn(o.cfgScale, 0, 30) || !isNumberIn(o.distilledCfg, 0, 30)
     || shift === undefined || clipSkip === undefined
-    || !validHires || (img2img !== undefined && (!isImg2ImgSettings(img2img) || hires?.scale !== undefined && hires.scale > 1))
+    || !validHires || (img2img !== undefined && (!isImg2ImgSettings(img2img) || upscale !== undefined || hires?.scale !== undefined && hires.scale > 1))
+    || (upscale !== undefined && (!isUpscaleSettings(upscale) || hires?.scale !== undefined && hires.scale > 1))
     || o.modules.length > 8 || !o.modules.every((m) => typeof m === 'string')
     || loras.length > 16
     || !loras.every((l) => typeof l === 'object' && l !== null && isNonEmptyString(l.name)
@@ -163,6 +165,9 @@ function validateEnqueue(p: unknown): GenerationParams {
     ...(img2img ? { img2img: {
       sourceImageId: img2img.sourceImageId, denoisingStrength: img2img.denoisingStrength,
       resizeMode: img2img.resizeMode,
+    } } : {}),
+    ...(upscale ? { upscale: {
+      sourceImageId: upscale.sourceImageId, upscaler: upscale.upscaler, scale: upscale.scale,
     } } : {}),
   }
 }
@@ -272,10 +277,25 @@ export function registerIpc(
   }
 
   const localUrl = (): string => normalizeBaseUrl(deps.localUrl ?? LOCAL_FORGE_URL)
+  const HIRES_UPSCALER_KEY = 'upscaler.hires'
+  const FINISHED_UPSCALER_KEY = 'upscaler.finished'
 
   handle('settings:get', () => ({
     serverUrl: repos.servers.active()?.url ?? null, imagesDir: deps.imagesDir(), localUrl: localUrl(),
+    upscalers: { hires: repos.settings.get(HIRES_UPSCALER_KEY), finished: repos.settings.get(FINISHED_UPSCALER_KEY) },
   }))
+
+  handle('settings:setUpscalers', async (input) => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return fail('error.invalidParams')
+    const choices = input as Record<string, unknown>
+    const catalog = await loadCatalog()
+    if (typeof choices.hires !== 'string' || typeof choices.finished !== 'string'
+      || !catalog.upscalers.includes(choices.hires) || !catalog.upscalers.includes(choices.finished)) {
+      return fail('error.invalidParams')
+    }
+    repos.settings.set(HIRES_UPSCALER_KEY, choices.hires)
+    repos.settings.set(FINISHED_UPSCALER_KEY, choices.finished)
+  })
 
   // ---- saved servers ----------------------------------------------------
 
@@ -475,8 +495,11 @@ export function registerIpc(
     if (typeof title !== 'string') return fail('error.invalidParams')
     const catalog = await loadCatalog()
     const ckpt = catalog.checkpoints.find((c) => c.title === title) ?? fail('error.notFound')
-    return defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers, upscalers: catalog.upscalers },
+    const params = defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers, upscalers: catalog.upscalers },
       catalog.familyModules[ckpt.family] ?? [])
+    const preferred = repos.settings.get(HIRES_UPSCALER_KEY)
+    if (preferred && catalog.upscalers.includes(preferred) && params.hires) params.hires.upscaler = preferred
+    return params
   })
 
   handle('catalog:parts', async (params) => {
@@ -484,12 +507,23 @@ export function registerIpc(
     return checkParts(params, await loadCatalog(), FINDINGS)
   })
 
-  handle('jobs:enqueue', (params) => {
+  handle('jobs:enqueue', async (params) => {
     const valid = validateEnqueue(params)
     requireServer()
-    if (valid.img2img) {
-      const source = repos.images.get(valid.img2img.sourceImageId) ?? fail('error.notFound')
+    if (valid.img2img || valid.upscale) {
+      const source = repos.images.get((valid.img2img ?? valid.upscale)!.sourceImageId) ?? fail('error.notFound')
       if (source.hidden && !lock.isOpen()) return fail('error.notFound')
+      if (valid.upscale && (source.width * valid.upscale.scale > 4096 || source.height * valid.upscale.scale > 4096)) {
+        return fail('error.invalidParams')
+      }
+      if (valid.upscale && !(await loadCatalog()).upscalers.includes(valid.upscale.upscaler)) {
+        return fail('error.invalidParams')
+      }
+      if (valid.upscale) {
+        const latest = repos.images.get(source.id) ?? fail('error.notFound')
+        if (latest.hidden && !lock.isOpen()) return fail('error.notFound')
+        if (latest.width * valid.upscale.scale > 4096 || latest.height * valid.upscale.scale > 4096) return fail('error.invalidParams')
+      }
     }
     try {
       return runner.enqueue(valid)
@@ -512,10 +546,13 @@ export function registerIpc(
     }
     // A job of a removed server is retried on the active one; without one there is nowhere to run it.
     if (!repos.servers.get(job.serverId)) requireServer()
-    if (job.type === 'img2img') {
+    if (job.type === 'img2img' || job.type === 'upscale') {
       const valid = validateEnqueue(job.params)
-      const source = repos.images.get(valid.img2img?.sourceImageId ?? -1) ?? fail('error.notFound')
+      const source = repos.images.get((valid.img2img ?? valid.upscale)?.sourceImageId ?? -1) ?? fail('error.notFound')
       if (source.hidden && !lock.isOpen()) return fail('error.notFound')
+      if (valid.upscale && (source.width * valid.upscale.scale > 4096 || source.height * valid.upscale.scale > 4096)) {
+        return fail('error.invalidParams')
+      }
     }
     return runner.retry(id)
   })

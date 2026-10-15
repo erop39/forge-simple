@@ -18,7 +18,7 @@ const avail = { samplers: ['Euler a'], schedulers: ['Automatic'] }
 
 const catalogWith = (titles: string[]): Catalog => ({
   checkpoints: titles.map((title) => ({ title, name: title, filename: title, family: 'sdxl' as const })),
-  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: [], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
+  modules: [], loras: [], samplers: ['Euler a'], schedulers: ['Automatic'], upscalers: ['R-ESRGAN 4x+'], loadedCheckpoint: null, fetchedAt: 0, familyModules: {},
 })
 
 const SECRET = 'SECRET-PROMPT-TEXT'
@@ -83,6 +83,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
     }),
     txt2img: vi.fn(generate),
     img2img: vi.fn(generate),
+    upscale: vi.fn(generate),
     progress: vi.fn(async () => {
       if (state.progress instanceof Error) throw state.progress
       return state.progress
@@ -267,6 +268,50 @@ test('img2img never persists Forge error text that echoes source bytes', async (
   expect(await ticking).toBe('ran')
   expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 422 })
   expect(JSON.stringify(h.repos.jobs.get(job.id))).not.toContain('cG5n')
+  expect(JSON.stringify(h.oplog.list())).not.toContain('cG5n')
+})
+
+test('upscale runs the extras request and links its result to the source', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  const job = h.runner.enqueue(params({ prompt: '', upscale: {
+    sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2,
+  } }))[0]!
+  expect(job.type).toBe('upscale')
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.client.upscale).toHaveBeenCalledWith(expect.objectContaining({ image: 'cG5n', upscaling_resize: 2 }), expect.any(AbortSignal))
+  expect(h.repos.images.list({ limit: 1 })[0]?.sourceImageId).toBe(source.id)
+})
+
+test('upscale refuses a locked source and cancellation interrupts an active extras request', async () => {
+  const h = setup()
+  const source = sourceFor(h)
+  h.repos.images.setHidden([source.id], true)
+  h.state.lockOpen = true
+  const locked = h.runner.enqueue(params({ upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }))[0]!
+  h.state.lockOpen = false
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(locked.id)?.error?.code).toBe('sourceLocked')
+  h.state.lockOpen = true
+  const running = h.runner.enqueue(params({ upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }))[0]!
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.client.upscale).toHaveBeenCalledOnce())
+  await h.runner.cancel(running.id)
+  expect(await ticking).toBe('ran')
+  expect(h.repos.jobs.get(running.id)?.status).toBe('cancelled')
+})
+
+test('an upscale HTTP 500 fails the job without unloading the checkpoint or storing echoed bytes', async () => {
+  const h = setup()
+  const source = sourceFor(h)
+  const job = h.runner.enqueue(params({ upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }))[0]!
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.client.upscale).toHaveBeenCalledOnce())
+  h.gens[0]!.reject(new ForgeError('http', 'HTTP 500', { status: 500, detail: 'image: cG5n' }))
+  expect(await ticking).toBe('ran')
+  expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 500 })
+  expect(h.client.unloadCheckpoint).not.toHaveBeenCalled()
+  expect(h.runner.unhealthy()).toBe(false)
   expect(JSON.stringify(h.oplog.list())).not.toContain('cG5n')
 })
 

@@ -1,6 +1,6 @@
 import { PROFILES } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
-import type { Img2ImgBody, Txt2ImgBody } from '../forge/client'
+import type { Img2ImgBody, Txt2ImgBody, UpscaleBody } from '../forge/client'
 import type { ProbeFindings } from '../forge/findings'
 
 /** Pure: turns the form state into a Forge txt2img request body without touching its input. */
@@ -55,4 +55,11 @@ export function buildImg2ImgBody(p: GenerationParams, sourceBase64: string, find
     hr_second_pass_steps: _steps, denoising_strength: _denoise, ...base } = buildTxt2ImgBody(p, findings)
   return { ...base, init_images: [sourceBase64], denoising_strength: p.img2img.denoisingStrength,
     resize_mode: p.img2img.resizeMode }
+}
+
+/** Extras runs on a saved image without the txt2img model and prompt fields. */
+export function buildUpscaleBody(p: GenerationParams, sourceBase64: string): UpscaleBody {
+  if (!p.upscale) throw new Error('Missing upscale settings')
+  return { image: sourceBase64, upscaling_resize: p.upscale.scale,
+    upscaler_1: p.upscale.upscaler, resize_mode: 0, show_extras_results: true }
 }

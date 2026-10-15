@@ -137,7 +137,7 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 Not in the app yet (planned, see `docs/superpowers/plans/` and `docs/STATUS.md`):
 
-- Img2img sources currently come from saved gallery images; dropping an external file into the app is not supported yet. Upscaling a finished image is also planned.
+- Img2img sources currently come from saved gallery images; dropping an external file into the app is not supported yet. The upscale request and queue are implemented for saved images, but the viewer action and before/after display are planned next.
 - LoRA selection in the interface (the request builder supports LoRAs, the screens do not).
 - Tags and search in the interface (the storage and the `images.query` call support them), "Reuse settings" and "Save as" for an image.
 - Settings presets (negative-prompt presets exist).

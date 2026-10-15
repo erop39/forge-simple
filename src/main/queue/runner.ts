@@ -2,7 +2,7 @@ import type { Catalog, GenerationParams, Job, JobError, JobProgress } from '@sha
 import { ForgeError, type ForgeClient, type GenerationResponse, type RestartOutcome } from '../forge/client'
 import { checkParts } from '../forge/catalog'
 import type { ProbeFindings } from '../forge/findings'
-import { buildImg2ImgBody, buildTxt2ImgBody } from '../generation/payload'
+import { buildImg2ImgBody, buildTxt2ImgBody, buildUpscaleBody } from '../generation/payload'
 import type { Oplog, OplogWrite } from '../oplog/oplog'
 import { SourceImageError, type createImageStore } from '../storage/image-store'
 import { isGenerationParams, type createRepos, type ImageRow } from '../storage/repos'
@@ -150,7 +150,7 @@ export function createRunner(deps: RunnerDeps): {
     const jobs: Job[] = []
     for (let i = 0; i < params.count; i++) {
       const seed = params.seed === -1 ? -1 : params.seed + i
-      const job = repos.jobs.insert(server.id, params.img2img ? 'img2img' : 'txt2img', { ...params, count: 1, seed })
+      const job = repos.jobs.insert(server.id, params.upscale ? 'upscale' : params.img2img ? 'img2img' : 'txt2img', { ...params, count: 1, seed })
       jobs.push(job)
       log({ level: 'info', category: 'queue', messageKey: 'log.queue.added', jobId: job.id, details: { type: job.type } })
     }
@@ -235,8 +235,9 @@ export function createRunner(deps: RunnerDeps): {
       if (!queued) return await idleCheck()
       current = queued
 
-      if (!isGenerationParams(queued.params) || (queued.type === 'img2img' && (!queued.params.img2img || (queued.params.hires?.scale ?? 1) > 1))
-        || (queued.type === 'txt2img' && queued.params.img2img) || queued.type === 'upscale') {
+      if (!isGenerationParams(queued.params) || (queued.type === 'img2img' && (!queued.params.img2img || queued.params.upscale || (queued.params.hires?.scale ?? 1) > 1))
+        || (queued.type === 'txt2img' && (queued.params.img2img || queued.params.upscale))
+        || (queued.type === 'upscale' && (!queued.params.upscale || queued.params.img2img || (queued.params.hires?.scale ?? 1) > 1))) {
         setStatus(queued.id, 'failed', { error: { code: 'corruptJob' } })
         logError(queued, 'log.error.corruptJob')
         return 'ran'
@@ -264,7 +265,9 @@ export function createRunner(deps: RunnerDeps): {
       if (!job || job.status !== 'queued') return 'ran'
       current = job
 
-      const missing = checkParts(job.params, catalog, deps.findings).filter((p) => !p.found).map((p) => p.value)
+      const missing = job.type === 'upscale'
+        ? (catalog.upscalers.includes(job.params.upscale!.upscaler) ? [] : [job.params.upscale!.upscaler])
+        : checkParts(job.params, catalog, deps.findings).filter((p) => !p.found).map((p) => p.value)
       if (missing.length > 0) {
         setStatus(job.id, 'failed', { error: { code: 'missingParts', missing } })
         logError(job, 'log.error.missingParts', { missing })
@@ -272,10 +275,12 @@ export function createRunner(deps: RunnerDeps): {
       }
 
       let sourceBase64: string | undefined
-      if (job.type === 'img2img') {
-        const source = repos.images.get(job.params.img2img!.sourceImageId)
+      if (job.type === 'img2img' || job.type === 'upscale') {
+        const source = repos.images.get((job.params.img2img ?? job.params.upscale)!.sourceImageId)
         if (!source) return failSource(job, 'sourceMissing')
         if (source.hidden && !deps.lock?.isOpen()) return failSource(job, 'sourceLocked')
+        if (job.type === 'upscale' && (source.width * job.params.upscale!.scale > 4096
+          || source.height * job.params.upscale!.scale > 4096)) return failSource(job, 'sourceCorrupt')
         try {
           sourceBase64 = await deps.images.readSource(source.filePath)
         } catch (err) {
@@ -291,8 +296,9 @@ export function createRunner(deps: RunnerDeps): {
       return await execute(job, client, sourceBase64)
     } catch (err) {
       console.error('runner: tick failed', err)
-      const message = current?.type === 'img2img' ? 'img2img failed unexpectedly' : messageOf(err)
-      const stack = err instanceof Error ? err.stack : undefined
+      const sourceJob = current?.type === 'img2img' || current?.type === 'upscale'
+      const message = sourceJob ? 'source-image job failed unexpectedly' : messageOf(err)
+      const stack = !sourceJob && err instanceof Error ? err.stack : undefined
       log({
         level: 'error', category: 'error', messageKey: 'log.error.runner', jobId: current?.id,
         details: {
@@ -337,15 +343,15 @@ export function createRunner(deps: RunnerDeps): {
 
   async function execute(job: Job, client: ForgeClient, sourceBase64?: string): Promise<TickResult> {
     const params = job.params
-    const body = job.type === 'img2img'
-      ? buildImg2ImgBody(params, sourceBase64!, deps.findings)
-      : buildTxt2ImgBody(params, deps.findings)
+    const body = job.type === 'upscale' ? buildUpscaleBody(params, sourceBase64!)
+      : job.type === 'img2img' ? buildImg2ImgBody(params, sourceBase64!, deps.findings)
+        : buildTxt2ImgBody(params, deps.findings)
 
     const a: ActiveJob = { jobId: job.id, client, controller: new AbortController(), cancelling: false, stopping: false, watchdog: false }
     active = a
     setStatus(job.id, 'running')
 
-    if (lastDone && (lastDone.checkpoint !== params.checkpoint || !sameModules(lastDone.modules, params.modules))) {
+    if (job.type !== 'upscale' && lastDone && (lastDone.checkpoint !== params.checkpoint || !sameModules(lastDone.modules, params.modules))) {
       log({
         level: 'info', category: 'checkpoint', messageKey: 'log.checkpoint.changed', jobId: job.id,
         details: { from: lastDone.checkpoint, to: params.checkpoint, modulesFrom: lastDone.modules, modulesTo: params.modules },
@@ -362,9 +368,10 @@ export function createRunner(deps: RunnerDeps): {
     let lastJobNo = 0
     let settled = false
 
-    const request: Promise<Outcome> = (async () => job.type === 'img2img'
-      ? client.img2img(body as ReturnType<typeof buildImg2ImgBody>, a.controller.signal)
-      : client.txt2img(body, a.controller.signal))().then(
+    const request: Promise<Outcome> = (async () => job.type === 'upscale'
+      ? client.upscale(body as ReturnType<typeof buildUpscaleBody>, a.controller.signal)
+      : job.type === 'img2img' ? client.img2img(body as ReturnType<typeof buildImg2ImgBody>, a.controller.signal)
+        : client.txt2img(body as ReturnType<typeof buildTxt2ImgBody>, a.controller.signal))().then(
       (value): Outcome => { settled = true; return { ok: true, value } },
       (error: unknown): Outcome => { settled = true; return { ok: false, error } },
     )
@@ -393,7 +400,8 @@ export function createRunner(deps: RunnerDeps): {
               jobId: job.id,
               step: prog.state.sampling_step,
               totalSteps: prog.state.sampling_steps,
-              stage: params.hires && params.hires.scale > 1 && prog.state.job_no > 0 ? 'hires' : 'sampling',
+              stage: job.type === 'upscale' ? 'upscaling'
+                : params.hires && params.hires.scale > 1 && prog.state.job_no > 0 ? 'hires' : 'sampling',
               stepsPerSec: sps,
               elapsedMs: now - startedAt,
               preview: prog.current_image ? `data:image/png;base64,${prog.current_image}` : null,
@@ -421,7 +429,7 @@ export function createRunner(deps: RunnerDeps): {
 
   function failForgeError(job: Job, err: ForgeError, code: 'forgeHttp' | 'forgeInvalid'): TickResult {
     const error: JobError = { code, ...(err.status !== undefined ? { status: err.status } : {}),
-      ...(job.type !== 'img2img' && err.detail !== undefined ? { detail: err.detail } : {}) }
+      ...(job.type === 'txt2img' && err.detail !== undefined ? { detail: err.detail } : {}) }
     setStatus(job.id, 'failed', { error })
     logError(job, 'log.error.generation', { kind: err.kind, status: err.status ?? null })
     return 'ran'
@@ -453,18 +461,20 @@ export function createRunner(deps: RunnerDeps): {
       }
       if (err instanceof ForgeError && err.kind === 'http' && err.status === 500) {
         failForgeError(job, err, 'forgeHttp')
-        noteServerError(job)
-        await unloadAfterError(job, a.client)
+        if (job.type !== 'upscale') {
+          noteServerError(job)
+          await unloadAfterError(job, a.client)
+        }
         return 'ran'
       }
       if (err instanceof ForgeError && err.kind === 'http') return failForgeError(job, err, 'forgeHttp')
       if (err instanceof ForgeError && err.kind === 'invalid') return failForgeError(job, err, 'forgeInvalid')
       if (err instanceof ForgeError) {
-        interrupted(job, { code: 'network', ...(job.type !== 'img2img' && err.detail !== undefined ? { detail: err.detail } : {}) }, 'log.error.connectionLost',
+        interrupted(job, { code: 'network', ...(job.type === 'txt2img' && err.detail !== undefined ? { detail: err.detail } : {}) }, 'log.error.connectionLost',
           { kind: err.kind, status: err.status ?? null })
         return markPaused()
       }
-      const message = job.type === 'img2img' ? 'img2img failed unexpectedly' : messageOf(err)
+      const message = job.type === 'txt2img' ? messageOf(err) : 'source-image job failed unexpectedly'
       setStatus(job.id, 'failed', { error: { code: 'unexpected', detail: message } })
       logError(job, 'log.error.generation', { detail: message })
       return 'ran'
@@ -501,6 +511,8 @@ export function createRunner(deps: RunnerDeps): {
           saved.push(repos.images.insert({
             jobId: job.id, filePath: file.filePath, thumbPath: file.thumbPath,
             width: file.width, height: file.height, seed, infotext, durationMs,
+            ...(job.type === 'upscale' && repos.images.get(params.upscale!.sourceImageId)
+              ? { sourceImageId: params.upscale!.sourceImageId } : {}),
           }))
         } catch (err) {
           failingPath = file.filePath
@@ -527,7 +539,7 @@ export function createRunner(deps: RunnerDeps): {
     for (const row of saved) emitSafely(() => events.imageAdded(row))
     setStatus(job.id, 'done', { durationMs, stepsPerSec: speed })
     resetHealth()
-    lastDone = { checkpoint: params.checkpoint, modules: [...params.modules] }
+    if (job.type !== 'upscale') lastDone = { checkpoint: params.checkpoint, modules: [...params.modules] }
     log({
       level: 'info', category: 'generation', messageKey: 'log.generation.finished', jobId: job.id, durationMs,
       details: {

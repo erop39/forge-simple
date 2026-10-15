@@ -67,6 +67,14 @@ export interface Img2ImgBody extends Omit<Txt2ImgBody, 'enable_hr' | 'hr_scale' 
   resize_mode: 0 | 1 | 2 | 3
 }
 
+export interface UpscaleBody {
+  image: string
+  upscaling_resize: 1.5 | 2 | 4
+  upscaler_1: string
+  resize_mode: 0
+  show_extras_results: true
+}
+
 export interface GenerationResponse {
   images: string[]
   info: string
@@ -107,6 +115,7 @@ export interface ForgeClient {
   ping(): Promise<number>
   txt2img(body: Txt2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
   img2img(body: Img2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
+  upscale(body: UpscaleBody, signal?: AbortSignal): Promise<GenerationResponse>
   progress(): Promise<ProgressResponse>
   interrupt(): Promise<void>
   models(): Promise<SdModel[]>
@@ -280,6 +289,16 @@ export function createForgeClient(
       const images = asArray(json.images, 'images')
       if (!images.every((i): i is string => typeof i === 'string')) throw invalid('images holds a non-string')
       return { images, info: typeof json.info === 'string' ? json.info : '' }
+    },
+
+    async upscale(body, signal) {
+      const json = asObj(
+        await request('POST', `${API}/extra-single-image`, { body, ...(signal ? { signal } : {}) }),
+        'extra-single-image',
+      )
+      const image = str(json, 'image', 'extra-single-image')
+      if (image === '') throw invalid('extra-single-image.image is empty')
+      return { images: [image], info: '' }
     },
 
     async progress() {

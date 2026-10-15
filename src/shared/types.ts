@@ -14,6 +14,11 @@ export interface Img2ImgSettings {
   /** Forge resize_mode: resize, crop, fill, or latent upscale. */
   resizeMode: 0 | 1 | 2 | 3;
 }
+export interface UpscaleSettings {
+  sourceImageId: number;
+  upscaler: string;
+  scale: 1.5 | 2 | 4;
+}
 export interface GenerationParams {
   family: Family;
   checkpoint: string;          // поле title из /sd-models
@@ -34,9 +39,11 @@ export interface GenerationParams {
   hires?: HiresSettings;
   /** Optional for old txt2img jobs. Image bytes are never persisted with job params. */
   img2img?: Img2ImgSettings;
+  /** A finished image to upscale; the source bytes stay in the managed image store. */
+  upscale?: UpscaleSettings;
 }
 export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'unexpected';
-/** detail carries server or system text verbatim; missing carries the unavailable file values. */
+/** detail carries server or system text for txt2img only; source-image jobs omit arbitrary Forge text. */
 export interface JobError { code: JobErrorCode; status?: number; detail?: string; missing?: string[] }
 export interface Job {
   id: number; serverId: number; type: JobType; status: JobStatus;

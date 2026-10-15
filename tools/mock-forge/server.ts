@@ -263,9 +263,14 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
       steps,
       infotexts: [`${prompt}\nSteps: ${steps}, Seed: ${seed}`],
     })
-    const width = (scale > 1 || Array.isArray(params.init_images)) && typeof params.width === 'number'
+    const source = typeof params.image === 'string' ? Buffer.from(params.image, 'base64') : null
+    const upscale = source && source.length >= 24 && typeof params.upscaling_resize === 'number'
+      ? params.upscaling_resize : null
+    const width = upscale !== null ? Math.max(1, Math.min(4096, Math.round(source!.readUInt32BE(16) * upscale)))
+      : (scale > 1 || Array.isArray(params.init_images)) && typeof params.width === 'number'
       ? Math.max(1, Math.min(4096, Math.round(params.width * scale))) : 64
-    const height = (scale > 1 || Array.isArray(params.init_images)) && typeof params.height === 'number'
+    const height = upscale !== null ? Math.max(1, Math.min(4096, Math.round(source!.readUInt32BE(20) * upscale)))
+      : (scale > 1 || Array.isArray(params.init_images)) && typeof params.height === 'number'
       ? Math.max(1, Math.min(4096, Math.round(params.height * scale))) : 64
     return { images: [solidPng(width, [90, 140, 200], height)], info }
   }
@@ -330,6 +335,10 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
           return { status: 500, json: FORGE_500 }
         }
         return ok(await enqueue(body))
+      }
+      if (path === '/sdapi/v1/extra-single-image') {
+        const result = await enqueue(body)
+        return ok({ image: result.images[0], html_info: '' })
       }
       if (path === '/sdapi/v1/unload-checkpoint') {
         if (failing === 'untilUnload') failing = 0

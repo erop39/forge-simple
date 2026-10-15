@@ -295,6 +295,16 @@ test('img2img posts source bytes and resize settings to its endpoint', async () 
   expect(mock.requests.at(-1)).toMatchObject({ method: 'POST', path: '/sdapi/v1/img2img', body: imgBody })
 })
 
+test('upscale maps the single-image extras response and rejects malformed replies', async () => {
+  const request = { image: 'cG5n', upscaling_resize: 2 as const, upscaler_1: 'R-ESRGAN 4x+',
+    resize_mode: 0 as const, show_extras_results: true as const }
+  const client = createForgeClient(mock.url)
+  expect(await client.upscale(request)).toMatchObject({ images: [expect.any(String)], info: '' })
+  expect(mock.requests.at(-1)).toMatchObject({ method: 'POST', path: '/sdapi/v1/extra-single-image', body: request })
+  mock.respond('/sdapi/v1/extra-single-image', { json: { images: ['wrong'] } })
+  await expectForgeError(client.upscale(request), { kind: 'invalid' })
+})
+
 describe('server control', () => {
   test('cmdFlags() reads the launch flags', async () => {
     expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: false })

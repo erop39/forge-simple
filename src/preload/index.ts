@@ -14,6 +14,7 @@ const invoke = async <T>(channel: Channel, ...args: unknown[]): Promise<T> => {
 const api: Api = {
   settings: {
     get: () => invoke('settings:get'),
+    setUpscalers: (input) => invoke('settings:setUpscalers', input),
   },
   servers: {
     list: () => invoke('servers:list'),

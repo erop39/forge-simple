@@ -31,6 +31,7 @@ export interface AppSettings {
   imagesDir: string
   /** Where Forge Neo listens on this PC by default; the add-server form starts with it. */
   localUrl: string
+  upscalers?: { hires: string | null; finished: string | null }
 }
 /** A server to save. An empty name is replaced by the address's host. */
 export interface ServerInput { name: string; url: string }
@@ -60,7 +61,11 @@ export interface AppEvents {
 }
 
 export interface Api {
-  settings: { get(): Promise<AppSettings> }
+  settings: {
+    get(): Promise<AppSettings>
+    /** Saved preferences are used only when the active Forge offers the named upscaler. */
+    setUpscalers(input: { hires: string; finished: string }): Promise<void>
+  }
   servers: {
     list(): Promise<ServerInfo[]>
     /** Tests the connection and saves only when it works; with no active server the new one becomes active. */
@@ -161,7 +166,7 @@ declare global { interface Window { api: Api } }
 
 /** Request channels, `<area>:<method>`. Event channels are `event:<name>`. */
 export const CHANNELS = [
-  'settings:get',
+  'settings:get', 'settings:setUpscalers',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',

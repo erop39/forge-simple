@@ -124,7 +124,8 @@ describe('servers', () => {
     expect(res.latencyMs).toBeGreaterThanOrEqual(0)
     expect(res.errorKey).toBeNull()
     expect(repos.servers.active()).toMatchObject({ name: 'Home', url: mock.url })
-    expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url })
+    expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url,
+      upscalers: { hires: null, finished: null } })
     expect(forgeRef.address()).toBe(mock.url)
     expect(kicks).toBe(1)
     expect(serverChanges).toBe(1)
@@ -300,7 +301,8 @@ describe('servers', () => {
     expect(repos.jobs.get(q.id)).toBeNull()
     expect(sentOf('job:removed')).toEqual([{ id: q.id }])
     expect(sentOf('servers').at(-1)).toEqual([])
-    expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url })
+    expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url,
+      upscalers: { hires: null, finished: null } })
     expect(serverChanges).toBe(1)
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
       messageKey: 'log.server.removed', details: { name: '127.0.0.1', url: mock.url, deletedJobs: 1 },
@@ -557,6 +559,38 @@ describe('jobs:enqueue boundary', () => {
     repos.jobs.setStatus(jobs[0]!.id, 'failed')
     lock.close()
     await expect(call('jobs:retry', jobs[0]!.id)).rejects.toThrow('error.notFound')
+  })
+
+  test('upscale validates source, scale and lock, and keeps only typed settings', async () => {
+    await addServer(mock.url)
+    const upscale = { sourceImageId: 1, upscaler: 'R-ESRGAN 4x+', scale: 2, image: 'secret' }
+    await expect(call('jobs:enqueue', { ...goodParams(), prompt: '', upscale })).rejects.toThrow('error.notFound')
+    const origin = repos.jobs.insert(repos.servers.active()!.id, 'txt2img', goodParams())
+    const source = repos.images.insert({ jobId: origin.id, filePath: path.join(dir, 'upscale-source.png'),
+      thumbPath: path.join(dir, 'upscale-source.jpg'), width: 1200, height: 1200, seed: 1, infotext: '', durationMs: 1 })
+    await expect(call('jobs:enqueue', { ...goodParams(), prompt: '', upscale: { ...upscale, upscaler: 'unknown' } })).rejects.toThrow('error.invalidParams')
+    await expect(call('jobs:enqueue', { ...goodParams(), prompt: '', upscale: { ...upscale, scale: 8 } })).rejects.toThrow('error.invalidParams')
+    await expect(call('jobs:enqueue', { ...goodParams(), prompt: '', upscale: { ...upscale, scale: 4 } })).rejects.toThrow('error.invalidParams')
+    await lock.setPassword(null, 'secret-pass')
+    repos.images.setHidden([source.id], true)
+    await expect(call('jobs:enqueue', { ...goodParams(), prompt: '', upscale })).rejects.toThrow('error.notFound')
+    await lock.open('secret-pass')
+    const jobs = await call('jobs:enqueue', { ...goodParams(), prompt: '', upscale }) as { id: number; type: string; params: Record<string, unknown> }[]
+    expect(jobs[0]).toMatchObject({ type: 'upscale', params: { upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } } })
+    expect(JSON.stringify(jobs)).not.toContain('secret')
+    repos.jobs.setStatus(jobs[0]!.id, 'failed')
+    lock.close()
+    await expect(call('jobs:retry', jobs[0]!.id)).rejects.toThrow('error.notFound')
+  })
+
+  test('upscaler preferences accept only names offered by Forge and feed hires defaults', async () => {
+    await addServer(mock.url)
+    await expect(call('settings:setUpscalers', { hires: 'missing', finished: 'R-ESRGAN 4x+' })).rejects.toThrow('error.invalidParams')
+    await call('settings:setUpscalers', { hires: 'R-ESRGAN 4x+', finished: 'Latent' })
+    expect(await call('settings:get')).toMatchObject({ upscalers: { hires: 'R-ESRGAN 4x+', finished: 'Latent' } })
+    const catalog = await call('catalog:get') as { checkpoints: { title: string }[] }
+    const defaults = await call('catalog:defaults', catalog.checkpoints[0]!.title) as { hires: { upscaler: string } }
+    expect(defaults.hires.upscaler).toBe('R-ESRGAN 4x+')
   })
 })
 

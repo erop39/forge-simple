@@ -160,6 +160,28 @@ test('img2img reads a saved source, sends it to mock Forge, and stores the resiz
   expect(JSON.stringify(app.repos.jobs.get(second!.id)?.params)).not.toContain('init_images')
 })
 
+test('upscale reads a saved source, queues the extras request and links a larger result', async () => {
+  const mock = await mockForge()
+  const app = launch(mock.url)
+  app.runner.start()
+  const [first] = app.runner.enqueue(await app.params())
+  await vi.waitFor(() => expect(app.job(first!.id).status).toBe('done'), WAIT)
+  const source = app.repos.images.list({ limit: 1 })[0]!
+  const [second] = app.runner.enqueue(await app.params({ prompt: '',
+    upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 },
+  }))
+  await vi.waitFor(() => expect(app.job(second!.id).status).toBe('done'), WAIT)
+  expect(second?.type).toBe('upscale')
+  const sent = mock.requests.find((r) => r.path === '/sdapi/v1/extra-single-image')
+  expect(sent?.body).toMatchObject({ upscaling_resize: 2, upscaler_1: 'R-ESRGAN 4x+' })
+  expect((sent?.body as { image: string }).image).toBeTruthy()
+  const result = app.repos.images.list({ limit: 1 })[0]!
+  expect(result).toMatchObject({ jobId: second!.id, sourceImageId: source.id, width: source.width * 2, height: source.height * 2 })
+  app.repos.images.delete(source.id)
+  expect(app.repos.images.get(result.id)?.sourceImageId).toBeNull()
+  expect(existsSync(result.filePath)).toBe(true)
+})
+
 test('server goes down mid-queue → first job interrupted, second stays queued; after restart the second completes', async () => {
   const mock = await mockForge()
   const port = Number(new URL(mock.url).port)

@@ -105,6 +105,17 @@ test('images.delete returns the deleted row or null', () => {
   expect(repos.images.delete(img.id)).toBeNull()
 })
 
+test('deleting a source detaches saved derivatives without deleting their files or rows', () => {
+  const { repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  const j = repos.jobs.insert(s.id, 'txt2img', params())
+  const source = repos.images.insert(imageRow(j.id))
+  const result = repos.images.insert({ ...imageRow(j.id), sourceImageId: source.id })
+  expect(repos.images.delete(source.id)?.id).toBe(source.id)
+  expect(repos.images.get(result.id)?.sourceImageId).toBeNull()
+  expect(repos.images.get(result.id)).not.toBeNull()
+})
+
 test('setActiveUrl reuses the row for the same url and keeps one active', () => {
   const { repos, setTime } = setup(100)
   const a = repos.servers.setActiveUrl('http://a:7860')
