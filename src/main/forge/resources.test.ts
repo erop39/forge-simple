@@ -1,4 +1,6 @@
 import { createResourceMonitor, parseMemory } from './resources'
+import type { ForgeStats } from '@shared/types'
+import { parseStats } from './stats'
 
 const memory = (used: number) => ({
   ram: { used: 12, total: 32 },
@@ -80,4 +82,44 @@ test('a failed memory request marks readings stale and the next poll recovers', 
     expect(monitor.current()).toMatchObject({ failed: false, samples: [{ memory: { vramUsed: 6 } }] })
     monitor.stop()
   } finally { vi.useRealTimers() }
+})
+
+test('stats extension is probed once per connection and its failure does not discard memory', async () => {
+  vi.useFakeTimers()
+  try {
+    const stats = vi.fn().mockResolvedValueOnce(null).mockResolvedValue({ version: '1', cpuPercent: 40 })
+    const monitor = createResourceMonitor({
+      read: async () => parseMemory(memory(5)), readStats: stats,
+      now: () => Date.now(), runningJob: () => null,
+    })
+    monitor.start('one')
+    monitor.onConnection(true)
+    monitor.onConnection(true)
+    await vi.waitFor(() => expect(monitor.current().extension).toBe('absent'))
+    expect(stats).toHaveBeenCalledTimes(1)
+    monitor.onConnection(false)
+    monitor.onConnection(true)
+    await vi.waitFor(() => expect(monitor.current().extension).toBe('available'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(monitor.current().samples.at(-1)?.stats?.cpuPercent).toBe(40)
+    expect(monitor.current().failed).toBe(false)
+    monitor.stop()
+  } finally { vi.useRealTimers() }
+})
+
+test('a stats probe from the old server cannot mark the new server available', async () => {
+  let answer: ((value: ForgeStats | null) => void) | null = null
+  const stats = vi.fn(() => new Promise<ForgeStats | null>((resolve) => { answer = resolve }))
+  const monitor = createResourceMonitor({
+    read: async () => parseMemory(memory(4)), readStats: stats,
+    now: () => 1, runningJob: () => null,
+  })
+  monitor.start('one')
+  monitor.onConnection(true)
+  const stale = answer!
+  monitor.start('two')
+  stale(parseStats({ version: 'old' }))
+  await Promise.resolve()
+  expect(monitor.current().extension).toBe('unknown')
+  monitor.stop()
 })

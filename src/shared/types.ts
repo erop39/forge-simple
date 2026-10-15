@@ -70,6 +70,20 @@ export interface JobProgress {
 }
 export type ConnectionState = 'connected' | 'slow' | 'reconnecting' | 'offline';
 export interface ConnectionStatus { state: ConnectionState; latencyMs: number | null; attempts: number; lastOkAt: number | null }
+export interface MemoryMetrics {
+  ramUsed: number | null; ramTotal: number | null
+  vramUsed: number | null; vramTotal: number | null
+  allocated: number | null; reserved: number | null; vramPeak: number | null; oom: number | null
+}
+export interface ForgeStats {
+  version: string | null; forgeVersion: string | null; torchVersion: string | null
+  cpuPercent: number | null; ramUsed: number | null; ramTotal: number | null
+  gpuName: string | null; gpuUtilization: number | null; gpuTemperature: number | null
+  gpuFanPercent: number | null; gpuPowerWatts: number | null; gpuPowerLimitWatts: number | null
+  gpuVramUsed: number | null; gpuVramTotal: number | null
+}
+export interface ResourceSample { time: number; memory: MemoryMetrics; stats: ForgeStats | null }
+export interface ResourceSnapshot { samples: ResourceSample[]; failed: boolean; extension: 'unknown' | 'available' | 'absent' }
 export const OPLOG_LEVELS = ['info', 'warn', 'error'] as const
 export type OplogLevel = (typeof OPLOG_LEVELS)[number];
 export const OPLOG_CATEGORIES = [

@@ -29,7 +29,8 @@ Forge's HTTP API. One user, no login.
   written to it. The Activity log panel shows, filters, searches and exports it.
 - While its window is visible, the app samples Forge's read-only `/memory` endpoint every two seconds
   (every second during a job). It keeps only the latest 60 readings in memory and saves the sampled
-  peak VRAM on each job. The resource display is planned next.
+  peak VRAM on each job. The top bar shows VRAM, RAM, CPU and GPU; CPU and GPU need the optional
+  read-only stats extension described below.
 
 ## Requirements
 
@@ -88,6 +89,23 @@ generation then fails with HTTP 500, whichever checkpoint you pick, until Forge 
 - A Forge that hangs and no longer answers HTTP requests cannot be restarted from the app: restart it
   on the home PC.
 
+## Resource monitor and optional Forge extension
+
+The top bar shows VRAM, RAM, CPU and GPU. Click the readings for one-minute graphs, peaks, model/cache
+VRAM, OOM count, GPU temperature/fan/power, server details, and the existing Unload model and Restart
+Forge controls. With Forge's built-in `GET /sdapi/v1/memory` alone, VRAM and Forge-process RAM work;
+CPU, GPU activity, system RAM and version fields show dashes. Polling stops when the app window is
+hidden or minimized. Failed memory polls do not change the generation queue.
+
+To add the remaining readings, copy the whole `forge-extension/forge-neo-client-stats` folder into
+Forge's `extensions` directory on the PC running Forge, then restart Forge. The folder must contain
+`scripts/forge_neo_client_stats.py` after copying. The extension registers only
+`GET /forge-neo-client/v1/stats` on Forge's existing API port; it starts no second service and makes
+no changes to generation. It tries `pynvml`, then `nvidia-smi` for GPU readings. Missing sensors return
+`null`. The client checks for the extension on connection and falls back to `/memory` if it is absent.
+The extension has been syntax-checked and tested through the client parser and mock API; it has not
+been installed or run against the user's Forge.
+
 ## Hidden images
 
 Any image can be hidden with the eye button on its tile or the `H` key on a focused tile. The first time,
@@ -126,7 +144,7 @@ The app keeps everything under Electron's per-user data folder (`%APPDATA%\forge
 
 ## Screens
 
-- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline) and a settings button, which both open the server dialog, the lock button for hidden images (closed or open padlock; it asks for the password, locks at once when open, or offers to set a password when none is set) and the Activity log button.
+- **Top bar** - a 44 px strip that drags the window. It shows the connection chip (the active server's name and Connected, Slow, Reconnecting with the attempt count, or Offline), four resource readings with a detail panel, a settings button, the lock button for hidden images (closed or open padlock; it asks for the password, locks at once when open, or offers to set a password when none is set) and the Activity log button. The connection chip and settings button open the server dialog.
 - **Activity log** - a side panel on the right (`Esc` closes it) with the operation log, newest first: time, level (icon and word), category, the message and the duration where there is one. Filter by level, category and period (last hour, 24 hours, 7 days, all time) and search the shown text; new entries appear while it is open. Clicking an entry that belongs to a job shows, for a failed job, its stored error (code, HTTP status and Forge's message, which is kept with the job and never copied into the log), and for a finished job opens its image if the gallery has it loaded. Export writes every entry matching the level, category and period filters (not only those loaded in the panel), or exactly the rows shown while a text search is active, to a JSON Lines file you choose (the log records only its file name); Keep for sets how many days entries are kept. Forge's own console output is not in it: it stays on the home PC, the API does not expose it.
 - **Server dialog** - the saved Forge Neo servers (each started with `--api --listen`), each with a name and address; the active one is marked. Add, edit, delete (with confirmation) or Use a server. A new or changed address is tested before it is saved, and a wrong one shows what to check under the field. Switching is refused while a job runs. Under the list, Unload model and Restart Forge act on the active server (see Restarting Forge). Queued jobs stay with the server they were queued on: those of an inactive server show "Waiting for <name>" and run once it is active again. Deleting a server removes its queued jobs; its images stay. With no saved server the dialog opens by itself on the add form. The add form starts with "This PC" and `http://127.0.0.1:7860` (Forge on the same PC), both editable; Use this PC puts that address back after a change. When that address is already saved, the form starts empty.
 - **Prompt bar** - floats at the bottom centre. The prompt field grows to six lines; `Ctrl+Enter` generates (from the prompt or the negative prompt) and `Up Arrow` in an empty prompt field brings back the last prompt. The row below holds the checkpoint (grouped by model family in its menu), aspect ratio, a steps slider, image count, a Negative toggle (not offered for families without a negative prompt), the All parameters button and Generate; in a narrow window the controls move to a second line under the checkpoint. Switching checkpoints keeps the selected image dimensions and proportions. The bookmark button next to the Negative toggle holds saved negative prompts: choosing one replaces the negative text (and opens the field), "Save current as preset…" names the current negative, and "Manage presets…" renames or deletes them. Switching checkpoints or servers keeps the negative text, also through a model family without a negative prompt. Drag a saved image from the gallery onto the bar to use it as an img2img source; the bar shows its thumbnail and an option to remove it.

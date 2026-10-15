@@ -115,7 +115,9 @@ async function boot(): Promise<void> {
   const events = forwardEvents(imagesDir, send)
   const resources = createResourceMonitor({
     read: () => forge.client().memory(),
+    readStats: () => forge.client().stats(),
     now,
+    emit: (snapshot) => send('resources', snapshot),
     runningJob: () => {
       const serverId = repos.servers.active()?.id
       return repos.jobs.listActive().find((job) => job.status === 'running' && job.serverId === serverId)?.id ?? null
@@ -140,6 +142,7 @@ async function boot(): Promise<void> {
     emit: (status) => {
       events.connection(status)
       capabilities.onConnection(status)
+      resources.onConnection(status.state === 'connected' || status.state === 'slow')
     },
     now,
     oplog,
@@ -211,7 +214,10 @@ async function boot(): Promise<void> {
     })()
   })
 
-  const openWindow = (): void => createWindow(syncMonitor, () => send('connection', monitor.current()))
+  const openWindow = (): void => createWindow(syncMonitor, () => {
+    send('connection', monitor.current())
+    send('resources', resources.current())
+  })
   openWindow()
   if (process.env['FNC_SMOKE'] === '1' && !app.isPackaged && win) {
     const { runSmoke } = await import('./fnc-smoke')

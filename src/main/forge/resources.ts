@@ -1,15 +1,4 @@
-export interface MemoryMetrics {
-  ramUsed: number | null
-  ramTotal: number | null
-  vramUsed: number | null
-  vramTotal: number | null
-  allocated: number | null
-  reserved: number | null
-  vramPeak: number | null
-  oom: number | null
-}
-
-export interface ResourceSample { time: number; memory: MemoryMetrics }
+import type { ForgeStats, MemoryMetrics, ResourceSample, ResourceSnapshot } from '@shared/types'
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -44,8 +33,10 @@ export const RESOURCE_HISTORY_LIMIT = 60
 /** Read-only samples; no polling error can affect a generation request or connection status. */
 export function createResourceMonitor(deps: {
   read(): Promise<MemoryMetrics>
+  readStats?(): Promise<ForgeStats | null>
   now(): number
   runningJob(): number | null
+  emit?(snapshot: ResourceSnapshot): void
 }) {
   let server: string | null = null
   let active = false
@@ -54,12 +45,17 @@ export function createResourceMonitor(deps: {
   let inFlight = false
   let samples: ResourceSample[] = []
   let failed = false
+  let extension: ResourceSnapshot['extension'] = 'unknown'
+  let probed = false
   const peaks = new Map<number, number>()
 
   function clearTimer(): void {
     if (timer) clearTimeout(timer)
     timer = null
   }
+
+  const current = (): ResourceSnapshot => ({ samples: [...samples], failed, extension })
+  const emit = (): void => { try { deps.emit?.(current()) } catch { /* a renderer listener cannot stop polling */ } }
 
   function schedule(): void {
     clearTimer()
@@ -75,8 +71,12 @@ export function createResourceMonitor(deps: {
     const jobId = deps.runningJob()
     try {
       const memory = await deps.read()
+      let stats: ForgeStats | null = null
+      if (extension === 'available' && deps.readStats) {
+        try { stats = await deps.readStats() } catch { /* memory remains available */ }
+      }
       if (!active || mine !== epoch) return
-      samples.push({ time: deps.now(), memory })
+      samples.push({ time: deps.now(), memory, stats })
       if (samples.length > RESOURCE_HISTORY_LIMIT) samples.shift()
       failed = false
       if (jobId !== null && deps.runningJob() === jobId && memory.vramUsed !== null) {
@@ -86,6 +86,7 @@ export function createResourceMonitor(deps: {
       if (!active || mine !== epoch) return
       failed = true
     } finally {
+      if (active && mine === epoch) emit()
       inFlight = false
       if (active && mine === epoch) schedule()
       else if (active) void sample()
@@ -100,7 +101,10 @@ export function createResourceMonitor(deps: {
         samples = []
         peaks.clear()
         failed = false
+        extension = 'unknown'
+        probed = false
         clearTimer()
+        emit()
         active = true
         void sample()
       } else if (!active) {
@@ -111,11 +115,25 @@ export function createResourceMonitor(deps: {
     },
     stop() { epoch++; active = false; clearTimer() },
     jobChanged() { if (active && !inFlight) schedule() },
+    onConnection(healthy: boolean) {
+      if (!healthy) { probed = false; return }
+      if (!active || probed || !deps.readStats) return
+      probed = true
+      const mine = epoch
+      void deps.readStats().then(
+        (stats) => {
+          if (!active || mine !== epoch) return
+          extension = stats ? 'available' : 'absent'
+          emit()
+        },
+        () => { if (active && mine === epoch) { extension = 'unknown'; emit() } },
+      )
+    },
     takePeak(jobId: number): number | null {
       const value = peaks.get(jobId) ?? null
       peaks.delete(jobId)
       return value
     },
-    current: () => ({ samples: [...samples], failed }),
+    current,
   }
 }

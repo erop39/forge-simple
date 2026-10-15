@@ -1,7 +1,7 @@
 import type {
   Catalog, ConnectionStatus, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
-  RestartOutcome, ServerInfo,
+  RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
 
 /**
@@ -46,6 +46,7 @@ export interface AppEvents {
   'image:added': ImageRecord
   'image:removed': { id: number }
   'connection': ConnectionStatus
+  'resources': ResourceSnapshot
   /** The saved servers after any change to them, a switch included. */
   'servers': ServerInfo[]
   /** What the active Forge allows changed (read on connect and after a server switch). */
@@ -180,7 +181,7 @@ export const CHANNELS = [
 export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
-  'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'servers',
+  'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'resources', 'servers',
   'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)

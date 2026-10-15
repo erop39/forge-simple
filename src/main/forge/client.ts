@@ -1,5 +1,7 @@
 import type { RestartOutcome } from '@shared/types'
-import { parseMemory, type MemoryMetrics } from './resources'
+import type { ForgeStats, MemoryMetrics } from '@shared/types'
+import { parseMemory } from './resources'
+import { parseStats } from './stats'
 
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
@@ -120,6 +122,8 @@ export interface ForgeClient {
   progress(): Promise<ProgressResponse>
   /** Read-only Forge process and CUDA memory readings. */
   memory(): Promise<MemoryMetrics>
+  /** Optional read-only companion extension; null means HTTP 404. */
+  stats(): Promise<ForgeStats | null>
   interrupt(): Promise<void>
   models(): Promise<SdModel[]>
   modules(): Promise<SdModule[]>
@@ -310,6 +314,15 @@ export function createForgeClient(
 
     async memory() {
       return parseMemory(await request('GET', `${API}/memory`, { timeoutMs: pingTimeoutMs }))
+    },
+
+    async stats() {
+      try {
+        return parseStats(await request('GET', '/forge-neo-client/v1/stats', { timeoutMs: pingTimeoutMs }))
+      } catch (error) {
+        if (error instanceof ForgeError && error.kind === 'http' && error.status === 404) return null
+        throw error
+      }
     },
 
     async interrupt() {

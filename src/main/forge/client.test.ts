@@ -316,6 +316,14 @@ describe('server control', () => {
     expect(await client.memory()).toMatchObject({ ramUsed: 123, vramUsed: null, oom: null })
   })
 
+  test('stats() treats a missing optional extension as absent and reads it when offered', async () => {
+    const client = createForgeClient(mock.url)
+    expect(await client.stats()).toBeNull()
+    mock.respond('/forge-neo-client/v1/stats', { json: { version: '1', cpu: { percent: 25 }, gpu: { utilization: null } } })
+    expect(await client.stats()).toMatchObject({ version: '1', cpuPercent: 25, gpuUtilization: null })
+    expect(mock.requests.at(-1)).toMatchObject({ method: 'GET', path: '/forge-neo-client/v1/stats' })
+  })
+
   test('cmdFlags() reads the launch flags', async () => {
     expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: false })
     mock.setApiServerStop(true)

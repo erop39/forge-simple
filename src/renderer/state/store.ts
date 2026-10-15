@@ -2,7 +2,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
   Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings,
-  OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, RestartOutcome, ServerInfo,
+  OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
 import { errorKeyOf } from '../i18n/error-text'
@@ -35,6 +35,7 @@ export const lockedCopy = (image: ImageRecord): ImageRecord =>
 
 export interface AppState {
   connection: ConnectionStatus
+  resources: ResourceSnapshot
   settings: AppSettings | null
   /** Saved servers, ordered by name; at most one is active. */
   servers: ServerInfo[]
@@ -333,6 +334,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       )
       api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id) })))
       api.on('connection', (connection) => set({ connection }))
+      api.on('resources', (resources) => set({ resources }))
       api.on('job:removed', ({ id }) => forgetJob(id))
       api.on('servers', (servers) => set({ servers }))
       api.on('forge:capabilities', (capabilities) => {
@@ -466,6 +468,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
     return {
       connection: OFFLINE,
+      resources: { samples: [], failed: false, extension: 'unknown' },
       settings: null,
       servers: [],
       negativePresets: [],
