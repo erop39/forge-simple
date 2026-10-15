@@ -32,6 +32,12 @@ const api: Api = {
     update: (id, patch) => invoke('negativePresets:update', id, patch),
     remove: (id) => invoke('negativePresets:remove', id),
   },
+  models: {
+    setFavorite: (kind, id, favorite) => invoke('models:setFavorite', kind, id, favorite),
+    setNote: (kind, id, note) => invoke('models:setNote', kind, id, note),
+    setFamily: (file, family) => invoke('models:setFamily', file, family),
+    setTriggers: (path, triggers) => invoke('models:setTriggers', path, triggers),
+  },
   catalog: {
     get: (refresh) => invoke('catalog:get', refresh),
     defaults: (checkpointTitle) => invoke('catalog:defaults', checkpointTitle),

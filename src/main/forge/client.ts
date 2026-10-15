@@ -5,7 +5,7 @@ import { parseStats } from './stats'
 
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
-export const DEFAULT_LORAS_TIMEOUT_MS = 60_000
+export const DEFAULT_LORAS_TIMEOUT_MS = 180_000
 export const DEFAULT_CONTROL_TIMEOUT_MS = 60_000
 
 export type ForgeErrorKind = 'network' | 'timeout' | 'http' | 'invalid'
@@ -97,6 +97,7 @@ export interface SdModel {
   model_name: string
   filename: string
   hash: string | null
+  sha256: string | null
 }
 
 export interface SdModule {
@@ -130,6 +131,8 @@ export interface ForgeClient {
   models(): Promise<SdModel[]>
   modules(): Promise<SdModule[]>
   loras(): Promise<LoraItem[]>
+  /** A file next to a model (its preview) through Forge's thumb route; null when Forge has none. */
+  thumb(filename: string): Promise<{ bytes: Buffer; type: string } | null>
   samplers(): Promise<string[]>
   /** Scheduler labels (e.g. "Automatic"), falling back to the internal name. */
   schedulers(): Promise<string[]>
@@ -339,6 +342,7 @@ export function createForgeClient(
           model_name: str(o, 'model_name', 'sd-models'),
           filename: str(o, 'filename', 'sd-models'),
           hash: typeof o.hash === 'string' ? o.hash : null,
+          sha256: typeof o.sha256 === 'string' ? o.sha256 : null,
         }
       })
     },
@@ -360,6 +364,20 @@ export function createForgeClient(
           metadata: isObj(o.metadata) ? o.metadata : {},
         }
       })
+    },
+
+    async thumb(filename) {
+      let res: Response
+      try {
+        res = await fetch(`${base}/sd_extra_networks/thumb?filename=${encodeURIComponent(filename)}`,
+          { signal: AbortSignal.timeout(listTimeoutMs) })
+      } catch (e) {
+        throw new ForgeError('network', 'Could not reach Forge', { detail: e instanceof Error ? e.message : String(e) })
+      }
+      if (!res.ok) return null
+      const type = res.headers.get('content-type') ?? ''
+      if (!type.startsWith('image/')) return null
+      return { bytes: Buffer.from(await res.arrayBuffer()), type }
     },
 
     async samplers() {

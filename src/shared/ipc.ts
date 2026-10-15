@@ -1,5 +1,5 @@
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -97,6 +97,18 @@ export interface Api {
     update(id: number, patch: Partial<NegativePresetInput>): Promise<NegativePreset>
     remove(id: number): Promise<void>
   }
+  /**
+   * Marks on checkpoint and LoRA files. `id` is the checkpoint's file name or the LoRA's path from the catalog;
+   * an id the catalog does not list is error.notFound. Reload the catalog (`catalog.get()`, no refetch) to see them.
+   */
+  models: {
+    setFavorite(kind: ModelKind, id: string, favorite: boolean): Promise<void>
+    setNote(kind: ModelKind, id: string, note: string): Promise<void>
+    /** null returns to the family detected from the name. */
+    setFamily(checkpointFile: string, family: Family | null): Promise<void>
+    /** null returns to the words found in the file's metadata. */
+    setTriggers(loraPath: string, triggers: string[] | null): Promise<void>
+  }
   catalog: {
     get(refresh?: boolean): Promise<Catalog>
     defaults(checkpointTitle: string): Promise<GenerationParams>
@@ -180,7 +192,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

@@ -39,11 +39,15 @@ test('get() loads every list once and caches it', async () => {
   expect(count).toBeGreaterThanOrEqual(7)
   const second = await cat.get()
   expect(mock.requests.length).toBe(count)
-  expect(second).toBe(first)
+  expect(second).toEqual(first)
   expect(first.fetchedAt).toBe(1234)
   expect(first.checkpoints).toHaveLength(2)
   expect(first.modules).toHaveLength(2)
-  expect(first.loras).toEqual([{ name: 'detail_tweaker', path: String.raw`C:\forge\models\Lora\detail_tweaker.safetensors` }])
+  expect(first.loras).toMatchObject([
+    { name: 'detail_tweaker', path: String.raw`C:\forge\models\Lora\detail_tweaker.safetensors`, baseFamily: 'sdxl',
+      triggers: ['1girl', 'detailed skin', 'sharp'], triggersEdited: false, favorite: false },
+    { name: 'style_anima', baseFamily: 'anima', triggers: [] },
+  ])
   expect(first.samplers).toEqual(['Euler', 'Euler a'])
   expect(first.schedulers).toEqual(['Automatic', 'Simple'])
   expect(first.upscalers).toEqual(['Latent', 'R-ESRGAN 4x+'])
@@ -60,7 +64,7 @@ test('get(true) refetches', async () => {
 test('concurrent get() calls share one fetch', async () => {
   const cat = make()
   const [a, b] = await Promise.all([cat.get(), cat.get()])
-  expect(a).toBe(b)
+  expect(a).toEqual(b)
   expect(listPaths().filter((p) => p === '/sdapi/v1/sd-models')).toHaveLength(1)
 })
 
@@ -130,7 +134,7 @@ test('writes a catalog log entry with item counts and duration', async () => {
   expect(e).toMatchObject({
     level: 'info',
     messageKey: 'log.catalog.loaded',
-    details: { checkpoints: 2, modules: 2, loras: 1, samplers: 2, schedulers: 2, upscalers: 2 },
+    details: { checkpoints: 2, modules: 2, loras: 2, samplers: 2, schedulers: 2, upscalers: 2 },
   })
   expect(e?.durationMs).toBeGreaterThanOrEqual(0)
 })
@@ -148,7 +152,7 @@ test('a failed refresh keeps the cached catalog', async () => {
   const first = await cat.get()
   mock.respond('/sdapi/v1/samplers', { status: 500, json: { detail: 'boom' } })
   await expect(cat.get(true)).rejects.toBeDefined()
-  expect(await cat.get()).toBe(first)
+  expect(await cat.get()).toEqual(first)
 })
 
 const findings = (modulesAs: 'name' | 'path'): ProbeFindings => ({ shiftField: null, modulesAs, thumbRoute: false })

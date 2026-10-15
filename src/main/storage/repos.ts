@@ -1,6 +1,7 @@
 import type {
-  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind,
 } from '@shared/types'
+import { PROFILES } from '@shared/profiles'
 import type { Db } from './db'
 import { buildImageQuery, ENHANCED_SQL, escapeLike } from './image-query'
 
@@ -39,6 +40,25 @@ interface JobSql {
   created_at: number; finished_at: number | null; duration_ms: number | null
   steps_per_sec: number | null; peak_vram: number | null
 }
+export interface ModelMetaRow {
+  family: Family | null; favorite: boolean; note: string; preview: string | null; triggers: string[] | null
+}
+interface ModelMetaSql {
+  server_id: number; kind: string; filename: string; family: string | null; favorite: number
+  note: string; preview: string | null; triggers: string | null
+}
+function toModelMeta(r: ModelMetaSql): ModelMetaRow {
+  let triggers: string[] | null = null
+  if (r.triggers !== null) {
+    try {
+      const parsed: unknown = JSON.parse(r.triggers)
+      if (Array.isArray(parsed) && parsed.every((x): x is string => typeof x === 'string')) triggers = parsed
+    } catch { /* a damaged value counts as unset */ }
+  }
+  return { family: r.family && Object.hasOwn(PROFILES, r.family) ? (r.family as Family) : null, favorite: r.favorite === 1,
+    note: r.note, preview: r.preview, triggers }
+}
+
 interface ImageSql {
   id: number; job_id: number; file_path: string; thumb_path: string; width: number; height: number
   seed: number; infotext: string; created_at: number; duration_ms: number | null
@@ -490,5 +510,38 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, tags, settings, negativePresets }
+  const metaGet = db.prepare('SELECT * FROM model_meta WHERE server_id = ? AND kind = ? AND filename = ?')
+  const metaUpsert = (column: 'family' | 'favorite' | 'note' | 'preview' | 'triggers', value: string | number | null) =>
+    (serverId: number, kind: ModelKind, filename: string): void => {
+      db.prepare(`INSERT INTO model_meta (server_id, kind, filename, ${column}) VALUES (?, ?, ?, ?)
+        ON CONFLICT(server_id, kind, filename) DO UPDATE SET ${column} = excluded.${column}`).run(serverId, kind, filename, value)
+    }
+  const modelMeta = {
+    /** Every stored row of one server and kind, by file name. */
+    list(serverId: number, kind: ModelKind): Map<string, ModelMetaRow> {
+      const rows = db.prepare('SELECT * FROM model_meta WHERE server_id = ? AND kind = ?').all(serverId, kind) as ModelMetaSql[]
+      return new Map(rows.map((r) => [r.filename, toModelMeta(r)]))
+    },
+    get(serverId: number, kind: ModelKind, filename: string): ModelMetaRow | null {
+      const r = metaGet.get(serverId, kind, filename) as ModelMetaSql | undefined
+      return r ? toModelMeta(r) : null
+    },
+    setFamily: (serverId: number, kind: ModelKind, filename: string, family: Family | null): void =>
+      metaUpsert('family', family)(serverId, kind, filename),
+    setFavorite: (serverId: number, kind: ModelKind, filename: string, favorite: boolean): void =>
+      metaUpsert('favorite', favorite ? 1 : 0)(serverId, kind, filename),
+    setNote: (serverId: number, kind: ModelKind, filename: string, note: string): void =>
+      metaUpsert('note', note)(serverId, kind, filename),
+    setPreview: (serverId: number, kind: ModelKind, filename: string, preview: string): void =>
+      metaUpsert('preview', preview)(serverId, kind, filename),
+    /** null returns to the words found in the file's metadata. */
+    setTriggers: (serverId: number, kind: ModelKind, filename: string, triggers: string[] | null): void =>
+      metaUpsert('triggers', triggers === null ? null : JSON.stringify(triggers))(serverId, kind, filename),
+    /** Forgets looked-up previews (a refreshed catalog may have new ones); the user's own marks stay. */
+    clearPreviews(serverId: number): void {
+      db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ?').run(serverId)
+    },
+  }
+
+  return { servers, jobs, images, tags, settings, negativePresets, modelMeta }
 }

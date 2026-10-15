@@ -100,9 +100,28 @@ export interface OplogEntry {
   messageKey: string; durationMs: number | null; jobId: number | null; details: Record<string, unknown>;
 }
 
-export interface CheckpointInfo { title: string; name: string; filename: string; family: Family }
+export type ModelKind = 'checkpoint' | 'lora'
+export interface CheckpointInfo {
+  title: string; name: string; filename: string; family: Family
+  /** Forge's short and full hashes; null when the server did not report them. */
+  hash?: string | null; sha256?: string | null
+  /** The family was set by hand rather than detected from the name. */
+  familyOverridden?: boolean
+  favorite?: boolean; note?: string
+  /** fnc-model://… ; answers 404 when Forge has no preview for it. */
+  previewUrl?: string
+}
+export interface LoraInfo {
+  name: string; alias?: string; path: string
+  /** The family its training metadata names; null when unknown or not one of ours. */
+  baseFamily?: Family | null
+  /** Trigger words: the user's own list when set, else the most frequent training tags. */
+  triggers?: string[]
+  triggersEdited?: boolean
+  favorite?: boolean; note?: string; previewUrl?: string
+}
 export interface ModuleInfo { name: string; filename: string }
-export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: { name: string; path: string }[];
+export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: LoraInfo[];
   samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number
   /** Per-preset default module lists from the server's options (full paths). */
   familyModules: Partial<Record<Family, string[]>> }

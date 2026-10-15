@@ -89,7 +89,7 @@ describe('defaults', () => {
   test('timeouts default to 10 s for lists and 5 s for ping', () => {
     expect(DEFAULT_LIST_TIMEOUT_MS).toBe(10_000)
     expect(DEFAULT_PING_TIMEOUT_MS).toBe(5_000)
-    expect(DEFAULT_LORAS_TIMEOUT_MS).toBe(60_000)
+    expect(DEFAULT_LORAS_TIMEOUT_MS).toBe(180_000)
   })
 })
 
@@ -104,16 +104,15 @@ describe('list calls', () => {
   test('models() keeps a null hash', async () => {
     mock.respond('/sdapi/v1/sd-models', { json: [{ title: 't', model_name: 'm', filename: 'f', hash: null }] })
     expect(await createForgeClient(mock.url).models()).toEqual([
-      { title: 't', model_name: 'm', filename: 'f', hash: null },
+      { title: 't', model_name: 'm', filename: 'f', hash: null, sha256: null },
     ])
   })
 
   test('modules() and loras() map their lists', async () => {
     const client = createForgeClient(mock.url)
     expect((await client.modules()).map((m) => m.model_name)).toEqual(['ae.safetensors', 'clip_l.safetensors'])
-    expect(await client.loras()).toEqual([
-      expect.objectContaining({ name: 'detail_tweaker', alias: 'detail_tweaker', metadata: {} }),
-    ])
+    expect((await client.loras()).map((l) => l.name)).toEqual(['detail_tweaker', 'style_anima'])
+    expect((await client.loras())[1]!.metadata).toEqual({ ss_base_model_version: 'anima' })
   })
 
   test('samplers() returns plain names', async () => {

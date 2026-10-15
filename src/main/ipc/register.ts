@@ -6,7 +6,7 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ImageQuery, type ImageRecord,
+  type Catalog, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
@@ -540,7 +540,59 @@ export function registerIpc(
     oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.deleted', details: { name: removed.name } })
   })
 
-  handle('catalog:get', (refresh) => loadCatalog(refresh === true))
+  handle('catalog:get', (refresh) => {
+    // A refresh is also how new preview files are noticed: forget the "has none" answers of this server.
+    if (refresh === true) {
+      const serverId = repos.servers.active()?.id
+      if (serverId !== undefined) repos.modelMeta.clearPreviews(serverId)
+    }
+    return loadCatalog(refresh === true)
+  })
+
+  /** The active server and the file the renderer named, checked against the catalog it was listed in. */
+  async function modelTarget(kind: unknown, id: unknown): Promise<{ serverId: number; kind: ModelKind; id: string }> {
+    if ((kind !== 'checkpoint' && kind !== 'lora') || typeof id !== 'string' || id === '' || id.length > 1000) {
+      return fail('error.invalidParams')
+    }
+    const serverId = repos.servers.active()?.id ?? fail('error.noServer')
+    const catalog = await loadCatalog()
+    const listed = kind === 'checkpoint' ? catalog.checkpoints.some((c) => c.filename === id) : catalog.loras.some((l) => l.path === id)
+    if (!listed) return fail('error.notFound')
+    return { serverId, kind, id }
+  }
+
+  handle('models:setFavorite', async (kind, id, favorite) => {
+    if (typeof favorite !== 'boolean') return fail('error.invalidParams')
+    const target = await modelTarget(kind, id)
+    repos.modelMeta.setFavorite(target.serverId, target.kind, target.id, favorite)
+  })
+
+  handle('models:setNote', async (kind, id, note) => {
+    if (typeof note !== 'string' || note.length > 2000) return fail('error.invalidParams')
+    const target = await modelTarget(kind, id)
+    repos.modelMeta.setNote(target.serverId, target.kind, target.id, note.trim())
+  })
+
+  handle('models:setFamily', async (file, family) => {
+    if (family !== null && (typeof family !== 'string' || !Object.hasOwn(PROFILES, family))) return fail('error.invalidParams')
+    const target = await modelTarget('checkpoint', file)
+    const was = (await loadCatalog()).checkpoints.find((c) => c.filename === target.id)?.family
+    repos.modelMeta.setFamily(target.serverId, 'checkpoint', target.id, family as Family | null)
+    oplog.write({
+      level: 'info', category: 'checkpoint', messageKey: 'log.checkpoint.familyChanged',
+      details: { file: target.id.split(/[\\/]/).pop() ?? '', from: was ?? 'auto', to: family ?? 'auto' },
+    })
+  })
+
+  handle('models:setTriggers', async (path, triggers) => {
+    if (triggers !== null && (!Array.isArray(triggers) || triggers.length > 40
+      || !triggers.every((t) => typeof t === 'string' && t.trim() !== '' && t.length <= 60))) {
+      return fail('error.invalidParams')
+    }
+    const target = await modelTarget('lora', path)
+    repos.modelMeta.setTriggers(target.serverId, 'lora', target.id,
+      triggers === null ? null : [...new Set(triggers.map((t) => t.trim()))])
+  })
 
   handle('catalog:defaults', async (title) => {
     if (typeof title !== 'string') return fail('error.invalidParams')

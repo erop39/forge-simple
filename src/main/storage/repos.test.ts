@@ -564,3 +564,24 @@ test('clearUnfinished removes failed and interrupted jobs without images and kee
   expect(repos.jobs.get(done.id)).not.toBeNull()
   expect(repos.jobs.clearUnfinished()).toEqual([])
 })
+
+test('modelMeta keeps marks per server, kind and file, and clearPreviews leaves the marks', () => {
+  const { repos } = setup()
+  const a = repos.servers.setActiveUrl('http://a:7860')
+  const b = repos.servers.setActiveUrl('http://b:7860')
+  repos.modelMeta.setFavorite(a.id, 'checkpoint', 'f1', true)
+  repos.modelMeta.setNote(a.id, 'checkpoint', 'f1', 'good')
+  repos.modelMeta.setFamily(a.id, 'checkpoint', 'f1', 'anima')
+  repos.modelMeta.setPreview(a.id, 'checkpoint', 'f1', 'png')
+  repos.modelMeta.setTriggers(a.id, 'lora', 'l1', ['x', 'y'])
+  expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')).toEqual({
+    family: 'anima', favorite: true, note: 'good', preview: 'png', triggers: null,
+  })
+  expect(repos.modelMeta.get(b.id, 'checkpoint', 'f1')).toBeNull()
+  expect(repos.modelMeta.get(a.id, 'lora', 'f1')).toBeNull()
+  expect(repos.modelMeta.list(a.id, 'lora').get('l1')?.triggers).toEqual(['x', 'y'])
+  repos.modelMeta.setTriggers(a.id, 'lora', 'l1', null)
+  expect(repos.modelMeta.get(a.id, 'lora', 'l1')?.triggers).toBeNull()
+  repos.modelMeta.clearPreviews(a.id)
+  expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')).toMatchObject({ preview: null, favorite: true, family: 'anima' })
+})

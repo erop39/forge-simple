@@ -1,6 +1,7 @@
 import { isAbsolute, join, resolve } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol, shell } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
+import { createPreviewService, type PreviewService } from './forge/previews'
 import { createActiveForge } from './forge/active-forge'
 import { createCapabilities } from './forge/capabilities'
 import { createForgeClient } from './forge/client'
@@ -24,6 +25,7 @@ const SHUTDOWN_TIMEOUT_MS = 5000
 // Must run before `ready`.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'fnc-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'fnc-model', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 
 const makeThumb: MakeThumb = (png) => {
@@ -114,11 +116,24 @@ async function boot(): Promise<void> {
     details: { version: app.getVersion(), platform: process.platform },
   })
 
+  // Previews are fetched through the active Forge; the catalog hands out their URLs.
+  let previews: PreviewService | null = null
   const forge = createActiveForge({
     activeUrl: () => repos.servers.active()?.url ?? null,
     familyOverride: () => null,
+    modelMeta: (kind) => {
+      const serverId = repos.servers.active()?.id
+      return serverId === undefined ? new Map() : repos.modelMeta.list(serverId, kind)
+    },
+    previewUrl: (kind, filename) => previews?.urlFor(kind, filename) ?? '',
     oplog,
     now,
+  })
+  previews = createPreviewService({
+    client: () => forge.client(),
+    serverId: () => repos.servers.active()?.id ?? null,
+    cacheDir: () => join(userData, 'model-previews'),
+    meta: repos.modelMeta,
   })
   const images = createImageStore(imagesDir, makeThumb, imageRoots)
   const events = forwardEvents(send, lock)
@@ -209,6 +224,7 @@ async function boot(): Promise<void> {
     lockOpen: lock.isOpen,
   })
   protocol.handle('fnc-img', (request) => serveImage(request.url))
+  protocol.handle('fnc-model', (request) => previews!.serve(request.url))
 
   runner.recover()
   runner.start()

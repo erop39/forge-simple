@@ -142,7 +142,16 @@ const LORAS = [
     name: 'detail_tweaker',
     alias: 'detail_tweaker',
     path: 'C:\\forge\\models\\Lora\\detail_tweaker.safetensors',
-    metadata: {},
+    metadata: {
+      ss_base_model_version: 'sdxl_base_v1-0',
+      ss_tag_frequency: { '10_detail': { 'detailed skin': 40, sharp: 12, '1girl': 90 } },
+    },
+  },
+  {
+    name: 'style_anima',
+    alias: 'style_anima',
+    path: 'C:\\forge\\models\\Lora\\style_anima.safetensors',
+    metadata: { ss_base_model_version: 'anima' },
   },
 ]
 
@@ -381,6 +390,19 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
     const url = new URL(req.url ?? '/', 'http://mock')
     const method = req.method ?? 'GET'
     requests.push({ method, path: url.pathname, query: url.search.slice(1), body })
+
+    // Forge's thumb route: a preview file next to a model. Here only two models have one.
+    if (url.pathname === '/sd_extra_networks/thumb') {
+      const file = url.searchParams.get('filename') ?? ''
+      if (/(sd_xl_base\.preview|detail_tweaker)\.png$/.test(file)) {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.end(Buffer.from(solidPng(64, [90, 140, 200], 85), 'base64'))
+      } else {
+        res.writeHead(404, { 'content-type': 'application/json' })
+        res.end('{"detail":"Not Found"}')
+      }
+      return
+    }
 
     const override = overrides.get(url.pathname)
     if (override) {

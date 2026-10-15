@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultParams } from '@shared/profiles'
 import type { AppEvents } from '@shared/ipc'
-import type { GenerationParams } from '@shared/types'
+import type { Catalog, GenerationParams } from '@shared/types'
 import { startMockForge, type MockForge } from '../../../tools/mock-forge/server'
 import { createActiveForge } from '../forge/active-forge'
 import { createCapabilities } from '../forge/capabilities'
@@ -55,6 +55,11 @@ beforeEach(async () => {
   lock = createLock(repos.settings, oplog)
   const forge = createActiveForge({
     activeUrl: () => repos.servers.active()?.url ?? null, familyOverride: () => null, oplog, now,
+    modelMeta: (kind) => {
+      const id = repos.servers.active()?.id
+      return id === undefined ? new Map() : repos.modelMeta.list(id, kind)
+    },
+    previewUrl: (kind, filename) => `fnc-model://local/${kind}/${filename.length}`,
   })
   forgeRef = forge
   const real0 = createImageStore(() => dir, () => ({ thumb: Buffer.from('t'), width: 1, height: 1 }))
@@ -1083,4 +1088,51 @@ test('a family negative is saved, reported by settings:get, validated and cleare
   await call('settings:setFamilyNegative', 'sdxl', again.id)
   await call('settings:setFamilyNegative', 'sdxl', null)
   expect(((await call('settings:get')) as { familyNegatives: Record<string, number> }).familyNegatives).toEqual({})
+})
+
+describe('model marks', () => {
+  const SDXL_FILE = String.raw`C:\forge\models\Stable-diffusion\sd_xl_base.safetensors`
+  const LORA_PATH = String.raw`C:\forge\models\Lora\detail_tweaker.safetensors`
+
+  beforeEach(() => { repos.servers.setActiveUrl(mock.url) })
+
+  test('favorite, note, family and trigger words are saved per file and show in the catalog without a refetch', async () => {
+    await call('models:setFavorite', 'checkpoint', SDXL_FILE, true)
+    await call('models:setNote', 'checkpoint', SDXL_FILE, '  my base  ')
+    await call('models:setFamily', SDXL_FILE, 'qwen')
+    await call('models:setFavorite', 'lora', LORA_PATH, true)
+    await call('models:setTriggers', LORA_PATH, ['my word', 'my word', ' other '])
+    const before = mock.requests.length
+    const catalog = (await call('catalog:get')) as Catalog
+    expect(mock.requests.length).toBe(before)
+    expect(catalog.checkpoints.find((c) => c.filename === SDXL_FILE)).toMatchObject({
+      favorite: true, note: 'my base', family: 'qwen', familyOverridden: true,
+    })
+    expect(catalog.loras.find((l) => l.path === LORA_PATH)).toMatchObject({
+      favorite: true, triggers: ['my word', 'other'], triggersEdited: true,
+    })
+    expect(oplog.list().some((e) => e.messageKey === 'log.checkpoint.familyChanged')).toBe(true)
+    await call('models:setFamily', SDXL_FILE, null)
+    await call('models:setTriggers', LORA_PATH, null)
+    const reset = (await call('catalog:get')) as Catalog
+    expect(reset.checkpoints.find((c) => c.filename === SDXL_FILE)).toMatchObject({ family: 'sdxl', familyOverridden: false })
+    expect(reset.loras.find((l) => l.path === LORA_PATH)).toMatchObject({ triggers: ['1girl', 'detailed skin', 'sharp'], triggersEdited: false })
+  })
+
+  test('unknown files and malformed values are refused', async () => {
+    await expect(call('models:setFavorite', 'checkpoint', 'C:\nope.safetensors', true)).rejects.toThrow('error.notFound')
+    await expect(call('models:setFavorite', 'other', SDXL_FILE, true)).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setFavorite', 'lora', LORA_PATH, 'yes')).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setNote', 'lora', LORA_PATH, 'x'.repeat(2001))).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setFamily', SDXL_FILE, 'nope')).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setTriggers', LORA_PATH, [''])).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setTriggers', LORA_PATH, 'a')).rejects.toThrow('error.invalidParams')
+  })
+
+  test('an explicit catalog refresh forgets the "no preview" answers', async () => {
+    const server = repos.servers.active()!
+    repos.modelMeta.setPreview(server.id, 'checkpoint', SDXL_FILE, '')
+    await call('catalog:get', true)
+    expect(repos.modelMeta.get(server.id, 'checkpoint', SDXL_FILE)?.preview).toBeNull()
+  })
 })

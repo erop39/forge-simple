@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Model library groundwork: checkpoint and LoRA previews through Forge's thumb route (cached, looked up once), favorites, notes, a hand-set model family, LoRA trigger words and base family read from the file's training metadata, saved per file and server (`models:*` IPC, `fnc-model://` previews). The LoRA list timeout is now 3 minutes (a large library took 61 s). The galleries that use it follow.
+
 ## [0.1.0] - 2026-10-15
 
 ### Added

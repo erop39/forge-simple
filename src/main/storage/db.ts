@@ -32,6 +32,11 @@ CREATE INDEX oplog_time ON oplog(time);
 CREATE TABLE image_tags (image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
   tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (image_id, tag_id));
 CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
+  // 5: what the user (or the preview cache) knows about a checkpoint or LoRA file of one server.
+  // preview: NULL not looked up yet, '' none found, else the cached file's extension.
+  `CREATE TABLE model_meta (server_id INTEGER NOT NULL, kind TEXT NOT NULL, filename TEXT NOT NULL,
+  family TEXT, favorite INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', preview TEXT, triggers TEXT,
+  PRIMARY KEY (server_id, kind, filename));`,
 ]
 
 export function openDb(path: string): Db {

@@ -1,4 +1,5 @@
-import type { Family } from '@shared/types'
+import type { Family, ModelKind } from '@shared/types'
+import type { ModelMetaRow } from '../storage/repos'
 import type { Oplog } from '../oplog/oplog'
 import { createCatalog } from './catalog'
 import { createForgeClient, ForgeError, type ForgeClient } from './client'
@@ -10,6 +11,9 @@ import { createForgeClient, ForgeError, type ForgeClient } from './client'
 export function createActiveForge(deps: {
   activeUrl(): string | null
   familyOverride(filename: string): Family | null
+  /** What the user marked on the active server's files (favorite, note, family, own trigger words). */
+  modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
+  previewUrl?(kind: ModelKind, filename: string): string
   oplog: Oplog
   now(): number
   create?: (url: string) => ForgeClient
@@ -39,6 +43,8 @@ export function createActiveForge(deps: {
       sync()
       catalog ??= createCatalog({
         client, familyOverride: deps.familyOverride, oplog: deps.oplog, now: deps.now,
+        ...(deps.modelMeta ? { modelMeta: deps.modelMeta } : {}),
+        ...(deps.previewUrl ? { previewUrl: deps.previewUrl } : {}),
       })
       return catalog
     },

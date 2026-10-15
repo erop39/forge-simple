@@ -1,5 +1,7 @@
 import { detectFamily } from '@shared/profiles'
-import type { Catalog, Family, GenerationParams, ModuleInfo, PartStatus } from '@shared/types'
+import type { Catalog, Family, GenerationParams, ModelKind, ModuleInfo, PartStatus } from '@shared/types'
+import type { ModelMetaRow } from '../storage/repos'
+import { baseFamilyFromMetadata, triggersFromMetadata } from './lora-meta'
 import type { Oplog } from '../oplog/oplog'
 import { ForgeError, type ForgeClient, type LoraItem } from './client'
 import type { ProbeFindings } from './findings'
@@ -7,6 +9,9 @@ import type { ProbeFindings } from './findings'
 export interface CatalogDeps {
   client(): ForgeClient
   familyOverride(filename: string): Family | null
+  /** Marks the user made on files of the active server; read at every `get`, so they apply without a refetch. */
+  modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
+  previewUrl?(kind: ModelKind, filename: string): string
   oplog: Oplog
   now(): number
 }
@@ -32,6 +37,43 @@ function familyModules(options: Record<string, unknown>): Partial<Record<Family,
 export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Promise<Catalog> } {
   let cached: Catalog | null = null
   let inFlight: Promise<Catalog> | null = null
+  // Raw LoRA metadata is kept apart from the catalog: it is large and only the derived words and family are sent.
+  let loraMetadata = new Map<string, Record<string, unknown>>()
+
+  /** The fetched catalog with the user's marks applied; cheap, so it runs at every `get`. */
+  function withMarks(base: Catalog): Catalog {
+    const checkpointMeta = deps.modelMeta?.('checkpoint') ?? new Map<string, ModelMetaRow>()
+    const loraMeta = deps.modelMeta?.('lora') ?? new Map<string, ModelMetaRow>()
+    return {
+      ...base,
+      checkpoints: base.checkpoints.map((c) => {
+        const mark = checkpointMeta.get(c.filename)
+        const detected = detectFamily(c.title)
+        return {
+          ...c,
+          family: mark?.family ?? deps.familyOverride(c.filename) ?? detected,
+          familyOverridden: (mark?.family ?? null) !== null,
+          favorite: mark?.favorite ?? false,
+          note: mark?.note ?? '',
+          previewUrl: deps.previewUrl?.('checkpoint', c.filename) ?? '',
+        }
+      }),
+      loras: base.loras.map((l) => {
+        const mark = loraMeta.get(l.path)
+        const metadata = loraMetadata.get(l.path) ?? {}
+        const own = mark?.triggers ?? null
+        return {
+          ...l,
+          baseFamily: baseFamilyFromMetadata(metadata),
+          triggers: own ?? triggersFromMetadata(metadata),
+          triggersEdited: own !== null,
+          favorite: mark?.favorite ?? false,
+          note: mark?.note ?? '',
+          previewUrl: deps.previewUrl?.('lora', l.path) ?? '',
+        }
+      }),
+    }
+  }
 
   async function fetchAll(): Promise<Catalog> {
     const started = deps.now()
@@ -57,10 +99,12 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           title: m.title,
           name: m.model_name,
           filename: m.filename,
+          hash: m.hash,
+          sha256: m.sha256,
           family: deps.familyOverride(m.filename) ?? detectFamily(m.title),
         })),
         modules: modules.map((m) => ({ name: m.model_name, filename: m.filename })),
-        loras: loras.map((l) => ({ name: l.name, path: l.path })),
+        loras: loras.map((l) => ({ name: l.name, alias: l.alias, path: l.path })),
         samplers,
         schedulers,
         upscalers,
@@ -68,6 +112,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         fetchedAt: deps.now(),
         familyModules: familyModules(options),
       }
+      loraMetadata = new Map(loras.map((l) => [l.path, l.metadata]))
       deps.oplog.write({
         level: 'info', category: 'catalog', messageKey: 'log.catalog.loaded',
         durationMs: deps.now() - started,
@@ -89,14 +134,14 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
 
   return {
     get(refresh = false) {
-      if (inFlight) return inFlight
-      if (cached && !refresh) return Promise.resolve(cached)
+      if (inFlight) return inFlight.then(withMarks)
+      if (cached && !refresh) return Promise.resolve(withMarks(cached))
       const p = fetchAll().then(
         (c) => { cached = c; inFlight = null; return c },
         (e: unknown) => { inFlight = null; throw e },
       )
       inFlight = p
-      return p
+      return p.then(withMarks)
     },
   }
 }

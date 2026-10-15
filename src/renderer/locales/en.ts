@@ -224,6 +224,7 @@ export const en = {
   'log.catalog.loaded': 'Model lists loaded: {checkpoints} checkpoints, {modules} modules, {loras} LoRAs.',
   'log.catalog.failed': "Couldn't load the model lists.",
   'log.catalog.lorasFailed': "Couldn't load the LoRA list; the other lists loaded.",
+  'log.checkpoint.familyChanged': 'Model family of {file} set to {to} (was {from}).',
   'log.checkpoint.changed': 'Checkpoint changed from {from} to {to}.',
   'log.connection.lost': 'Lost the connection to {address}.',
   'log.connection.restored': 'Connection to {address} restored.',
