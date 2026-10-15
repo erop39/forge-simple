@@ -74,6 +74,8 @@ UI strings, README and CHANGELOG are English.
 
 ## Rules
 
+- **Every change or new feature, in the same commit:** a `CHANGELOG.md` line under `[Unreleased]`, `README.md` kept accurate (Screens, Requirements, limitations), `CLAUDE.md`/`docs/STATUS.md` where the layout or state changed. Do not report a task as done before that.
+- **Pushes are rollback points.** One commit per change (so `git revert <sha>` undoes just it), full checks and `node scripts/scan-private.mjs` before the push, then tag the pushed commit `ckpt-YYYYMMDD-N` and push the tag (`git tag ckpt-20261015-1 && git push origin ckpt-20261015-1`). To roll back: `git revert` the commit(s), or inspect/restore a state with `git switch --detach <tag>`; never force-push `feature/core` without the user's explicit go-ahead.
 - Every commit that changes behaviour adds a line under `## [Unreleased]` in `CHANGELOG.md` and keeps `README.md` accurate.
 - **This file and `docs/STATUS.md` are part of the work**: update `CLAUDE.md` in the same commit that changes a command, convention or layout; update `docs/STATUS.md` whenever a task finishes, a decision is taken, or something starts waiting on the user.
 - Every user-visible string goes through `t()` and lives in `src/renderer/locales/en.ts`; no display literals in JSX or in main. A guard test (`src/renderer/i18n/no-literals.test.ts`, AST-based) enforces it, including in tests.
