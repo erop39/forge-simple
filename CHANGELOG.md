@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-15
+
 ### Added
 
 - Default negative per model family: in the negative-presets menu pick which saved negative a family starts with (e.g. Anima). Loading a checkpoint of another family (or starting the app) fills the Negative field with it; inside a family your text stays.
