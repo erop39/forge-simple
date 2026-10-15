@@ -2,12 +2,13 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { ArrowLeft, ArrowRight, Check, Copy, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { PROFILES } from '@shared/profiles'
-import type { ImageDetails, ImageRecord } from '@shared/types'
+import type { ImageDetails, ImageRecord, UpscaleSettings } from '@shared/types'
 import { baseName, fullTime } from '../format'
 import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
+import { Select } from './ui/Select'
 import styles from './ImageViewer.module.css'
 
 type Props = {
@@ -25,7 +26,19 @@ type Props = {
 /** Full-size local image with settings read from the persisted job, including after a restart. */
 export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPrevious, hasNext, position, loadedCount }: Props) {
   const attachImageSource = useAppStore((s) => s.attachImageSource)
+  const upscaleImage = useAppStore((s) => s.upscaleImage)
+  const setDefaultUpscaler = useAppStore((s) => s.setDefaultUpscaler)
+  const upscalers = useAppStore((s) => s.catalog?.upscalers)
+  const preferredUpscaler = useAppStore((s) => s.settings?.upscalers?.finished)
+  const lockOpen = useAppStore((s) => s.lock.open)
   const [details, setDetails] = useState<ImageDetails | null>(null)
+  const [before, setBefore] = useState<{ image: ImageRecord; lockOpenAtLoad: boolean } | null>(null)
+  const [comparison, setComparison] = useState(50)
+  const [upscaleOpen, setUpscaleOpen] = useState(false)
+  const [upscaleName, setUpscaleName] = useState('')
+  const [upscaleScale, setUpscaleScale] = useState<UpscaleSettings['scale']>(2)
+  const [upscaleFailed, setUpscaleFailed] = useState(false)
+  const [defaultSaved, setDefaultSaved] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const id = image?.id
@@ -37,6 +50,10 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (id === undefined) return
     let cancelled = false
     setCopyState('idle')
+    setUpscaleOpen(false)
+    setUpscaleFailed(false)
+    setDefaultSaved(false)
+    setComparison(50)
     window.api.images.details(id).then(
       (value) => { if (!cancelled) { setDetails(value); setLoadError(null) } },
       (error: unknown) => { if (!cancelled) { setDetails(null); setLoadError(errorText(error)) } },
@@ -44,9 +61,22 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     return () => { cancelled = true }
   }, [id])
 
+  const sourceId = image?.sourceImageId ?? null
+  useEffect(() => {
+    setBefore(null)
+    if (sourceId === null) return
+    let cancelled = false
+    window.api.images.details(sourceId).then(
+      (value) => { if (!cancelled) setBefore({ image: value.image, lockOpenAtLoad: lockOpen }) },
+      () => { if (!cancelled) setBefore(null) },
+    )
+    return () => { cancelled = true }
+  }, [sourceId, lockOpen])
+
   useEffect(() => {
     if (id === undefined) return
     const onArrow = (event: KeyboardEvent): void => {
+      if (event.target instanceof HTMLInputElement && event.target.type === 'range') return
       if (event.key === 'ArrowLeft' && hasPrevious) {
         event.preventDefault()
         onPrevious()
@@ -64,6 +94,14 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const params = current?.params
   const profile = params ? PROFILES[params.family] : null
   const hires = params?.hires?.scale && params.hires.scale > 1 ? params.hires : null
+  const allowedScales = ([1.5, 2, 4] as const).filter((scale) => image.width * scale <= 4096 && image.height * scale <= 4096)
+  const selectedScale = allowedScales.includes(upscaleScale) ? upscaleScale : allowedScales[0]
+  const methods = upscalers ?? []
+  const selectedMethod = methods.includes(upscaleName) ? upscaleName
+    : methods.includes(preferredUpscaler ?? '') ? preferredUpscaler!
+      : methods.includes('R-ESRGAN 4x+') ? 'R-ESRGAN 4x+' : methods[0]
+  const visibleBefore = before?.image.id === sourceId && before.lockOpenAtLoad === lockOpen
+    && (!before.image.hidden || lockOpen) ? before.image : null
   const metadata = params ? [
     [t('params.model'), baseName(params.checkpoint)],
     [t('params.scheduler'), params.scheduler],
@@ -101,6 +139,13 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (shownId.current === copiedId) setCopyState(state)
   }
 
+  async function queueUpscale(): Promise<void> {
+    if (!params || !selectedScale || !selectedMethod) return
+    setUpscaleFailed(false)
+    if (await upscaleImage(image!.id, params, selectedMethod, selectedScale)) onClose()
+    else setUpscaleFailed(true)
+  }
+
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onClose() }}>
       <Dialog.Portal>
@@ -129,7 +174,20 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
             </div>
           </div>
           <div className={styles.stage}>
-            <img className={styles.image} src={image.url} alt={t('viewer.imageAlt', { n: image.id })} />
+            {visibleBefore ? (
+              <div className={styles.comparison}
+                style={{ aspectRatio: `${image.width} / ${image.height}`,
+                  width: `min(100%, calc(100cqh * ${image.width / image.height}))` }}>
+                <img className={styles.comparisonImage} src={image.url} alt={t('viewer.after')} />
+                <img className={styles.comparisonImage} src={visibleBefore.url} alt={t('viewer.before')}
+                  style={{ clipPath: `inset(0 ${100 - comparison}% 0 0)` }} />
+                <span className={styles.comparisonLine} style={{ left: `${comparison}%` }} aria-hidden="true" />
+                <span className={`${styles.comparisonLabel} ${styles.beforeLabel}`}>{t('viewer.before')}</span>
+                <span className={`${styles.comparisonLabel} ${styles.afterLabel}`}>{t('viewer.after')}</span>
+                <input className={styles.comparisonSlider} type="range" min={0} max={100} value={comparison}
+                  aria-label={t('viewer.compare')} onChange={(event) => setComparison(Number(event.target.value))} />
+              </div>
+            ) : <img className={styles.image} src={image.url} alt={t('viewer.imageAlt', { n: image.id })} />}
           </div>
           <div className={styles.details}>
             {params ? (
@@ -138,11 +196,29 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                   <span className={styles.label}>{t('viewer.prompt')}</span>
                   <div className={styles.promptActions}>
                     <Button onClick={() => { if (attachImageSource(image.id)) onClose() }}>{t('img2img.send')}</Button>
+                    {methods.length > 0 && allowedScales.length > 0 && (
+                      <Button onClick={() => setUpscaleOpen((open) => !open)}>{t('viewer.upscale')}</Button>
+                    )}
                     <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
                       {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
                     </Button>
                   </div>
                 </div>
+                {upscaleOpen && selectedScale && selectedMethod && (
+                  <div className={styles.upscaleControls}>
+                    <Select label={t('viewer.upscaleMethod')} value={selectedMethod}
+                      options={methods.map((name) => ({ value: name, label: name }))}
+                      onChange={(name) => { setUpscaleName(name); setDefaultSaved(false) }} />
+                    <Select label={t('viewer.upscaleScale')} value={String(selectedScale)}
+                      options={allowedScales.map((scale) => ({ value: String(scale), label: `${scale}×` }))}
+                      onChange={(value) => setUpscaleScale(Number(value) as UpscaleSettings['scale'])} />
+                    <Button onClick={() => void queueUpscale()}>{t('viewer.upscaleQueue')}</Button>
+                    <Button onClick={() => void setDefaultUpscaler('finished', selectedMethod).then(setDefaultSaved)}>
+                      {defaultSaved ? t('viewer.upscalerDefaultSaved') : t('viewer.saveUpscalerDefault')}
+                    </Button>
+                    {upscaleFailed && <span role="alert" className={styles.error}>{t('viewer.upscaleFailed')}</span>}
+                  </div>
+                )}
                 <p className={styles.prompt}>{params.prompt}</p>
                 {params.negativePrompt && (
                   <p className={styles.negative}>

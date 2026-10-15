@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset,
+  Catalog, ConnectionStatus, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -87,6 +87,9 @@ export interface AppState {
   /** Reloads the catalog from the server (refresh) after a failed or stale load. */
   retryCatalog(): Promise<void>
   generate(): Promise<void>
+  /** Queue a finished image for upscale, preserving the current prompt-bar draft. */
+  upscaleImage(id: number, sourceParams: GenerationParams, upscaler: string, scale: UpscaleSettings['scale']): Promise<boolean>
+  setDefaultUpscaler(kind: 'hires' | 'finished', name: string): Promise<boolean>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
   deleteImage(id: number): Promise<void>
@@ -560,6 +563,40 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           lastError: null,
           jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs },
         }))
+      },
+
+      async upscaleImage(id, sourceParams, upscaler, scale) {
+        const { images, catalog } = get()
+        const source = images.find((image) => image.id === id && !image.locked)
+        if (!source || !catalog?.upscalers.includes(upscaler)
+          || source.width * scale > 4096 || source.height * scale > 4096) return false
+        const params: GenerationParams = {
+          ...sourceParams,
+          count: 1,
+          img2img: undefined,
+          hires: sourceParams.hires ? { ...sourceParams.hires, scale: 1 } : undefined,
+          upscale: { sourceImageId: id, upscaler, scale },
+        }
+        const created = await attempt(() => api.jobs.enqueue(params))
+        if (!created) return false
+        set((s) => ({ lastError: null, jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
+        return true
+      },
+
+      async setDefaultUpscaler(kind, name) {
+        const { catalog, settings } = get()
+        const available = catalog?.upscalers ?? []
+        if (!settings || !available.includes(name)) return false
+        const preferred = settings.upscalers
+        const fallback = (value: string | null | undefined, standard: string): string =>
+          value && available.includes(value) ? value : available.includes(standard) ? standard : available[0]!
+        const next = {
+          hires: kind === 'hires' ? name : fallback(preferred?.hires, 'Latent'),
+          finished: kind === 'finished' ? name : fallback(preferred?.finished, 'R-ESRGAN 4x+'),
+        }
+        if (!(await attempt(async () => { await api.settings.setUpscalers(next); return true }))) return false
+        set((s) => ({ settings: s.settings ? { ...s.settings, upscalers: next } : null }))
+        return true
       },
 
       async cancelJob(id) {

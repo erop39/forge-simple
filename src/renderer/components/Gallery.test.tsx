@@ -6,7 +6,7 @@ import { en } from '../locales/en'
 import { frameCaption, fullTime } from '../format'
 import { lockedCopy } from '../state/store'
 import { Gallery, columnCountFor } from './Gallery'
-import { renderWithStore } from './test-store'
+import { catalog, renderWithStore } from './test-store'
 
 // Records the image each render of the viewer gets (the viewer itself still renders).
 const viewerRenders = vi.hoisted(() => [] as (number | null)[])
@@ -226,6 +226,48 @@ test('a saved image can be dragged to the prompt bar by its ID', () => {
   const transfer = { setData: vi.fn() }
   fireEvent.dragStart(screen.getByRole('button', { name: 'Open image 7' }), { dataTransfer: transfer })
   expect(transfer.setData).toHaveBeenCalledWith('application/x-forge-neo-image-id', '7')
+})
+
+test('viewer queues an upscale with a keyboard-activated action', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' })) } })
+  const queue = vi.fn(async () => true)
+  const saveDefault = vi.fn(async () => true)
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)], upscaleImage: queue, setDefaultUpscaler: saveDefault,
+    catalog: { ...catalog, upscalers: ['Latent', 'R-ESRGAN 4x+'] },
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', upscalers: { hires: null, finished: 'R-ESRGAN 4x+' } },
+  })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  const action = await screen.findByRole('button', { name: en['viewer.upscale'] })
+  action.focus()
+  await userEvent.keyboard('{Enter}')
+  expect(screen.getByRole('button', { name: en['viewer.upscaleQueue'] })).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.saveUpscalerDefault'] }))
+  expect(saveDefault).toHaveBeenCalledWith('finished', 'R-ESRGAN 4x+')
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.upscaleQueue'] }))
+  expect(queue).toHaveBeenCalledWith(7, params, 'R-ESRGAN 4x+', 2)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('before/after comparison hides a hidden source as soon as the lock closes', async () => {
+  const result = { ...image(7), sourceImageId: 6 }
+  const source = { ...image(6), hidden: true }
+  vi.stubGlobal('api', { images: { details: vi.fn(async (id: number) => ({ image: id === 7 ? result : source, params,
+    jobType: id === 7 ? 'upscale' : 'txt2img' })) } })
+  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [result, source],
+    lock: { hasPassword: true, open: true }, imagesExhausted: true })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  const slider = await screen.findByRole('slider', { name: en['viewer.compare'] })
+  expect(slider).toBeDefined()
+  const beforeImage = screen.getByRole('img', { name: en['viewer.before'] }) as HTMLImageElement
+  fireEvent.change(slider, { target: { value: '25' } })
+  expect(beforeImage.style.clipPath).toBe('inset(0 75% 0 0)')
+  slider.focus()
+  await userEvent.keyboard('{ArrowRight}')
+  expect(screen.getByRole('dialog')).toBeDefined()
+  expect(screen.getByRole('slider', { name: en['viewer.compare'] })).toBe(slider)
+  act(() => store.setState({ lock: { hasPassword: true, open: false } }))
+  expect(screen.queryByRole('img', { name: en['viewer.before'] })).toBeNull()
+  expect(screen.queryByRole('slider', { name: en['viewer.compare'] })).toBeNull()
 })
 
 test('viewer shows the saved hires settings for a finished image', async () => {

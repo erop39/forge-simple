@@ -6,6 +6,7 @@ import { baseName } from '../format'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { ModelCard } from './ModelCard'
+import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { ParamRow } from './ui/ParamRow'
@@ -105,6 +106,8 @@ function Hires() {
   const params = useAppStore((s) => s.params)
   const upscalers = useAppStore((s) => s.catalog?.upscalers ?? [])
   const setParams = useAppStore((s) => s.setParams)
+  const setDefaultUpscaler = useAppStore((s) => s.setDefaultUpscaler)
+  const [defaultSaved, setDefaultSaved] = useState(false)
   if (!params || params.img2img) return null
   const hires: HiresSettings = params.hires ?? {
     scale: 1, upscaler: upscalers[0] ?? 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
@@ -143,8 +146,11 @@ function Hires() {
               label={t('params.hiresUpscaler')}
               value={hires.upscaler}
               options={options(upscalers.length ? upscalers : [hires.upscaler])}
-              onChange={(upscaler) => change({ upscaler })}
+              onChange={(upscaler) => { change({ upscaler }); setDefaultSaved(false) }}
             />
+            <Button onClick={() => void setDefaultUpscaler('hires', hires.upscaler).then(setDefaultSaved)}>
+              {defaultSaved ? t('viewer.upscalerDefaultSaved') : t('viewer.saveUpscalerDefault')}
+            </Button>
           </ParamRow>
           <ParamRow label={t('params.hiresSteps')}>
             <NumberField

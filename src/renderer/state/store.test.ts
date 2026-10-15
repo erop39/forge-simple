@@ -47,6 +47,7 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
   const api = {
     settings: {
       get: vi.fn(async () => ({ serverUrl: over.serverUrl === undefined ? 'http://127.0.0.1:7861' : over.serverUrl, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })),
+      setUpscalers: vi.fn(async () => {}),
     },
     servers: {
       list: vi.fn(async (): Promise<ServerInfo[]> => (over.serverUrl === null ? [] : [home])),
@@ -357,6 +358,26 @@ test('a locked or deleted source cannot be sent; switching checkpoints keeps the
   store.setState({ images: [] })
   await store.getState().generate()
   expect(api.jobs.enqueue).not.toHaveBeenCalled()
+})
+
+test('upscaleImage queues a saved image with source settings and does not change the prompt bar mode', async () => {
+  const { store, api } = await ready()
+  store.setState({ catalog: catalog({ upscalers: ['R-ESRGAN 4x+'] }) })
+  store.getState().setParams({ prompt: 'current draft' })
+  expect(await store.getState().upscaleImage(5, paramsFor('old.safetensors', { prompt: 'source prompt' }), 'R-ESRGAN 4x+', 2)).toBe(true)
+  expect(api.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+    prompt: 'source prompt', count: 1, upscale: { sourceImageId: 5, upscaler: 'R-ESRGAN 4x+', scale: 2 },
+  }))
+  expect(store.getState().params?.prompt).toBe('current draft')
+  expect(store.getState().params?.upscale).toBeUndefined()
+})
+
+test('saving a default upscaler persists both preferences and updates local settings', async () => {
+  const { store, api } = await ready()
+  store.setState({ catalog: catalog({ upscalers: ['Latent', 'R-ESRGAN 4x+'] }) })
+  expect(await store.getState().setDefaultUpscaler('finished', 'R-ESRGAN 4x+')).toBe(true)
+  expect(api.settings.setUpscalers).toHaveBeenCalledWith({ hires: 'Latent', finished: 'R-ESRGAN 4x+' })
+  expect(store.getState().settings?.upscalers).toEqual({ hires: 'Latent', finished: 'R-ESRGAN 4x+' })
 })
 
 test('generate keeps a rejection key in lastError until dismissed', async () => {

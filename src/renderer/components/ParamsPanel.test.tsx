@@ -141,6 +141,17 @@ test('img2img exposes denoising and resize controls and hides txt2img hires', as
   expect(store.getState().params?.img2img?.resizeMode).toBe(1)
 })
 
+test('hires can save its selected upscaler as the default', async () => {
+  const save = vi.fn(async () => true)
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', { ...open, setDefaultUpscaler: save })
+  act(() => store.getState().setParams({ hires: {
+    scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
+  } }))
+  await userEvent.click(screen.getByRole('button', { name: en['viewer.saveUpscalerDefault'] }))
+  expect(save).toHaveBeenCalledWith('hires', 'Latent')
+  expect(await screen.findByRole('button', { name: en['viewer.upscalerDefaultSaved'] })).toBeDefined()
+})
+
 test('hires turns off when a size change would exceed its target limit', () => {
   const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
   store.getState().setParams({ width: 512, height: 512 })
