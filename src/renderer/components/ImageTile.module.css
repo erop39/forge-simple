@@ -30,6 +30,25 @@
   object-fit: cover;
 }
 
+/* The job's last live preview under a freshly finished picture, drawn like the running tile drew it. */
+.preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  image-rendering: pixelated;
+}
+
+/* The picture waits, transparent, until it has loaded, then fades in over the preview. */
+.revealWaiting {
+  opacity: 0;
+}
+
+.reveal {
+  composes: reveal from '../styles/motion.module.css';
+}
+
 /* A hidden image while locked: the same box, hatched, with a lock in the middle. */
 .locked {
   background: var(--hatch), var(--surface-1);

@@ -11,8 +11,10 @@ import styles from './JobTile.module.css'
 
 /** waitingFor: the name of the (inactive) server a queued job waits for; null when it is in the active queue. */
 /** now: a moment of the current day, for the time a failed job ended. */
+/** tabStop: the gallery's roving tab stop; false takes the tile and its buttons out of the tab order. */
 type JobTileProps = {
   job: Job; progress: JobProgress | null; queuePosition: number | null; waitingFor?: string | null; now?: number
+  tabStop?: boolean
 }
 
 const STAGE_KEYS: Record<JobProgress['stage'], MessageKey> = {
@@ -21,26 +23,31 @@ const STAGE_KEYS: Record<JobProgress['stage'], MessageKey> = {
   upscaling: 'job.stage.upscaling',
 }
 
-function QueuedBody({ job, queuePosition, waitingFor }: { job: Job; queuePosition: number | null; waitingFor: string | null }) {
+const queuedText = (queuePosition: number | null, waitingFor: string | null): string =>
+  waitingFor === null ? t('job.queued', { n: queuePosition ?? 1 }) : t('job.waitingFor', { name: waitingFor })
+
+type BodyProps = { job: Job; tabIndex: number }
+
+function QueuedBody({ job, queuePosition, waitingFor, tabIndex }: BodyProps & { queuePosition: number | null; waitingFor: string | null }) {
   const cancelJob = useAppStore((s) => s.cancelJob)
-  const waiting = waitingFor === null ? null : t('job.waitingFor', { name: waitingFor })
+  const text = queuedText(queuePosition, waitingFor)
   return (
     <>
-      {waiting === null ? (
-        <span className={`mono ${styles.queued}`}>{t('job.queued', { n: queuePosition ?? 1 })}</span>
+      {waitingFor === null ? (
+        <span className={`mono ${styles.queued}`}>{text}</span>
       ) : (
-        <span className={`${styles.queued} ${styles.waitingFor}`} title={waiting}>
-          {waiting}
+        <span className={`${styles.queued} ${styles.waitingFor}`} title={text}>
+          {text}
         </span>
       )}
-      <Button className={styles.corner} onClick={() => void cancelJob(job.id)}>
+      <Button className={styles.corner} tabIndex={tabIndex} onClick={() => void cancelJob(job.id)}>
         {t('job.cancel')}
       </Button>
     </>
   )
 }
 
-function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null }) {
+function RunningBody({ job, progress, tabIndex }: BodyProps & { progress: JobProgress | null }) {
   const cancelJob = useAppStore((s) => s.cancelJob)
   const total = progress?.totalSteps ?? job.params.steps
   const step = progress?.step ?? 0
@@ -57,7 +64,7 @@ function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null
   return (
     <>
       {progress?.preview && <img src={progress.preview} alt="" className={styles.preview} />}
-      <Button className={styles.corner} onClick={() => void cancelJob(job.id)}>
+      <Button className={styles.corner} tabIndex={tabIndex} onClick={() => void cancelJob(job.id)}>
         {t('job.cancel')}
       </Button>
       <div className={styles.footer}>
@@ -79,7 +86,7 @@ function RunningBody({ job, progress }: { job: Job; progress: JobProgress | null
   )
 }
 
-function FailedBody({ job, now }: { job: Job; now: number | undefined }) {
+function FailedBody({ job, now, tabIndex }: BodyProps & { now: number | undefined }) {
   const retryJob = useAppStore((s) => s.retryJob)
   const dismissJob = useAppStore((s) => s.dismissJob)
   const askRestart = useAppStore((s) => s.askRestart)
@@ -97,24 +104,33 @@ function FailedBody({ job, now }: { job: Job; now: number | undefined }) {
       <p className={styles.message}>{message}</p>
       {detail !== null && (
         <Tooltip text={detail}>
-          <span tabIndex={0} className={`mono ${styles.detail}`}>
+          <span tabIndex={tabIndex} className={`mono ${styles.detail}`}>
             {detail}
           </span>
         </Tooltip>
       )}
       <div className={styles.actions}>
-        <Button onClick={() => void retryJob(job.id)}>{t('job.retry')}</Button>
+        <Button tabIndex={tabIndex} onClick={() => void retryJob(job.id)}>{t('job.retry')}</Button>
         {offerRestart && (
-          <IconButton label={t('job.restartForge')} icon={<ArrowClockwise size={16} />} onClick={askRestart} />
+          <IconButton
+            label={t('job.restartForge')}
+            icon={<ArrowClockwise size={16} />}
+            tabIndex={tabIndex}
+            onClick={askRestart}
+          />
         )}
-        <Button onClick={() => dismissJob(job.id)}>{t('job.dismiss')}</Button>
+        <Button tabIndex={tabIndex} onClick={() => dismissJob(job.id)}>{t('job.dismiss')}</Button>
       </div>
     </div>
   )
 }
 
-/** A job that has not produced an image yet: waiting, running, failed or interrupted. */
-export function JobTile({ job, progress, queuePosition, waitingFor = null, now }: JobTileProps) {
+/**
+ * A job that has not produced an image yet: waiting, running, failed or interrupted. The tile itself is
+ * its focus target (`data-primary`) for the gallery's keyboard navigation; its buttons follow it.
+ */
+export function JobTile({ job, progress, queuePosition, waitingFor = null, now, tabStop = true }: JobTileProps) {
+  const tabIndex = tabStop ? 0 : -1
   const failed = job.status === 'failed' || job.status === 'interrupted'
   const stateClass = failed
     ? job.status === 'interrupted'
@@ -123,18 +139,27 @@ export function JobTile({ job, progress, queuePosition, waitingFor = null, now }
     : job.status === 'queued'
       ? styles.waiting
       : styles.running
+  const label = failed
+    ? t(job.status === 'interrupted' ? 'job.interrupted' : 'job.failed')
+    : job.status === 'queued'
+      ? queuedText(queuePosition, waitingFor)
+      : t(STAGE_KEYS[progress?.stage ?? 'sampling'])
   return (
     <div
+      role="group"
+      aria-label={label}
       data-status={job.status}
+      data-primary
+      tabIndex={tabIndex}
       className={`${styles.tile} ${stateClass}`}
       style={{ aspectRatio: `${job.params.width} / ${job.params.height}` }}
     >
       {failed ? (
-        <FailedBody job={job} now={now} />
+        <FailedBody job={job} now={now} tabIndex={tabIndex} />
       ) : job.status === 'queued' ? (
-        <QueuedBody job={job} queuePosition={queuePosition} waitingFor={waitingFor} />
+        <QueuedBody job={job} queuePosition={queuePosition} waitingFor={waitingFor} tabIndex={tabIndex} />
       ) : (
-        <RunningBody job={job} progress={progress} />
+        <RunningBody job={job} progress={progress} tabIndex={tabIndex} />
       )}
     </div>
   )

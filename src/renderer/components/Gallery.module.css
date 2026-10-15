@@ -6,25 +6,26 @@
   min-height: 0;
   padding-bottom: calc(var(--prompt-bar-h, 0px) + var(--sp-4) + var(--sp-6));
   overflow-y: auto;
+  /* A tile scrolled into view by keyboard stops above the prompt bar, not under it. */
+  scroll-padding-bottom: calc(var(--prompt-bar-h, 0px) + var(--sp-4));
 }
 
-.grid {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--gap-tile);
-}
-
-.column {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--gap-tile);
-  min-width: 0;
-}
-
-.sentinel {
+/* As tall as the whole layout, so the scroll bar covers every loaded tile, rendered or not. */
+.canvas {
+  position: relative;
   flex: none;
-  height: 1px;
+}
+
+/* A tile's slot, placed by the masonry layout (inline size and transform); the tile fills it. */
+.cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.cell > * {
+  width: 100%;
+  height: 100%;
 }
 
 /* A floating notice centred above the prompt bar. */

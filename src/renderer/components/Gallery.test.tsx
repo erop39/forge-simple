@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job } from '@shared/types'
@@ -38,6 +38,44 @@ function deleteButtonOf(caption: string): HTMLElement {
   return screen.getByRole('group', { name: caption }).querySelector('button[aria-label="Delete"]') as HTMLElement
 }
 
+/** Makes the gallery measure `width` × `height`; the returned function resizes it. */
+function sizeGallery(width: number, height: number): (width: number, height: number) => void {
+  const callbacks: ResizeObserverCallback[] = []
+  const size = { width, height }
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private cb: ResizeObserverCallback) {
+        callbacks.push(cb)
+      }
+      observe(): void {
+        this.cb([{ contentRect: { ...size } } as ResizeObserverEntry], this as unknown as ResizeObserver)
+      }
+      disconnect(): void {}
+    },
+  )
+  return (w, h) => {
+    size.width = w
+    size.height = h
+    for (const cb of callbacks) cb([{ contentRect: { ...size } } as ResizeObserverEntry], {} as ResizeObserver)
+  }
+}
+
+const scroller = () => document.querySelector('[class*="gallery"]') as HTMLElement
+const cellCount = () => document.querySelectorAll('[data-key]').length
+const columnsInUse = () =>
+  new Set([...document.querySelectorAll('[data-column]')].map((c) => c.getAttribute('data-column'))).size
+
+/** Scrolls the gallery to `top` (jsdom does not scroll by itself). */
+function scrollTo(top: number): void {
+  const el = scroller()
+  Object.defineProperty(el, 'scrollTop', { configurable: true, value: top })
+  fireEvent.scroll(el)
+}
+
+/** `count` images, newest first. */
+const many = (count: number) => Array.from({ length: count }, (_, i) => image(count - i))
+
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -51,22 +89,11 @@ test('the column count follows the width, with at least two columns', () => {
 })
 
 test('a resize changes the number of columns', () => {
-  let notify: ResizeObserverCallback = () => {}
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      constructor(cb: ResizeObserverCallback) {
-        notify = cb
-      }
-      observe(): void {}
-      disconnect(): void {}
-    },
-  )
-  const { container } = renderWithStore(<Gallery />, 'sdxl', { images: [image(3), image(2), image(1)] })
-  const columns = () => container.querySelectorAll('[class*="column"]').length
-  expect(columns()).toBe(2)
-  act(() => notify([{ contentRect: { width: 1000 } } as ResizeObserverEntry], {} as ResizeObserver))
-  expect(columns()).toBe(4)
+  const notify = sizeGallery(400, 700)
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(4), image(3), image(2), image(1)] })
+  expect(columnsInUse()).toBe(2)
+  act(() => notify(1000, 700))
+  expect(columnsInUse()).toBe(4)
 })
 
 test('with no jobs and no images the empty state shows', () => {
@@ -85,12 +112,16 @@ test('a queued job hides the empty state; with no parameters yet nothing shows',
 })
 
 test('jobs and images are laid out in order, jobs first and the newest image after them', () => {
-  const { container } = renderWithStore(<Gallery />, 'sdxl', {
+  sizeGallery(452, 700)
+  renderWithStore(<Gallery />, 'sdxl', {
     jobs: { 9: job(9, 'running') },
     images: [image(1), image(2)],
   })
-  const columns = [...container.querySelectorAll('[class*="column"]')].map((c) =>
-    [...c.children].map((el) => (el as HTMLElement).dataset['status'] ?? el.getAttribute('aria-label')),
+  const columns = [0, 1].map((c) =>
+    [...document.querySelectorAll(`[data-column="${c}"]`)].map((cell) => {
+      const tile = cell.firstElementChild as HTMLElement
+      return tile.dataset['status'] ?? tile.getAttribute('aria-label')
+    }),
   )
   // The running job is first (column 0); the newest image (2) goes to column 1, image 1 back to the shorter column.
   expect(columns[0]![0]).toBe('running')
@@ -141,28 +172,6 @@ test('a pending deletion is committed when the gallery unmounts', async () => {
   await userEvent.click(deleteButtonOf(frame(2)))
   unmount()
   expect(deleteImage).toHaveBeenCalledWith(2)
-})
-
-test('the end sentinel pages in older images and goes away when they run out', () => {
-  let seen: IntersectionObserverCallback = () => {}
-  vi.stubGlobal(
-    'IntersectionObserver',
-    class {
-      constructor(cb: IntersectionObserverCallback) {
-        seen = cb
-      }
-      observe(): void {}
-      disconnect(): void {}
-    },
-  )
-  const loadMoreImages = vi.fn(async () => {})
-  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], loadMoreImages })
-  act(() => seen([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver))
-  expect(loadMoreImages).not.toHaveBeenCalled()
-  act(() => seen([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
-  expect(loadMoreImages).toHaveBeenCalledTimes(1)
-  act(() => store.setState({ imagesExhausted: true }))
-  expect(document.querySelector('[class*="sentinel"]')).toBeNull()
 })
 
 test('a queued job of a server that is not active shows "Waiting for <name>"', () => {
@@ -250,8 +259,10 @@ test('Next loads the next gallery page when the oldest loaded image is open', as
   })
   appendOlder = () => store.setState({ images: [image(4), image(3), image(2)], imagesExhausted: true })
   await userEvent.click(screen.getByRole('button', { name: 'Open image 3' }))
+  // Two short images are near the end, so the gallery already asked once (and got nothing) on mount.
+  const before = loadMoreImages.mock.calls.length
   await userEvent.click(screen.getByRole('button', { name: en['viewer.next'] }))
-  expect(loadMoreImages).toHaveBeenCalledTimes(1)
+  expect(loadMoreImages).toHaveBeenCalledTimes(before + 1)
   await waitFor(() => expect(screen.getByRole('img', { name: 'Generated image 2' })).toBeDefined())
   expect((screen.getByRole('button', { name: en['viewer.next'] }) as HTMLButtonElement).disabled).toBe(true)
 })
@@ -281,4 +292,174 @@ test('the viewer of a hidden image disappears in the same render when the lock c
   expect(screen.queryByText('secret prompt')).toBeNull()
   expect(document.querySelector(`img[src="${shown.url}"]`)).toBeNull()
   expect(screen.getByRole('button', { name: 'Hidden image 7. Unlock to view' })).toBeDefined()
+})
+
+describe('virtualization', () => {
+  // 900 px: 3 columns of 296 px; an 832×1216 tile is 432.6 px tall plus a 6 px gap.
+  const ROW = (296 * 1216) / 832 + 6
+
+  test('only the tiles within a screen above and below the view are in the DOM', () => {
+    sizeGallery(900, 600)
+    renderWithStore(<Gallery />, 'sdxl', { images: many(300), imagesExhausted: true })
+    const fitsInThreeScreens = (Math.ceil((3 * 600) / ROW) + 1) * 3
+    expect(cellCount()).toBeGreaterThan(0)
+    expect(cellCount()).toBeLessThanOrEqual(fitsInThreeScreens)
+    expect(screen.getByRole('group', { name: frame(300) })).toBeDefined()
+    scrollTo(20 * ROW)
+    // One more: the tile holding the gallery's tab stop stays rendered wherever it is.
+    expect(cellCount()).toBeLessThanOrEqual(fitsInThreeScreens + 1)
+    expect(screen.getByRole('group', { name: frame(300 - 60) })).toBeDefined()
+    expect(screen.queryByRole('group', { name: frame(299) })).toBeNull()
+    // The canvas keeps the full height, so the scroll bar covers every loaded image.
+    const canvas = scroller().firstElementChild as HTMLElement
+    expect(parseFloat(canvas.style.height)).toBeCloseTo(100 * ROW - 6, 0)
+  })
+
+  test('the next page loads when the rendered band nears the end; a failed page retries on the next scroll', async () => {
+    sizeGallery(900, 600)
+    const loadMoreImages = vi.fn(async () => {}) // brings nothing, like a page that failed
+    renderWithStore(<Gallery />, 'sdxl', { images: many(30), imagesExhausted: false, loadMoreImages })
+    // 10 rows: the band ends at 1200 px, far from the end.
+    expect(loadMoreImages).not.toHaveBeenCalled()
+    scrollTo(10 * ROW - 2400)
+    expect(loadMoreImages).not.toHaveBeenCalled()
+    // The band now ends less than a screen (600 px) before the end.
+    scrollTo(10 * ROW - 1700)
+    expect(loadMoreImages).toHaveBeenCalledTimes(1)
+    await act(async () => {})
+    expect(loadMoreImages).toHaveBeenCalledTimes(1)
+    scrollTo(10 * ROW - 1690)
+    expect(loadMoreImages).toHaveBeenCalledTimes(2)
+  })
+
+  test('nothing more is asked for once the images ran out', () => {
+    sizeGallery(900, 600)
+    const loadMoreImages = vi.fn(async () => {})
+    renderWithStore(<Gallery />, 'sdxl', { images: many(6), imagesExhausted: true, loadMoreImages })
+    scrollTo(100)
+    expect(loadMoreImages).not.toHaveBeenCalled()
+  })
+})
+
+describe('keyboard', () => {
+  const tabStops = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-key] [data-primary]')].filter((el) => el.tabIndex === 0)
+  const openButton = (id: number) => screen.getByRole('button', { name: `Open image ${id}` })
+
+  test("the gallery is one tab stop; the focused tile's buttons follow it, then the focus leaves", async () => {
+    sizeGallery(900, 600)
+    renderWithStore(
+      <>
+        <button type="button">before</button>
+        <Gallery />
+        <button type="button">after</button>
+      </>,
+      'sdxl',
+      { images: many(9), imagesExhausted: true },
+    )
+    expect(tabStops()).toHaveLength(1)
+    screen.getByRole('button', { name: 'before' }).focus()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(openButton(9))
+    await userEvent.tab()
+    const tile = screen.getByRole('group', { name: frame(9) })
+    expect(document.activeElement).toBe(tile.querySelector(`[aria-label="${en['image.hide']}"]`))
+    await userEvent.tab()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'after' }))
+  })
+
+  test('arrows move the focus to the nearest tile in that direction; Home and End go to the ends', async () => {
+    sizeGallery(900, 600)
+    // 3 equal columns: 9 8 7 / 6 5 4 / 3 2 1.
+    renderWithStore(<Gallery />, 'sdxl', { images: many(9), imagesExhausted: true })
+    openButton(9).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(openButton(8))
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(openButton(5))
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(document.activeElement).toBe(openButton(6))
+    await userEvent.keyboard('{ArrowUp}')
+    expect(document.activeElement).toBe(openButton(9))
+    await userEvent.keyboard('{ArrowUp}')
+    expect(document.activeElement).toBe(openButton(9))
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(openButton(1))
+    expect(tabStops()).toEqual([openButton(1)])
+    await userEvent.keyboard('{Home}')
+    expect(document.activeElement).toBe(openButton(9))
+  })
+
+  test('focus moved by keyboard scrolls the tile into view, even one outside the rendered band', async () => {
+    sizeGallery(900, 600)
+    const scrolled: string[] = []
+    const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+      scrolled.push(this.dataset['key'] ?? '')
+    })
+    renderWithStore(<Gallery />, 'sdxl', { images: many(300), imagesExhausted: true })
+    openButton(300).focus()
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(openButton(1))
+    expect(scrolled).toContain('image:1')
+    spy.mockRestore()
+  })
+
+  test('Delete on a focused tile deletes it with Undo and moves the focus to the next tile', async () => {
+    sizeGallery(900, 600)
+    const deleteImage = vi.fn(async () => {})
+    renderWithStore(<Gallery />, 'sdxl', { images: many(3), imagesExhausted: true, deleteImage })
+    openButton(3).focus()
+    await userEvent.keyboard('{Delete}')
+    expect(screen.queryByRole('group', { name: frame(3) })).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain(en['image.deleted'])
+    expect(document.activeElement).toBe(openButton(2))
+    await userEvent.click(screen.getByRole('button', { name: en['image.undo'] }))
+    expect(screen.getByRole('group', { name: frame(3) })).toBeDefined()
+    expect(deleteImage).not.toHaveBeenCalled()
+  })
+})
+
+describe('reveal', () => {
+  const PREVIEW = 'data:image/png;base64,cHJldmlldw=='
+  const running = {
+    jobs: { 5: job(5, 'running') },
+    progress: { 5: { jobId: 5, step: 7, totalSteps: 8, stage: 'sampling' as const, stepsPerSec: 2, elapsedMs: 3000, preview: PREVIEW } },
+    images: [image(1)],
+    imagesExhausted: true,
+  }
+  /** The runner sends the image first, then the job's end. */
+  const arrive = (store: ReturnType<typeof renderWithStore>['store']) => {
+    act(() => store.setState({ images: [{ ...image(6), jobId: 5 }, image(1)] }))
+    act(() => store.setState({ jobs: {}, progress: {} }))
+  }
+
+  test('the finished image fades in over the last preview, which goes when the fade is over', () => {
+    vi.useFakeTimers()
+    sizeGallery(900, 600)
+    const { store } = renderWithStore(<Gallery />, 'sdxl', running)
+    arrive(store)
+    const tile = screen.getByRole('group', { name: frame(6) })
+    const thumb = tile.querySelector(`img[src="${image(6).thumbUrl}"]`) as HTMLImageElement
+    expect(tile.querySelector(`img[src="${PREVIEW}"]`)).not.toBeNull()
+    expect(thumb.className).toMatch(/reveal/)
+    fireEvent.load(thumb)
+    act(() => void vi.advanceTimersByTime(250))
+    expect(tile.querySelector(`img[src="${PREVIEW}"]`)).not.toBeNull()
+    act(() => void vi.advanceTimersByTime(20))
+    expect(tile.querySelector(`img[src="${PREVIEW}"]`)).toBeNull()
+    expect(thumb.className).not.toMatch(/reveal/)
+    // An image of an earlier session (no preview seen) shows without a fade.
+    expect(screen.getByRole('group', { name: frame(1) }).querySelector('img')!.className).not.toMatch(/reveal/)
+  })
+
+  test('with reduced motion the image replaces the preview at once', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query }))
+    sizeGallery(900, 600)
+    const { store } = renderWithStore(<Gallery />, 'sdxl', running)
+    arrive(store)
+    const tile = screen.getByRole('group', { name: frame(6) })
+    expect(tile.querySelector(`img[src="${PREVIEW}"]`)).toBeNull()
+    expect(tile.querySelector('img')!.className).not.toMatch(/reveal/)
+  })
 })

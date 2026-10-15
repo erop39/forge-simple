@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": { "@shared/*": ["./src/shared/*"], "@main/*": ["./src/main/*"] }
   },
   "include": ["electron.vite.config.mts", "vitest.config.mts", "tools/**/*.ts"]
 }

@@ -11,3 +11,8 @@
     opacity: 1;
   }
 }
+
+/* A finished image appearing over its job's last preview. */
+.reveal {
+  animation: fade-in var(--dur-reveal) ease-out;
+}
