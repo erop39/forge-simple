@@ -818,7 +818,7 @@ describe('hidden images and the lock', () => {
     await lock.setPassword(null, 'secret-pass')
     await call('images:setHidden', [row.id], true)
     expect(await record(row.id)).toEqual({
-      id: row.id, jobId: row.jobId, width: 64, height: 64, createdAt: row.createdAt, durationMs: 1, hidden: true,
+      id: row.id, jobId: 0, width: 64, height: 64, createdAt: row.createdAt, durationMs: 1, hidden: true,
       sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
     })
     expect(await call('images:query', { limit: 10, text: 'cat' })).toEqual([])
@@ -896,5 +896,47 @@ describe('hidden images and the lock', () => {
     await expect(call('lock:open', 5)).rejects.toThrow('error.invalidParams')
     await expect(call('lock:setPassword', 5, 'new-pass')).rejects.toThrow('error.invalidParams')
     expect(JSON.stringify(oplog.list())).not.toMatch(/secret-pass|new-pass|bad-guess/)
+  })
+})
+
+describe('fix round 1: nothing of a hidden image leaks while locked', () => {
+  test('jobs:get refuses the job of a hidden image while locked and returns it whole once open', async () => {
+    const { row } = seedImage()
+    const other = seedImage().row
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    await expect(call('jobs:get', row.jobId)).rejects.toThrow('error.notFound')
+    expect(await call('jobs:get', other.jobId)).toMatchObject({ id: other.jobId, params: { prompt: 'a cat' } })
+    await call('lock:open', 'secret-pass')
+    expect(await call('jobs:get', row.jobId)).toMatchObject({ id: row.jobId, params: { prompt: 'a cat' } })
+  })
+
+  test('a redacted row carries no real job id', async () => {
+    const { row } = seedImage()
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    const list = (await call('images:list', { limit: 10 })) as { id: number; jobId: number }[]
+    expect(list.find((r) => r.id === row.id)!.jobId).toBe(0)
+    expect(row.jobId).toBeGreaterThan(0)
+  })
+
+  test('images:delete refuses a hidden image while locked and deletes it once open', async () => {
+    const { row, filePath } = seedImage()
+    await lock.setPassword(null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    await expect(call('images:delete', row.id)).rejects.toThrow('error.notFound')
+    expect(repos.images.get(row.id)).not.toBeNull()
+    expect(existsSync(filePath)).toBe(true)
+    expect(sentOf('image:removed')).toEqual([])
+    await call('lock:open', 'secret-pass')
+    await call('images:delete', row.id)
+    expect(repos.images.get(row.id)).toBeNull()
+  })
+
+  test('a lockout answers error.tooManyAttempts', async () => {
+    await call('lock:setPassword', null, 'secret-pass')
+    for (let i = 0; i < 4; i++) await expect(call('lock:open', 'bad-guess')).rejects.toThrow('error.wrongPassword')
+    await expect(call('lock:open', 'bad-guess')).rejects.toThrow('error.tooManyAttempts')
+    await expect(call('lock:open', 'secret-pass')).rejects.toThrow('error.tooManyAttempts')
   })
 })

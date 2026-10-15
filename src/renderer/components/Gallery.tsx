@@ -111,7 +111,9 @@ export function Gallery() {
     }
   }, [pendingNextId, visibleImages, loadingOlder])
 
-  // The lock closed while a hidden image was on screen: the viewer goes with it.
+  // The lock closed while a hidden image was on screen: the viewer goes with it, in the same render (the
+  // picture is never painted again), and the state follows.
+  const viewerLocked = viewerImage !== null && images.some((i) => i.id === viewerImage.id && i.locked)
   useEffect(() => {
     if (viewerImage && images.some((i) => i.id === viewerImage.id && i.locked)) {
       setPendingNextId(null)
@@ -197,7 +199,7 @@ export function Gallery() {
         {images.length > 0 && !exhausted && <div ref={sentinel} className={styles.sentinel} aria-hidden="true" />}
       </div>
       <ImageViewer
-        image={viewerImage}
+        image={viewerLocked ? null : viewerImage}
         opener={opener}
         onClose={closeViewer}
         onPrevious={previousImage}

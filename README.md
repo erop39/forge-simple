@@ -87,13 +87,15 @@ generation then fails with HTTP 500, whichever checkpoint you pick, until Forge 
 ## Hidden images
 
 Any image can be hidden with the eye button on its tile or the `H` key on a focused tile. The first time,
-the app asks for a password (at least 4 characters, typed twice); only its scrypt hash (with a random salt)
-is stored, in the `settings` table under `lock.hash`.
+the app asks you to set a password (at least 4 characters, typed twice); only its scrypt hash (with a random
+salt) is stored, in the `settings` table under `lock.hash`. Setting it does not unlock anything: the image
+you hid is covered at once, and you unlock hidden images with that password when you want to see them.
 
 While the lock is closed, a hidden image is a hatched tile with a lock and no picture: its prompt, tags and
 seed are not sent to the window, text and tag searches do not find it, and its files are not served to the
-window. The lock button in the top bar (or a click on a locked tile) asks for the password; the lock then stays
-open, with hidden images marked Hidden, until you lock it again or quit the app. Unhiding needs the lock open.
+window, and it cannot be unhidden or deleted. The lock button in the top bar (or a click on a locked tile) asks
+for the password; the lock then stays open, with hidden images marked Hidden, until you lock it again or quit
+the app. After five wrong passwords in a row, attempts are refused for 30 seconds.
 Change password is in the unlock dialog and needs the current password.
 
 This keeps hidden images from a glance at the screen. It is not encryption: the PNG and thumbnail files are
@@ -101,7 +103,8 @@ ordinary files in the images folder, readable by anyone with access to this user
 
 Forgot the password? Quit the app and delete the `lock.hash` row from the `settings` table of
 `forge-neo-client.db` (for example with the sqlite3 tool: `DELETE FROM settings WHERE key = 'lock.hash';`).
-No image is lost: hidden images stay hidden, and the lock button then asks for a new password, which opens them.
+No image is lost: hidden images stay hidden. The lock button then asks you to set a new password; after that,
+unlock with it to see them.
 
 ## Probe
 

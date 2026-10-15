@@ -31,7 +31,7 @@ export type LockDialogMode = 'set' | 'open' | 'change'
 
 /** A hidden image as main sends it while locked: nothing that shows or describes the picture. */
 export const lockedCopy = (image: ImageRecord): ImageRecord =>
-  ({ ...image, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
+  ({ ...image, jobId: 0, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
 
 export interface AppState {
   connection: ConnectionStatus
@@ -160,6 +160,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   let lockSeq = 0
   // Bumped by each gallery reload: a page requested before it may show what the lock now covers.
   let imagesSeq = 0
+  /** Images hidden or unhidden since the last reload finished: their `hidden` flag here may be stale. */
+  const changedSinceReload = new Set<number>()
   /** Images to hide once the first password is set. */
   let pendingHide: number[] | null = null
   let morePromise: Promise<void> | null = null
@@ -332,11 +334,18 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       })
       api.on('lock', (lock) => {
         lockSeq++
-        // Covered at once, before the reload answers (and even if it fails).
-        set((s) => ({ lock, images: lock.open ? s.images : s.images.map((i) => (i.hidden ? lockedCopy(i) : i)) }))
+        // Covered at once, before the reload answers (and even if it fails); an image whose flag changed since the
+        // last reload may be hidden now, so it is covered too until the reload says otherwise.
+        set((s) => ({
+          lock,
+          images: lock.open ? s.images : s.images.map((i) => (i.hidden || changedSinceReload.has(i.id) ? lockedCopy(i) : i)),
+        }))
         void reloadImages()
       })
-      api.on('images:changed', () => void reloadImages())
+      api.on('images:changed', ({ ids }) => {
+        for (const id of ids) changedSinceReload.add(id)
+        void reloadImages()
+      })
       api.on('oplog:added', (entry) =>
         set((s) => (!s.logOpen || !matchesLog(entry, s.logFilters) || s.logEntries.some((e) => e.id === entry.id)
           ? s
@@ -350,6 +359,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
      */
     async function reloadImages(): Promise<void> {
       const seq = ++imagesSeq
+      const settled = [...changedSinceReload]
       const before = get().images
       const loadedIds = new Set(before.map((i) => i.id))
       const oldest = before.length > 0 ? Math.min(...loadedIds) : null
@@ -367,6 +377,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (oldest === null || page[page.length - 1]!.id <= oldest) break
       }
       const top = pages[0]?.id ?? 0
+      for (const id of settled) changedSinceReload.delete(id)
       // Images added while the reload ran are newer than its first page.
       set((s) => ({
         images: [...s.images.filter((i) => i.id > top && !loadedIds.has(i.id)), ...pages],
@@ -401,6 +412,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     async function load(): Promise<void> {
       subscribe()
       const lockAt = lockSeq
+      const imagesAt = imagesSeq
       const [settings, servers, connection, active, images, lock] = await Promise.all([
         attempt(() => api.settings.get()),
         attempt(() => api.servers.list()),
@@ -410,14 +422,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         attempt(() => api.lock.state()),
       ])
       if (lock && lockAt === lockSeq) set({ lock })
+      // A reload that started meanwhile (a lock or hide event) is newer than this first page.
+      const firstPage = images && imagesAt === imagesSeq ? images : undefined
       set((s) => ({
         servers: servers ?? s.servers,
         connection: connection ?? s.connection,
         jobs: active ? { ...Object.fromEntries(fresh(active)), ...s.jobs } : s.jobs,
-        images: images
-          ? [...s.images.filter((i) => !images.some((l) => l.id === i.id)), ...images]
+        images: firstPage
+          ? [...s.images.filter((i) => !firstPage.some((l) => l.id === i.id)), ...firstPage]
           : s.images,
-        imagesExhausted: images ? images.length < IMAGE_PAGE : s.imagesExhausted,
+        imagesExhausted: firstPage ? firstPage.length < IMAGE_PAGE : s.imagesExhausted,
       }))
       // First run: Forge on this PC is saved without asking. Settings stay unset until the check is over,
       // so the server dialog does not open for a moment and close again.

@@ -33,7 +33,7 @@ export interface ImageRecord {
   width: number; height: number; seed: number; infotext: string;
   createdAt: number; durationMs: number | null; hidden: boolean; sourceImageId: number | null;
   tags: string[];
-  /** Hidden image while hidden images are locked: url, thumbUrl, infotext are empty, seed is 0, tags are empty. */
+  /** Hidden image while hidden images are locked: url, thumbUrl, infotext are empty, seed and jobId are 0, tags are empty. */
   locked: boolean;
 }
 /** Gallery query: newest first; `text` and every tag in `tags` must match. */

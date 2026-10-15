@@ -5,7 +5,7 @@ import type { GenerationParams } from '@shared/types'
 import { createLock } from '../lock/lock'
 import { createOplog } from '../oplog/oplog'
 import { openDb } from './db'
-import { createImageHandler, hiddenImageBlocker, resolveImageRequest, toImageUrl } from './image-protocol'
+import { createImageHandler, hiddenImageAccess, resolveImageRequest, toImageUrl } from './image-protocol'
 import { createRepos } from './repos'
 
 const base = path.resolve(path.join('tmp-base', 'images'))
@@ -108,7 +108,7 @@ describe('the fnc-img handler and the lock', () => {
     hiddenId = add('1-1')
     add('1-2')
     repos.images.setHidden([hiddenId], true)
-    handle = createImageHandler({ baseDir: () => dir, isBlocked: hiddenImageBlocker(repos.images, lock, () => dir) })
+    handle = createImageHandler({ baseDir: () => dir, ...hiddenImageAccess(repos.images, lock, () => dir) })
   })
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
@@ -137,6 +137,26 @@ describe('the fnc-img handler and the lock', () => {
     expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(200)
     lock.close()
     expect(await status('fnc-img://local/thumbs/1-1.jpg')).toBe(404)
+  })
+
+  test('a hidden file served while open is not cached; a visible one has no such header', async () => {
+    await lock.open('secret-pass')
+    expect((await handle('fnc-img://local/thumbs/1-1.jpg')).headers.get('Cache-Control')).toBe('no-store')
+    expect((await handle('fnc-img://local/2026-10/1-1.png')).headers.get('Cache-Control')).toBe('no-store')
+    expect((await handle('fnc-img://local/thumbs/1-2.jpg')).headers.get('Cache-Control')).toBeNull()
+  })
+
+  test('a stored path written differently (dots, other separators, case) and a base with a trailing separator still block', async () => {
+    const job = repos.jobs.insert(repos.servers.active()!.id, 'txt2img', {} as GenerationParams)
+    writeFileSync(path.join(dir, 'thumbs', '7-7.jpg'), 'jpg 7-7')
+    const odd = `${dir}/2026-10/../THUMBS/./7-7.JPG`
+    const id = repos.images.insert({ jobId: job.id, filePath: odd, thumbPath: odd, width: 1, height: 1, seed: 1, infotext: '', durationMs: null }).id
+    repos.images.setHidden([id], true)
+    const withSep = createImageHandler({ baseDir: () => dir + path.sep, ...hiddenImageAccess(repos.images, lock, () => dir + path.sep) })
+    expect((await handle('fnc-img://local/thumbs/7-7.jpg')).status).toBe(404)
+    expect((await withSep('fnc-img://local/thumbs/7-7.jpg')).status).toBe(404)
+    await lock.open('secret-pass')
+    expect((await withSep('fnc-img://local/thumbs/7-7.jpg')).status).toBe(200)
   })
 
   test('unhiding makes the files available again', async () => {

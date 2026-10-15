@@ -211,13 +211,14 @@ export function validateImageQuery(q: unknown): ImageQuery {
 
 /**
  * The renderer's copy of an image row. A `locked` row (a hidden image while the lock is closed) keeps only what
- * its tile needs for its place in the grid: no addresses, infotext, seed or tags.
+ * its tile needs for its place in the grid: no addresses, infotext, seed, tags or job id (jobId is 0).
  */
 export function toImageRecord(
   row: ImageRow, imagesDir: string, opts: { tags?: string[]; locked?: boolean } = {},
 ): ImageRecord {
   const { filePath, thumbPath, ...rest } = row
-  if (opts.locked) return { ...rest, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
+  // jobId 0 (no job has it): the job would lead to the prompt.
+  if (opts.locked) return { ...rest, jobId: 0, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
   return {
     ...rest, tags: opts.tags ?? [], locked: false,
     url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir),
@@ -502,7 +503,10 @@ export function registerIpc(
 
   handle('jobs:get', (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
-    return repos.jobs.get(id) ?? fail('error.notFound')
+    const job = repos.jobs.get(id) ?? fail('error.notFound')
+    // The job holds the prompt of the image it made: while that image is hidden and locked, there is no such job.
+    if (!lock.isOpen() && repos.images.jobHasHidden(id)) return fail('error.notFound')
+    return job
   })
 
   /** Rows as the renderer may see them now: tags read in one query, hidden rows redacted while locked. */
@@ -559,6 +563,8 @@ export function registerIpc(
 
   handle('images:delete', async (id) => {
     if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    // Like unhiding: a hidden image cannot be removed without the password.
+    if (!lock.isOpen() && repos.images.get(id)?.hidden) return fail('error.notFound')
     const row = repos.images.delete(id) ?? fail('error.notFound')
     try {
       await deps.images.remove(row.filePath, row.thumbPath)

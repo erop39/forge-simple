@@ -112,8 +112,8 @@ function Row({ entry, text }: { entry: OplogEntry; text: string }) {
       setOutcome(job)
       return
     }
-    // A finished job opens its image when the gallery has it loaded; otherwise nothing happens.
-    const image = images.find((i) => i.jobId === jobId)
+    // A finished job opens its image when the gallery has it loaded (a locked one cannot open); otherwise nothing happens.
+    const image = images.find((i) => !i.locked && i.jobId === jobId)
     if (image) requestView(image.id)
   }
 

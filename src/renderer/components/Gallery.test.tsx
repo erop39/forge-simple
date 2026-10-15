@@ -4,8 +4,23 @@ import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job } from '@shared/types'
 import { en } from '../locales/en'
 import { frameCaption, fullTime } from '../format'
+import { lockedCopy } from '../state/store'
 import { Gallery, columnCountFor } from './Gallery'
 import { renderWithStore } from './test-store'
+
+// Records the image each render of the viewer gets (the viewer itself still renders).
+const viewerRenders = vi.hoisted(() => [] as (number | null)[])
+vi.mock('./ImageViewer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ImageViewer')>()
+  const { createElement } = await import('react')
+  return {
+    ...actual,
+    ImageViewer: (props: Parameters<typeof actual.ImageViewer>[0]) => {
+      viewerRenders.push(props.image?.id ?? null)
+      return createElement(actual.ImageViewer, props)
+    },
+  }
+})
 
 const params = defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })
 const job = (id: number, status: Job['status']): Job => ({
@@ -247,4 +262,23 @@ test('a view request from elsewhere (the activity log) opens that image and is c
   const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(8), image(7)], viewRequest: 7 })
   expect(await screen.findByRole('img', { name: 'Generated image 7' })).toBeDefined()
   expect(store.getState().viewRequest).toBeNull()
+})
+
+test('the viewer of a hidden image disappears in the same render when the lock closes', async () => {
+  const shown = { ...image(7), hidden: true }
+  vi.stubGlobal('api', {
+    images: { details: vi.fn(async () => ({ image: shown, params: { ...params, prompt: 'secret prompt' }, jobType: 'txt2img' })) },
+    clipboard: { writeText: vi.fn() },
+  })
+  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [shown] })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await waitFor(() => expect(screen.getByText('secret prompt')).toBeDefined())
+  viewerRenders.length = 0
+  act(() => store.setState({ images: [lockedCopy(shown)] }))
+  // No render after the update hands the viewer the hidden image, not even one before the state catches up.
+  expect(viewerRenders).not.toContain(7)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByText('secret prompt')).toBeNull()
+  expect(document.querySelector(`img[src="${shown.url}"]`)).toBeNull()
+  expect(screen.getByRole('button', { name: 'Hidden image 7. Unlock to view' })).toBeDefined()
 })

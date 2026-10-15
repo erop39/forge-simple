@@ -14,7 +14,7 @@ const image = (id: number, over: Partial<ImageRecord> = {}): ImageRecord => ({
   seed: 1, infotext: '', createdAt: id, durationMs: 1000, hidden: false, sourceImageId: null, tags: [], locked: false, ...over,
 })
 const locked = (id: number): ImageRecord =>
-  image(id, { hidden: true, url: '', thumbUrl: '', seed: 0, locked: true })
+  image(id, { jobId: 0, hidden: true, url: '', thumbUrl: '', seed: 0, locked: true })
 
 function setup(lock: LockState, pages: ImageRecord[][]) {
   const handlers = new Map<string, Array<(payload: never) => void>>()

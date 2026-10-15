@@ -298,14 +298,15 @@ export function createRepos(db: Db, now: () => number) {
         return n
       })()
     },
-    /**
-     * True when `absPath` is the file or thumbnail of a hidden image. Letter case is ignored in any script
-     * (Windows and macOS file names are case-insensitive), so another spelling of the name cannot get past it.
-     */
-    isHiddenFile(absPath: string): boolean {
-      return db.prepare(
-        'SELECT 1 FROM images WHERE hidden = 1 AND (ulower(file_path) = ulower(?) OR ulower(thumb_path) = ulower(?)) LIMIT 1',
-      ).get(absPath, absPath) !== undefined
+    /** The stored file and thumbnail paths of every hidden image, as written (compare them normalised). */
+    hiddenFilePaths(): string[] {
+      const rows = db.prepare('SELECT file_path, thumb_path FROM images WHERE hidden = 1').all() as
+        { file_path: string; thumb_path: string }[]
+      return rows.flatMap((r) => [r.file_path, r.thumb_path])
+    },
+    /** True when the job made an image that is hidden now. */
+    jobHasHidden(jobId: number): boolean {
+      return db.prepare('SELECT 1 FROM images WHERE job_id = ? AND hidden = 1 LIMIT 1').get(jobId) !== undefined
     },
     delete(id: number): ImageRow | null {
       return db.transaction(() => {

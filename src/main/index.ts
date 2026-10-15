@@ -11,7 +11,7 @@ import { createLock } from './lock/lock'
 import { createOplog, RETENTION_KEY, retentionDays } from './oplog/oplog'
 import { createRunner } from './queue/runner'
 import { openDb } from './storage/db'
-import { createImageHandler, hiddenImageBlocker } from './storage/image-protocol'
+import { createImageHandler, hiddenImageAccess } from './storage/image-protocol'
 import { createImageStore, type MakeThumb } from './storage/image-store'
 import { createRepos } from './storage/repos'
 
@@ -165,7 +165,7 @@ async function boot(): Promise<void> {
   }, send)
 
   // The files of hidden images answer 404 while the lock is closed.
-  const serveImage = createImageHandler({ baseDir: imagesDir, isBlocked: hiddenImageBlocker(repos.images, lock, imagesDir) })
+  const serveImage = createImageHandler({ baseDir: imagesDir, ...hiddenImageAccess(repos.images, lock, imagesDir) })
   protocol.handle('fnc-img', (request) => serveImage(request.url))
 
   runner.recover()

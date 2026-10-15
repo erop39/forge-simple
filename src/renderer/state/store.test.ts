@@ -846,7 +846,7 @@ describe('activity log', () => {
 describe('hidden images and the lock', () => {
   const hiddenOpen = (id: number): ImageRecord => ({ ...image(id), hidden: true, tags: ['secret'], infotext: 'p', seed: 9 })
   const hiddenLocked = (id: number): ImageRecord => ({
-    ...image(id), hidden: true, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
+    ...image(id), jobId: 0, hidden: true, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true,
   })
 
   test('init loads the lock state', async () => {
@@ -961,5 +961,41 @@ describe('hidden images and the lock', () => {
     const { api, store } = await ready()
     await store.getState().lockNow()
     expect(api.lock.close).toHaveBeenCalled()
+  })
+})
+
+describe('fix round 1: the gallery never shows a stale unlocked copy', () => {
+  test('a first page that answers after a lock event started a reload is dropped', async () => {
+    const fake = fakeApi()
+    const first = deferred<ImageRecord[]>()
+    fake.api.images.list.mockReturnValueOnce(first.promise)
+    fake.api.images.list.mockResolvedValueOnce([image(5), { ...image(4), hidden: true, url: '', thumbUrl: '', seed: 0, jobId: 0, locked: true }])
+    const store = createAppStore(fake.api)
+    const init = store.getState().init()
+    await vi.waitFor(() => expect(fake.api.images.list).toHaveBeenCalledTimes(1))
+    fake.emit('lock', { hasPassword: true, open: false })
+    await vi.waitFor(() => expect(store.getState().images.map((i) => i.locked)).toEqual([false, true]))
+    first.resolve([image(5), { ...image(4), hidden: true, infotext: 'p', seed: 9 }])
+    await init
+    expect(store.getState().images.find((i) => i.id === 4)!.locked).toBe(true)
+  })
+
+  test('closing the lock covers an image hidden since the last reload, before the reload answers', async () => {
+    const fake = fakeApi()
+    const store = createAppStore(fake.api)
+    await store.getState().init()
+    const stale = deferred<ImageRecord[]>()
+    fake.api.images.list.mockReturnValueOnce(stale.promise)
+    fake.emit('images:changed', { ids: [5] })
+    const reload = deferred<ImageRecord[]>()
+    fake.api.images.list.mockReturnValueOnce(reload.promise)
+    fake.emit('lock', { hasPassword: true, open: false })
+    const five = store.getState().images.find((i) => i.id === 5)!
+    expect(five).toMatchObject({ locked: true, url: '', thumbUrl: '', jobId: 0 })
+    expect(store.getState().images.find((i) => i.id === 4)!.locked).toBe(false)
+    reload.resolve([{ ...image(5), hidden: true, url: '', thumbUrl: '', seed: 0, jobId: 0, locked: true }, image(4)])
+    stale.resolve([image(5), image(4)])
+    await vi.waitFor(() => expect(fake.api.images.list).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(store.getState().images.find((i) => i.id === 5)!.locked).toBe(true))
   })
 })

@@ -13,10 +13,13 @@ const P = 1
 const SALT_BYTES = 16
 const KEY_BYTES = 32
 const HEX = /^[0-9a-f]+$/
+/** Wrong passwords in a row that start a lockout, and how long it lasts. */
+export const MAX_FAILURES = 5
+export const LOCKOUT_MS = 30_000
 
 /** A refused lock call; the message is the IPC error key. */
 export class LockError extends Error {
-  constructor(readonly key: 'error.wrongPassword' | 'error.invalidParams') {
+  constructor(readonly key: 'error.wrongPassword' | 'error.tooManyAttempts' | 'error.invalidParams') {
     super(key)
     this.name = 'LockError'
   }
@@ -62,14 +65,18 @@ async function verify(password: string, stored: string): Promise<boolean> {
 export function createLock(
   settings: { get(k: string): string | null; set(k: string, v: string): void },
   oplog: Oplog,
+  now: () => number = () => Date.now(),
 ): Lock {
   let open = false
+  // Bumped by every close(): an open() whose check started before it must not open the lock afterwards.
+  let epoch = 0
+  let failures = 0
+  let blockedUntil = 0
   const stored = (): string | null => settings.get(HASH_KEY)
   const isPassword = (v: unknown): v is string =>
     typeof v === 'string' && v.length >= MIN_PASSWORD && v.length <= MAX_PASSWORD
 
-  async function matches(password: unknown): Promise<boolean> {
-    const current = stored()
+  async function matches(password: unknown, current: string | null): Promise<boolean> {
     if (current === null || typeof password !== 'string' || password.length > MAX_PASSWORD) return false
     try {
       return await verify(password, current)
@@ -78,7 +85,25 @@ export function createLock(
     }
   }
 
+  /** During a lockout every check is refused at once, the right password too. */
+  const throttle = (): void => {
+    if (now() < blockedUntil) throw new LockError('error.tooManyAttempts')
+  }
+
+  /**
+   * A wrong password. Each is logged until the MAX_FAILURES-th in a row, which starts a lockout of LOCKOUT_MS
+   * logged once; attempts during the lockout are not logged.
+   */
   const refuse = (): never => {
+    failures++
+    if (failures >= MAX_FAILURES) {
+      failures = 0
+      blockedUntil = now() + LOCKOUT_MS
+      oplog.write({
+        level: 'warn', category: 'lock', messageKey: 'log.lock.lockedOut', details: { seconds: LOCKOUT_MS / 1000 },
+      })
+      throw new LockError('error.tooManyAttempts')
+    }
     oplog.write({ level: 'warn', category: 'lock', messageKey: 'log.lock.wrongPassword' })
     throw new LockError('error.wrongPassword')
   }
@@ -88,19 +113,34 @@ export function createLock(
 
     async setPassword(oldPassword, newPassword) {
       if (!isPassword(newPassword)) throw new LockError('error.invalidParams')
-      const had = stored() !== null
-      if (had && !(await matches(oldPassword))) refuse()
-      settings.set(HASH_KEY, await hash(newPassword))
-      oplog.write({ level: 'info', category: 'lock', messageKey: had ? 'log.lock.passwordChanged' : 'log.lock.passwordSet' })
+      const before = stored()
+      if (before !== null) {
+        throttle()
+        if (!(await matches(oldPassword, before))) refuse()
+        failures = 0
+      }
+      const next = await hash(newPassword)
+      // Another call set or changed the password while this one was hashing: its check no longer holds.
+      if (stored() !== before) throw new LockError('error.wrongPassword')
+      settings.set(HASH_KEY, next)
+      oplog.write({
+        level: 'info', category: 'lock', messageKey: before !== null ? 'log.lock.passwordChanged' : 'log.lock.passwordSet',
+      })
     },
 
     async open(password) {
-      if (!(await matches(password))) refuse()
+      throttle()
+      const startedAt = epoch
+      if (!(await matches(password, stored()))) refuse()
+      failures = 0
+      // Locked again while the password was being checked: that close wins.
+      if (startedAt !== epoch) return
       open = true
       oplog.write({ level: 'info', category: 'lock', messageKey: 'log.lock.opened' })
     },
 
     close() {
+      epoch++
       if (!open) return
       open = false
       oplog.write({ level: 'info', category: 'lock', messageKey: 'log.lock.closed' })

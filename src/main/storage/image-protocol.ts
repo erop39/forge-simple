@@ -39,11 +39,14 @@ export interface ImageHandlerDeps {
   baseDir(): string
   /** True when the file (relative to baseDir, OS separators) must not be served now: a hidden image while locked. */
   isBlocked(relPath: string): boolean
+  /** True for a file of a hidden image: served (while open) without being cached. */
+  isHidden?(relPath: string): boolean
 }
 
 /**
  * The `fnc-img` protocol: 403 for an unsafe address or a non-image file, 404 for a missing file and for a file
- * the lock blocks (the same answer, so a blocked file cannot be told from a missing one).
+ * the lock blocks (the same answer, so a blocked file cannot be told from a missing one). A hidden image's file
+ * served while the lock is open carries `Cache-Control: no-store`.
  */
 export function createImageHandler(deps: ImageHandlerDeps): (url: string) => Promise<Response> {
   return async (url) => {
@@ -51,9 +54,12 @@ export function createImageHandler(deps: ImageHandlerDeps): (url: string) => Pro
     const file = resolveImageRequest(url, base)
     const type = file ? IMAGE_TYPES[path.extname(file).toLowerCase()] : undefined
     if (!file || !type) return new Response(null, { status: 403 })
-    if (deps.isBlocked(path.relative(path.resolve(base), file))) return new Response(null, { status: 404 })
+    const rel = path.relative(path.resolve(base), file)
+    if (deps.isBlocked(rel)) return new Response(null, { status: 404 })
+    const headers: Record<string, string> = { 'Content-Type': type }
+    if (deps.isHidden?.(rel)) headers['Cache-Control'] = 'no-store'
     try {
-      return new Response(new Uint8Array(await fs.readFile(file)), { headers: { 'Content-Type': type } })
+      return new Response(new Uint8Array(await fs.readFile(file)), { headers })
     } catch (err) {
       const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
       return new Response(null, { status: missing ? 404 : 500 })
@@ -61,11 +67,22 @@ export function createImageHandler(deps: ImageHandlerDeps): (url: string) => Pro
   }
 }
 
-/** Blocks the files (full image and thumbnail) of hidden images while the lock is closed. */
-export function hiddenImageBlocker(
-  images: { isHiddenFile(absPath: string): boolean },
+/**
+ * Same file, ignoring how the path was written: both sides are resolved (separators, `.`/`..`, a trailing
+ * separator in the images folder) and compared without letter case in any script (Windows and macOS file
+ * names are case-insensitive).
+ */
+const fileKey = (p: string): string => path.resolve(p).toLowerCase()
+
+/** Which requested files belong to hidden images, and which of them the closed lock blocks. */
+export function hiddenImageAccess(
+  images: { hiddenFilePaths(): string[] },
   lock: { isOpen(): boolean },
   baseDir: () => string,
-): (relPath: string) => boolean {
-  return (relPath) => !lock.isOpen() && images.isHiddenFile(path.join(path.resolve(baseDir()), relPath))
+): { isHidden(relPath: string): boolean; isBlocked(relPath: string): boolean } {
+  const isHidden = (relPath: string): boolean => {
+    const wanted = fileKey(path.join(path.resolve(baseDir()), relPath))
+    return images.hiddenFilePaths().some((stored) => fileKey(stored) === wanted)
+  }
+  return { isHidden, isBlocked: (relPath) => !lock.isOpen() && isHidden(relPath) }
 }

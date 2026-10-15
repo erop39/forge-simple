@@ -11,6 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
+  'error.tooManyAttempts',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -117,7 +118,10 @@ export interface Api {
   /** The session lock over hidden images; closed at every start. Each change pushes 'lock'. */
   lock: {
     state(): Promise<LockState>
-    /** A wrong password is refused with error.wrongPassword. */
+    /**
+     * A wrong password is refused with error.wrongPassword; the 5th in a row starts a 30 s pause during which
+     * every attempt (here and in setPassword) is refused with error.tooManyAttempts.
+     */
     open(password: string): Promise<void>
     close(): Promise<void>
     /**

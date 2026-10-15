@@ -222,6 +222,7 @@ export const en = {
   'log.lock.opened': 'Hidden images unlocked.',
   'log.lock.closed': 'Hidden images locked.',
   'log.lock.wrongPassword': 'Wrong password for hidden images.',
+  'log.lock.lockedOut': 'Too many wrong passwords for hidden images: attempts paused for {seconds} s.',
   'log.lock.passwordSet': 'Password for hidden images set.',
   'log.lock.passwordChanged': 'Password for hidden images changed.',
   'log.backup.logExported': 'Exported {count} log entries to {file}.',
@@ -308,4 +309,5 @@ export const en = {
   'error.presetNameTaken': 'A preset with that name already exists.',
   'error.wrongPassword': "That password isn't right.",
   'error.noPassword': 'Set a password for hidden images first.',
+  'error.tooManyAttempts': 'Too many wrong passwords. Wait 30 seconds, then try again.',
 } as const
