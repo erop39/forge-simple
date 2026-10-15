@@ -1,4 +1,4 @@
-import { ArrowUp, SlidersHorizontal } from '@phosphor-icons/react'
+import { ArrowUp, SlidersHorizontal, X } from '@phosphor-icons/react'
 import { useCallback, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
@@ -106,10 +106,14 @@ export function PromptBar() {
   const panelOpen = useAppStore((s) => s.panelOpen)
   const logOpen = useAppStore((s) => s.logOpen)
   const setParams = useAppStore((s) => s.setParams)
+  const images = useAppStore((s) => s.images)
+  const attachImageSource = useAppStore((s) => s.attachImageSource)
+  const removeImageSource = useAppStore((s) => s.removeImageSource)
   const selectCheckpoint = useAppStore((s) => s.selectCheckpoint)
   const generate = useAppStore((s) => s.generate)
   const togglePanel = useAppStore((s) => s.togglePanel)
   const [negativeOpen, setNegativeOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const negativeId = useId()
   const observer = useRef<ResizeObserver | null>(null)
   const publishHeight = useCallback((el: HTMLDivElement | null) => {
@@ -133,11 +137,13 @@ export function PromptBar() {
   const loading = model === null && (settings === null || settings.serverUrl !== null)
     && catalog === null && catalogError === null
   const blank = prompt.trim() === ''
+  const source = params?.img2img ? images.find((image) => image.id === params.img2img!.sourceImageId && !image.locked) : null
+  const sourceMissing = !!params?.img2img && !source
   const area = model ? model.profile.defaults.width * model.profile.defaults.height : 0
   const ratio = model ? currentRatio(model.params, area) : CUSTOM_RATIO
 
   function submit(): void {
-    if (!model || blank) return
+    if (!model || blank || sourceMissing) return
     writeLastPrompt(model.params.prompt)
     void generate()
   }
@@ -166,8 +172,33 @@ export function PromptBar() {
   if (ratio === CUSTOM_RATIO) ratioOptions.push({ value: CUSTOM_RATIO, label: t('prompt.ratioCustom') })
 
   return (
-    <div ref={publishHeight} className={`${styles.bar} ${panelOpen || logOpen ? styles.shifted : ''}`}>
+    <div ref={publishHeight} data-img2img-drop className={`${styles.bar} ${panelOpen || logOpen ? styles.shifted : ''} ${dragOver ? styles.dragOver : ''}`}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('application/x-forge-neo-image-id')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(event) => {
+        setDragOver(false)
+        const id = Number(event.dataTransfer.getData('application/x-forge-neo-image-id'))
+        if (Number.isSafeInteger(id) && id > 0) {
+          event.preventDefault()
+          attachImageSource(id)
+        }
+      }}
+    >
       <UnhealthyNotice />
+      {dragOver && <p className={styles.dropHint}>{t('img2img.drop')}</p>}
+      {params?.img2img && (
+        <div className={styles.sourceRow}>
+          <span className={`mono ${styles.mode}`}>{t('img2img.mode')}</span>
+          {source && <img className={styles.sourceThumb} src={source.thumbUrl} alt={t('img2img.source', { n: source.id })} />}
+          <span className={styles.sourceName}>{source ? t('img2img.source', { n: source.id }) : t('img2img.unavailable')}</span>
+          <IconButton label={t('img2img.remove')} icon={<X size={16} />} onClick={removeImageSource} />
+        </div>
+      )}
       {model?.profile.negative && negativeOpen && (
         <GrowingField
           id={negativeId}
@@ -259,7 +290,7 @@ export function PromptBar() {
             className={styles.generate}
             aria-label={t('prompt.generate')}
             disabled={model === null}
-            aria-disabled={model ? blank : undefined}
+            aria-disabled={model ? blank || sourceMissing : undefined}
             icon={<ArrowUp size={16} />}
             onClick={submit}
           />

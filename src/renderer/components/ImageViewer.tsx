@@ -6,6 +6,7 @@ import type { ImageDetails, ImageRecord } from '@shared/types'
 import { baseName, fullTime } from '../format'
 import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
+import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import styles from './ImageViewer.module.css'
 
@@ -23,6 +24,7 @@ type Props = {
 
 /** Full-size local image with settings read from the persisted job, including after a restart. */
 export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPrevious, hasNext, position, loadedCount }: Props) {
+  const attachImageSource = useAppStore((s) => s.attachImageSource)
   const [details, setDetails] = useState<ImageDetails | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -134,9 +136,12 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
               <>
                 <div className={styles.promptHead}>
                   <span className={styles.label}>{t('viewer.prompt')}</span>
-                  <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
-                    {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
-                  </Button>
+                  <div className={styles.promptActions}>
+                    <Button onClick={() => { if (attachImageSource(image.id)) onClose() }}>{t('img2img.send')}</Button>
+                    <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
+                      {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
+                    </Button>
+                  </div>
                 </div>
                 <p className={styles.prompt}>{params.prompt}</p>
                 {params.negativePrompt && (

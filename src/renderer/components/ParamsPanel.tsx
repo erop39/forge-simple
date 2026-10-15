@@ -1,7 +1,7 @@
 import { Shuffle, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
-import type { HiresSettings } from '@shared/types'
+import type { HiresSettings, Img2ImgSettings } from '@shared/types'
 import { baseName } from '../format'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
@@ -105,7 +105,7 @@ function Hires() {
   const params = useAppStore((s) => s.params)
   const upscalers = useAppStore((s) => s.catalog?.upscalers ?? [])
   const setParams = useAppStore((s) => s.setParams)
-  if (!params) return null
+  if (!params || params.img2img) return null
   const hires: HiresSettings = params.hires ?? {
     scale: 1, upscaler: upscalers[0] ?? 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
   }
@@ -167,6 +167,27 @@ function Hires() {
           </ParamRow>
         </>
       )}
+    </section>
+  )
+}
+
+function Img2Img() {
+  const settings = useAppStore((s) => s.params?.img2img)
+  const setParams = useAppStore((s) => s.setParams)
+  if (!settings) return null
+  const change = (patch: Partial<Img2ImgSettings>) => setParams({ img2img: { ...settings, ...patch } })
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.heading}>{t('img2img.mode')}</h3>
+      <ParamRow label={t('img2img.resize')}>
+        <Select showLabel={false} label={t('img2img.resize')} value={String(settings.resizeMode)}
+          options={([0, 1, 2, 3] as const).map((mode) => ({ value: String(mode), label: t(`img2img.resize${mode}`) }))}
+          onChange={(value) => change({ resizeMode: Number(value) as Img2ImgSettings['resizeMode'] })} />
+      </ParamRow>
+      <ParamRow label={t('img2img.denoising')}>
+        <Slider label={t('img2img.denoising')} value={settings.denoisingStrength} min={0.01} max={1} step={0.01}
+          onCommit={(denoisingStrength) => change({ denoisingStrength })} />
+      </ParamRow>
     </section>
   )
 }
@@ -274,6 +295,7 @@ function Body() {
           />
         </ParamRow>
       </section>
+      <Img2Img />
       <Hires />
       <Modules />
     </>

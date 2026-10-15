@@ -210,6 +210,24 @@ test('clicking an image opens the full file, saved settings and Copy prompt; Esc
   expect(document.activeElement).toBe(trigger)
 })
 
+test('Send to img2img from the viewer attaches the image and closes with keyboard activation', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' })) } })
+  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(7)] })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  const send = await screen.findByRole('button', { name: en['img2img.send'] })
+  send.focus()
+  await userEvent.keyboard('{Enter}')
+  expect(store.getState().params?.img2img?.sourceImageId).toBe(7)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('a saved image can be dragged to the prompt bar by its ID', () => {
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)] })
+  const transfer = { setData: vi.fn() }
+  fireEvent.dragStart(screen.getByRole('button', { name: 'Open image 7' }), { dataTransfer: transfer })
+  expect(transfer.setData).toHaveBeenCalledWith('application/x-forge-neo-image-id', '7')
+})
+
 test('viewer shows the saved hires settings for a finished image', async () => {
   vi.stubGlobal('api', {
     images: { details: vi.fn(async () => ({

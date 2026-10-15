@@ -82,6 +82,8 @@ export function ImageTile({
       <button
         type="button"
         className={styles.open}
+        draggable
+        onDragStart={(event) => event.dataTransfer.setData('application/x-forge-neo-image-id', String(image.id))}
         data-primary
         tabIndex={tabIndex}
         aria-label={t('image.open', { n: image.id })}

@@ -78,6 +78,10 @@ export interface AppState {
   /** Safe to call twice: data is loaded once and event subscriptions are registered once. */
   init(): Promise<void>
   setParams(patch: Partial<GenerationParams>): void
+  /** Attach a visible saved image; false when it is unavailable, locked, or no model is selected. */
+  attachImageSource(id: number): boolean
+  /** Return to txt2img and restore the previous hires setting. */
+  removeImageSource(): void
   /** Takes the family defaults for a checkpoint, keeping the prompt, negative prompt and image size. */
   selectCheckpoint(title: string): Promise<void>
   /** Reloads the catalog from the server (refresh) after a failed or stale load. */
@@ -165,6 +169,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   /** Images to hide once the first password is set. */
   let pendingHide: number[] | null = null
   let morePromise: Promise<void> | null = null
+  let hiresBeforeImg2Img: GenerationParams['hires'] | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
   const fresh = (jobs: readonly Job[]): Array<[number, Job]> =>
@@ -215,6 +220,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         width: current?.width ?? defaults.width,
         height: current?.height ?? defaults.height,
         hires: current?.hires ?? defaults.hires,
+        img2img: current?.img2img,
       }
       set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, draftNegative) })
       await refreshParts(params)
@@ -261,6 +267,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       partsSeq++
       selectSeq++
       catalogSeq++
+      hiresBeforeImg2Img = null
       set({ catalog: null, catalogError: null, params: null, parts: [] })
       // The new catalog loads in the background (its LoRA list can take a minute); the prompt bar shows
       // that models are loading, and the server dialog is free again at once.
@@ -494,6 +501,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
           return
         }
         const params = { ...before, ...patch }
+        if (params.img2img && params.hires && params.hires.scale > 1) {
+          params.hires = { ...params.hires, scale: 1 }
+        }
         if (params.hires && params.hires.scale > 1
           && (params.width * params.hires.scale > 4096 || params.height * params.hires.scale > 4096)) {
           params.hires = { ...params.hires, scale: 1 }
@@ -502,6 +512,29 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (params.checkpoint !== before.checkpoint || !sameList(params.modules, before.modules)) {
           void refreshParts(params)
         }
+      },
+
+      attachImageSource(id) {
+        const { images, params } = get()
+        const source = images.find((image) => image.id === id)
+        if (!params || !source || source.locked) return false
+        if (!params.img2img) hiresBeforeImg2Img = params.hires ?? null
+        set({ params: {
+          ...params,
+          img2img: { sourceImageId: id, denoisingStrength: params.img2img?.denoisingStrength ?? 0.5,
+            resizeMode: params.img2img?.resizeMode ?? 0 },
+          ...(params.hires ? { hires: { ...params.hires, scale: 1 } } : {}),
+        } })
+        return true
+      },
+
+      removeImageSource() {
+        const params = get().params
+        if (!params?.img2img) return
+        set({ params: { ...params, img2img: undefined,
+          ...(hiresBeforeImg2Img ? { hires: hiresBeforeImg2Img } : {}),
+        } })
+        hiresBeforeImg2Img = null
       },
 
       async selectCheckpoint(title) {
@@ -517,8 +550,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       },
 
       async generate() {
-        const { params } = get()
+        const { params, images } = get()
         if (!params || params.prompt.trim() === '') return
+        if (params.img2img && !images.some((image) => image.id === params.img2img!.sourceImageId && !image.locked)) return
         const created = await attempt(() => api.jobs.enqueue(params))
         if (!created) return
         // Queued jobs raise no job:update; a job an event already delivered is newer than this copy.

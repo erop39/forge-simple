@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { en } from '../locales/en'
 import { ParamsPanel } from './ParamsPanel'
@@ -129,6 +129,16 @@ test('hires scale reveals second-pass controls and target size', async () => {
   expect(store.getState().params?.hires?.scale).toBe(2)
   expect(screen.getByText('896×1152 → 1792×2304')).toBeDefined()
   expect(screen.getByRole('slider', { name: en['params.hiresDenoising'] })).toBeDefined()
+})
+
+test('img2img exposes denoising and resize controls and hides txt2img hires', async () => {
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', open)
+  act(() => store.getState().setParams({ img2img: { sourceImageId: 7, denoisingStrength: 0.5, resizeMode: 0 } }))
+  expect(screen.queryByRole('button', { name: new RegExp(en['params.hiresScale']) })).toBeNull()
+  expect(screen.getByRole('slider', { name: en['img2img.denoising'] })).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['img2img.resize']) }))
+  await userEvent.click(screen.getByRole('menuitemradio', { name: en['img2img.resize1'] }))
+  expect(store.getState().params?.img2img?.resizeMode).toBe(1)
 })
 
 test('hires turns off when a size change would exceed its target limit', () => {

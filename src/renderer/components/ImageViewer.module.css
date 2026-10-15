@@ -102,6 +102,12 @@
   gap: var(--sp-3);
 }
 
+.promptActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
 .label,
 .fact dt {
   color: var(--text-2);

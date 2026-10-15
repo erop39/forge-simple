@@ -329,6 +329,36 @@ test('generate enqueues the params and tracks the new jobs', async () => {
   expect(store.getState().jobs[7]?.status).toBe('queued')
 })
 
+test('attaching a saved image keeps the prompt, disables hires and sends an img2img job', async () => {
+  const { store, api } = await ready()
+  store.getState().setParams({ prompt: 'keep this prompt', hires: {
+    scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
+  } })
+  expect(store.getState().attachImageSource(5)).toBe(true)
+  expect(store.getState().params).toMatchObject({ prompt: 'keep this prompt',
+    img2img: { sourceImageId: 5, denoisingStrength: 0.5, resizeMode: 0 }, hires: { scale: 1 } })
+  await store.getState().generate()
+  expect(api.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+    prompt: 'keep this prompt', img2img: expect.objectContaining({ sourceImageId: 5 }),
+  }))
+  store.getState().removeImageSource()
+  expect(store.getState().params?.img2img).toBeUndefined()
+  expect(store.getState().params?.hires?.scale).toBe(2)
+})
+
+test('a locked or deleted source cannot be sent; switching checkpoints keeps the attached image', async () => {
+  const { store, api } = await ready()
+  store.setState({ images: [image(5), { ...image(4), locked: true }] })
+  expect(store.getState().attachImageSource(4)).toBe(false)
+  expect(store.getState().attachImageSource(5)).toBe(true)
+  await store.getState().selectCheckpoint('a.safetensors')
+  expect(store.getState().params?.img2img?.sourceImageId).toBe(5)
+  store.getState().setParams({ prompt: 'fox' })
+  store.setState({ images: [] })
+  await store.getState().generate()
+  expect(api.jobs.enqueue).not.toHaveBeenCalled()
+})
+
 test('generate keeps a rejection key in lastError until dismissed', async () => {
   const { api, store } = await ready()
   store.getState().setParams({ prompt: 'a red fox' })

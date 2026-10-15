@@ -1,12 +1,16 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
+import type { ImageRecord } from '@shared/types'
 import { en } from '../locales/en'
 import { PromptBar } from './PromptBar'
 import { catalog, renderWithStore } from './test-store'
 
 const promptField = () => screen.getByRole('textbox', { name: en['prompt.placeholder'] })
 const generateButton = () => screen.getByRole('button', { name: en['prompt.generate'] })
+const source: ImageRecord = { id: 7, jobId: 7, url: 'fnc-img://local/7.png', thumbUrl: 'fnc-img://local/t7.jpg',
+  width: 896, height: 1152, seed: 1, infotext: '', createdAt: 1, durationMs: null,
+  hidden: false, sourceImageId: null, tags: [], locked: false }
 
 afterEach(() => localStorage.clear())
 
@@ -17,6 +21,20 @@ test('Ctrl+Enter in the prompt field calls generate', async () => {
   await userEvent.keyboard('{Control>}{Enter}{/Control}')
   expect(generate).toHaveBeenCalledTimes(1)
   expect((promptField() as HTMLTextAreaElement).value).toBe('a fox')
+})
+
+test('dropping a saved gallery image shows img2img mode and removing it restores txt2img', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { images: [source] })
+  const bar = document.querySelector('[data-img2img-drop]')!
+  const dataTransfer = { types: ['application/x-forge-neo-image-id'], getData: () => '7', dropEffect: 'none' }
+  fireEvent.dragOver(bar, { dataTransfer })
+  fireEvent.drop(bar, { dataTransfer })
+  expect(store.getState().params?.img2img?.sourceImageId).toBe(7)
+  expect(screen.getByText(en['img2img.mode'])).toBeDefined()
+  expect(screen.getByRole('img', { name: en['img2img.source'].replace('{n}', '7') })).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['img2img.remove'] }))
+  expect(store.getState().params?.img2img).toBeUndefined()
+  expect(screen.queryByText(en['img2img.mode'])).toBeNull()
 })
 
 test('the prompt field appears before models load and keeps early typing', async () => {
