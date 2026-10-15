@@ -50,7 +50,7 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
 3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
-4. Continue plan 3 Task 10 checks. Task 8 waits for plan 2's final schemas; plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
+4. Work in one session on a mid-tier model (see "Working method" in `CLAUDE.md`). Everything up to `5580444` is reviewed and pushed (plan 2 Tasks 1–3 and 11, plan 3 Tasks 1–7 and 9, with the review fixes). Next, in this order unless the user says otherwise: plan 3 Task 10 (integration checks); then resume plan 2 at Task 4 (selection and batch actions); plan 3 Task 8 (export/import) after plan 2's schemas settle. The real-Forge check and release 0.1.0 wait on the user.
 
 ## Waiting on the user
 
