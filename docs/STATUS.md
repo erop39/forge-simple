@@ -6,7 +6,7 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 867 pass after plan 3 Task 9; build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer queued an upscale and displayed its before/after slider; the resource panel showed `/memory` readings and a missing-extension fallback. A separate Electron smoke run loaded the new database-ID thumbnail URL (64×64) and returned 403 for path traversal attempts. No mutating request went to the user's Forge.
+- Tests: 872 pass after the plan 3 review fixes (867 after plan 3 Task 9), build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer queued an upscale and displayed its before/after slider; the resource panel showed `/memory` readings and a missing-extension fallback. A separate Electron smoke run loaded the new database-ID thumbnail URL (64×64) and returned 403 for path traversal attempts. No mutating request went to the user's Forge.
 - Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Plan 3 (generation and server tools): `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`. The user chose to pause plan 2 after Task 3's local commit and start plan 3 on 2026-10-15. Restart/Unload were already delivered as U4; plan 3 Task 1 (hires fix) is done, tested against mock Forge, and awaits a live-window check. No mutating request was sent to the user's Forge.
@@ -95,5 +95,11 @@ Collected by reviewers and deferred; the final review triages them. The full lis
 - The spec's 260 ms crossfade from a finished job's mosaic to its image (`--dur-reveal`) is in no plan-1 task; a finished job simply becomes an image tile. Carry into plan 2.
 - Gallery tiles may change column when a job is added (greedy shortest-column layout); revisit with plan 2's virtualization. Each image tile is two tab stops (tile + Delete) — roving tabindex in plan 2.
 - Gallery paging does not retry by itself after a failed page load while the sentinel stays in view.
+- Verify hires stage detection (`job_no > 0`) on the real Forge.
+- Spec item not done: an upscale result and its source shown as one tile.
+- The resources monitor is keyed by server id, so it keeps history after a URL edit.
+- Offline resource panel sparklines show stale samples.
+- `REVEAL_MS` in ImageTile duplicates `--dur-reveal`.
+- Kept on purpose: `hiddenImageAccess` and the `isBlocked` dep of `createImageHandler` (tests build on them; the index.ts stub is harmless).
 - vitest sometimes prints "Timeout terminating forks worker" on this machine; all tests pass. Investigate in the final review.
 - Server delete confirmation puts focus on the panel, not Keep. In the negative-preset Manage dialog, focus falls to the panel after an inline rename/keep/delete; the empty-state line in the preset menu is not announced; preset and server name limits are duplicated between main and renderer; the preset text-update IPC has no UI yet.

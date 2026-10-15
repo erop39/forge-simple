@@ -42,7 +42,7 @@ export interface GenerationParams {
   /** A finished image to upscale; the source bytes stay in the managed image store. */
   upscale?: UpscaleSettings;
 }
-export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'unexpected';
+export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'sizeLimit' | 'unexpected';
 /** detail carries server or system text for txt2img only; source-image jobs omit arbitrary Forge text. */
 export interface JobError { code: JobErrorCode; status?: number; detail?: string; missing?: string[] }
 export interface Job {

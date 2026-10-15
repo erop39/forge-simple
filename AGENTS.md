@@ -4,7 +4,9 @@ Forge Neo Client is an Electron + React + TypeScript desktop client for the Forg
 API. One user runs Forge Neo on a home PC and uses this app from other machines over a VPN or the LAN.
 The repository is **public**: `https://github.com/erop39/forge-simple`.
 
-This file is for any coding agent (Claude Code, Codex, others). Claude Code also loads `CLAUDE.md`,
+This file is for any coding agent (Claude Code, Codex, others). Cost matters: work in one session on a
+mid-tier model, implement tasks yourself and use reviewer subagents only per milestone — see
+"Working method" in `CLAUDE.md`. Claude Code also loads `CLAUDE.md`,
 which holds the full commands, layout and code rules; read it too — this guide does not repeat it.
 
 ## Read first, in this order
@@ -25,8 +27,13 @@ Talk to the user in Russian. Code, comments, commits, UI strings, README and CHA
   saved servers with one-click switching, local Forge auto-detection, negative-prompt presets,
   image viewer, recovery from Forge HTTP 500s, Restart Forge / Unload model, operation-log panel,
   generation timestamps, mouse-wheel value stepping.
-- Plan 2 (gallery and library): Task 1 tags and filtered queries, Task 2 hidden images behind a
-  session lock, Task 11 log panel — done. Task 3 onward — see the table in `docs/STATUS.md`.
+- Plan 2 (gallery and library): Tasks 1–3 (tags and filtered queries, hidden images behind a session
+  lock, virtualized gallery with keyboard navigation) and Task 11 (log panel) done; Tasks 4–10 and 12
+  paused — see `docs/STATUS.md`.
+- Plan 3 (generation and server tools, `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`):
+  hires fix, img2img (viewer action, drag onto the prompt bar), upscale of a finished image with a
+  before/after slider, resource monitor with the optional Forge stats extension (`forge-extension/`),
+  image storage folder — done; Task 8 (export/import) waits for plan 2; Task 10 (integration) next.
 
 ## How work is done here
 

@@ -31,7 +31,7 @@ export type LockDialogMode = 'set' | 'open' | 'change'
 
 /** A hidden image as main sends it while locked: nothing that shows or describes the picture. */
 export const lockedCopy = (image: ImageRecord): ImageRecord =>
-  ({ ...image, jobId: 0, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
+  ({ ...image, jobId: 0, sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
 
 export interface AppState {
   connection: ConnectionStatus

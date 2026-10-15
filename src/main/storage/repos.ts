@@ -8,7 +8,7 @@ export interface Server extends ServerInfo { lastConnectedAt: number | null }
 export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' | 'locked'> { filePath: string; thumbPath: string }
 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
-type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null }
+type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null; hidden?: boolean }
 
 /** Another saved (not removed) server already has that address. */
 export class DuplicateServerError extends Error {
@@ -306,9 +306,9 @@ export function createRepos(db: Db, now: () => number) {
     },
     insert(row: NewImage): ImageRow {
       const res = db.prepare(
-        `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms, source_image_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs, row.sourceImageId ?? null)
+        `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms, source_image_id, hidden)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs, row.sourceImageId ?? null, row.hidden ? 1 : 0)
       return toImage(imageById.get(Number(res.lastInsertRowid)) as ImageSql)
     },
     list(opts: { limit: number; beforeId?: number }): ImageRow[] {

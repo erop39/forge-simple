@@ -121,7 +121,7 @@ async function boot(): Promise<void> {
     now,
   })
   const images = createImageStore(imagesDir, makeThumb, imageRoots)
-  const events = forwardEvents(imagesDir, send)
+  const events = forwardEvents(send, lock)
   const resources = createResourceMonitor({
     read: () => forge.client().memory(),
     readStats: () => forge.client().stats(),

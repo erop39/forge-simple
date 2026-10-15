@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ResourceSample } from '@shared/types'
-import { t, type MessageKey } from '../i18n/t'
+import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import styles from './Resources.module.css'
@@ -11,8 +11,11 @@ export function level(used: number | null, total: number | null): 'normal' | 'wa
   return ratio >= 0.97 ? 'critical' : ratio >= 0.9 ? 'warn' : 'normal'
 }
 
-const gib = (bytes: number | null): string => bytes === null ? '—' : `${(bytes / 1024 ** 3).toFixed(1)} GiB`
-const percent = (value: number | null): string => value === null ? '—' : `${Math.round(value)}%`
+const oneDecimal = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const whole = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 })
+const none = (): string => t('resources.none')
+const gib = (bytes: number | null): string => bytes === null ? none() : t('resources.gib', { value: oneDecimal.format(bytes / 1024 ** 3) })
+const percent = (value: number | null): string => value === null ? none() : t('resources.percent', { value: whole.format(value) })
 
 function Sparkline({ samples, value, maximum }: {
   samples: ResourceSample[]; value(sample: ResourceSample): number | null; maximum: number
@@ -20,7 +23,7 @@ function Sparkline({ samples, value, maximum }: {
   const last = samples.at(-1)?.time ?? 0
   const points = samples.filter((sample) => sample.time >= last - 60_000)
     .map((sample) => ({ t: sample.time, v: value(sample) })).filter((point): point is { t: number; v: number } => point.v !== null)
-  if (points.length < 2 || maximum <= 0) return <span className={styles.noChart}>—</span>
+  if (points.length < 2 || maximum <= 0) return <span className={styles.noChart}>{none()}</span>
   const first = last - 60_000
   const path = points.map(({ t, v }, index) => `${index === 0 ? 'M' : 'L'} ${((t - first) / 60_000 * 100).toFixed(1)} ${(20 - Math.min(1, v / maximum) * 20).toFixed(1)}`).join(' ')
   return <svg className={styles.chart} viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><path d={path} /></svg>
@@ -113,19 +116,19 @@ export function Resources({ onOpenServer }: { onOpenServer: () => void }) {
       <div className={styles.detail}>
         <span>{t('resources.model')}: {gib(memory?.allocated ?? null)}</span>
         <span>{t('resources.cache')}: {gib(cacheUsed)}</span>
-        <span>{t('resources.oom')}: {memory?.oom ?? '—'}</span>
-        <span>{t('resources.temperature')}: {stats?.gpuTemperature === null || stats?.gpuTemperature === undefined ? '—' : `${stats.gpuTemperature} °C`}</span>
+        <span>{t('resources.oom')}: {memory?.oom ?? none()}</span>
+        <span>{t('resources.temperature')}: {stats?.gpuTemperature === null || stats?.gpuTemperature === undefined ? none() : t('resources.celsius', { value: whole.format(stats.gpuTemperature) })}</span>
         <span>{t('resources.fan')}: {percent(stats?.gpuFanPercent ?? null)}</span>
-        <span>{t('resources.power')}: {stats?.gpuPowerWatts ?? '—'} / {stats?.gpuPowerLimitWatts ?? '—'} {t('resources.watts')}</span>
+        <span>{t('resources.power')}: {stats?.gpuPowerWatts ?? none()} / {stats?.gpuPowerLimitWatts ?? none()} {t('resources.watts')}</span>
       </div>
       <div className={styles.server}>
         <span>{server?.name ?? t('connection.none')}</span><span className="mono">{server?.url ?? ''}</span>
-        <span>{connection.latencyMs === null ? '—' : `${connection.latencyMs} ms`}</span>
+        <span>{connection.latencyMs === null ? none() : t('resources.ms', { value: connection.latencyMs })}</span>
       </div>
       <div className={styles.detail}>
-        <span>{t('resources.forgeVersion')}: {stats?.forgeVersion ?? '—'}</span>
-        <span>{t('resources.torchVersion')}: {stats?.torchVersion ?? '—'}</span>
-        <span>{t('resources.extensionVersion')}: {stats?.version ?? '—'}</span>
+        <span>{t('resources.forgeVersion')}: {stats?.forgeVersion ?? none()}</span>
+        <span>{t('resources.torchVersion')}: {stats?.torchVersion ?? none()}</span>
+        <span>{t('resources.extensionVersion')}: {stats?.version ?? none()}</span>
       </div>
       {resources.extension !== 'available' && <p className={styles.hint}>{t('resources.extensionHint')}</p>}
       <div className={styles.actions}>

@@ -120,6 +120,17 @@ test('save removes the partial png when the thumb step fails', async () => {
   expect(await exists(path.join(root, 'thumbs', '7-42.jpg'))).toBe(false)
 })
 
+test('a retry after a crash leaves the orphan alone and picks a free name', async () => {
+  const dir = path.join(root, 'images')
+  const store = createImageStore(() => dir, stubThumb)
+  const first = await store.save(PNG.toString('base64'), name)
+  const second = await store.save(PNG.toString('base64'), name)
+  expect(second.filePath).not.toBe(first.filePath)
+  expect(second.thumbPath).not.toBe(first.thumbPath)
+  expect(await fs.access(first.filePath).then(() => true, () => false)).toBe(true)
+  expect(await fs.access(second.filePath).then(() => true, () => false)).toBe(true)
+})
+
 test('remove deletes both files', async () => {
   const store = createImageStore(() => root, stubThumb)
   const r = await store.save(PNG.toString('base64'), name)

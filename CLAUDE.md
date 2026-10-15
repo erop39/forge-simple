@@ -85,4 +85,11 @@ UI strings, README and CHANGELOG are English.
 
 ## Working method
 
-Plans are executed with superpowers:subagent-driven-development: one implementer subagent per task, a reviewer subagent after it, fix rounds until clean. Briefs, reports and the full ledger live in `.superpowers/sdd/<plan>/` (git-ignored, local only); `docs/STATUS.md` is the tracked summary and must stay in step with it.
+Default (since 2026-10-15, to cut cost — the user asked for it): **one session on a mid-tier model (Sonnet) implements tasks itself** with superpowers:executing-plans — test first, `pnpm build` / `typecheck` / `test`, docs, commit — and does **not** spawn a subagent per task.
+
+- Review: one reviewer subagent per finished milestone (a plan's batch of 3–5 tasks or a risky change such as anything touching the lock, IPC validation or file paths), on a mid-tier model, given a single diff file (`git diff -U5 BASE..HEAD > file`). Use the most capable model only for a plan's final whole-branch review or security-sensitive code.
+- Fix review findings yourself in the same session, then commit; re-review only Critical/Important fixes.
+- Keep context small: read files by line range, grep before reading, don't paste large outputs, don't re-run the full suite when one test file covers the change (run the full suite once before each commit).
+- Keep reports and replies to the user short.
+- Record decisions directly in `docs/STATUS.md` (Decisions section). The old per-task ledgers in `.superpowers/sdd/` are optional local notes.
+- Superpowers subagent-driven-development (implementer + reviewer per task) remains available for large, unclear tasks; use it only when the user asks.

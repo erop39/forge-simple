@@ -109,7 +109,7 @@
   bottom: 0;
   width: 2px;
   background: var(--paper);
-  box-shadow: 0 0 6px var(--canvas);
+  box-shadow: var(--shadow-edge-glow);
   pointer-events: none;
 }
 

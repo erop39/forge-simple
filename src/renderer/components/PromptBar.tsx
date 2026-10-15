@@ -179,7 +179,9 @@ export function PromptBar() {
         event.dataTransfer.dropEffect = 'copy'
         setDragOver(true)
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOver(false)
+      }}
       onDrop={(event) => {
         setDragOver(false)
         const id = Number(event.dataTransfer.getData('application/x-forge-neo-image-id'))

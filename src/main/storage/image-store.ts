@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { inflateSync } from 'node:zlib'
+import { crc32, inflateSync } from 'node:zlib'
 
 export type MakeThumb = (png: Buffer) => { thumb: Buffer; width: number; height: number }
 
@@ -16,15 +16,6 @@ const DATA_URL_PREFIX = /^data:image\/[^;,]+;base64,/i
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024
 const MAX_DECODED_BYTES = 256 * 1024 * 1024
-
-function crc32(bytes: Buffer): number {
-  let crc = 0xffffffff
-  for (const byte of bytes) {
-    crc ^= byte
-    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1
-  }
-  return (crc ^ 0xffffffff) >>> 0
-}
 
 function validPng(bytes: Buffer): boolean {
   if (bytes.length < 45 || bytes.length > MAX_SOURCE_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return false
@@ -124,20 +115,31 @@ export function createImageStore(dir: () => string, makeThumb: MakeThumb, roots:
     },
     async save(pngBase64, name) {
       const root = dir()
-      const base = `${name.jobId}-${name.seed}`
-      const filePath = path.join(root, monthFolder(name.createdAt), `${base}.png`)
-      const thumbPath = path.join(root, 'thumbs', `${base}.jpg`)
+      let filePath = ''
+      let thumbPath = ''
       let pngCreated = false
       let thumbCreated = false
       try {
         const png = Buffer.from(pngBase64.replace(DATA_URL_PREFIX, ''), 'base64')
-        await fs.mkdir(path.dirname(filePath), { recursive: true })
-        await fs.mkdir(path.dirname(thumbPath), { recursive: true })
+        const fileDir = path.join(root, monthFolder(name.createdAt))
+        const thumbDir = path.join(root, 'thumbs')
+        await fs.mkdir(fileDir, { recursive: true })
+        await fs.mkdir(thumbDir, { recursive: true })
         const realRoot = await fs.realpath(root)
-        if (!inside(realRoot, await fs.realpath(path.dirname(filePath)))
-          || !inside(realRoot, await fs.realpath(path.dirname(thumbPath)))) throw new SourceImageError('corrupt')
-        await fs.writeFile(filePath, png, { flag: 'wx' })
-        pngCreated = true
+        if (!inside(realRoot, await fs.realpath(fileDir)) || !inside(realRoot, await fs.realpath(thumbDir))) throw new SourceImageError('corrupt')
+        // A name left by a crash before its row was stored is not overwritten: the next free suffix is used.
+        for (let n = 0; ; n++) {
+          const base = `${name.jobId}-${name.seed}${n === 0 ? '' : `-${n}`}`
+          filePath = path.join(fileDir, `${base}.png`)
+          thumbPath = path.join(thumbDir, `${base}.jpg`)
+          try {
+            await fs.writeFile(filePath, png, { flag: 'wx' })
+            pngCreated = true
+            break
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || n >= 999) throw err
+          }
+        }
         const { thumb, width, height } = makeThumb(png)
         await fs.writeFile(thumbPath, thumb, { flag: 'wx' })
         thumbCreated = true

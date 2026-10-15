@@ -1215,3 +1215,36 @@ describe('restartForge', () => {
     expect(h.health).toEqual([true, false])
   })
 })
+
+test('img2img and upscale results from a hidden source are saved hidden', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  h.repos.images.setHidden([source.id], true)
+  h.state.lockOpen = true
+  h.runner.enqueue(imgParams(source.id))
+  expect(await h.runner.tick()).toBe('ran')
+  h.runner.enqueue(params({ prompt: '', upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }))
+  expect(await h.runner.tick()).toBe('ran')
+  const results = h.repos.images.list({ limit: 5 }).filter((i) => i.id !== source.id)
+  expect(results).toHaveLength(2)
+  expect(results.every((i) => i.hidden)).toBe(true)
+  expect(h.added.every((i) => i.hidden)).toBe(true)
+})
+
+test('a result from a visible source stays visible', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  h.runner.enqueue(imgParams(source.id))
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.added[0]!.hidden).toBe(false)
+})
+
+test('an upscale over the size limit fails with its own code', async () => {
+  const h = setup()
+  const original = sourceFor(h)
+  const big = h.repos.images.insert({ jobId: original.jobId, filePath: '/img/big.png', thumbPath: '/img/t/big.jpg',
+    width: 2000, height: 2000, seed: 1, infotext: '', durationMs: 1 })
+  const job = h.runner.enqueue(params({ prompt: '', upscale: { sourceImageId: big.id, upscaler: 'R-ESRGAN 4x+', scale: 4 } }))[0]!
+  await h.runner.tick()
+  expect(h.repos.jobs.get(job.id)?.error?.code).toBe('sizeLimit')
+})

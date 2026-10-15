@@ -28,6 +28,8 @@ export function jobErrorText(e: JobError): { message: string; detail: string | n
       return { message: t('job.error.sourceLocked'), detail }
     case 'sourceCorrupt':
       return { message: t('job.error.sourceCorrupt'), detail }
+    case 'sizeLimit':
+      return { message: t('job.error.sizeLimit'), detail }
     case 'unexpected':
       return { message: t('job.error.unexpected'), detail }
   }

@@ -505,7 +505,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
 
 test('forwardEvents sends job events and converts ImageRow to ImageRecord without paths', () => {
   const out: { e: string; p: Record<string, unknown> }[] = []
-  const ev = forwardEvents(() => dir, ((e: string, p: Record<string, unknown>) => { out.push({ e, p }) }) as never)
+  const ev = forwardEvents(((e: string, p: Record<string, unknown>) => { out.push({ e, p }) }) as never, { isOpen: () => true })
   const { row } = seedImage()
   ev.runner.imageAdded(row)
   ev.runner.jobUpdate({ id: 1 } as never)
@@ -515,6 +515,19 @@ test('forwardEvents sends job events and converts ImageRow to ImageRecord withou
   expect(out[0]!.p).toMatchObject({ id: row.id, url: `fnc-img://local/image/${row.id}`, thumbUrl: `fnc-img://local/thumb/${row.id}` })
   expect(out[0]!.p).not.toHaveProperty('filePath')
   expect(out[0]!.p).not.toHaveProperty('thumbPath')
+})
+
+test('forwardEvents redacts a hidden image while the lock is closed', () => {
+  const out: Record<string, unknown>[] = []
+  let open = false
+  const ev = forwardEvents(((_e: string, p: Record<string, unknown>) => { out.push(p) }) as never, { isOpen: () => open })
+  const { row } = seedImage()
+  const hidden = { ...row, hidden: true, sourceImageId: 3 }
+  ev.runner.imageAdded(hidden)
+  expect(out[0]).toMatchObject({ id: row.id, hidden: true, locked: true, url: '', thumbUrl: '', infotext: '', jobId: 0, sourceImageId: null })
+  open = true
+  ev.runner.imageAdded(hidden)
+  expect(out[1]).toMatchObject({ locked: false, sourceImageId: 3 })
 })
 
 describe('jobs:enqueue boundary', () => {

@@ -284,7 +284,7 @@ export function createRunner(deps: RunnerDeps): {
         if (!source) return failSource(job, 'sourceMissing')
         if (source.hidden && !deps.lock?.isOpen()) return failSource(job, 'sourceLocked')
         if (job.type === 'upscale' && (source.width * job.params.upscale!.scale > 4096
-          || source.height * job.params.upscale!.scale > 4096)) return failSource(job, 'sourceCorrupt')
+          || source.height * job.params.upscale!.scale > 4096)) return failSource(job, 'sizeLimit')
         try {
           sourceBase64 = await deps.images.readSource(source.filePath)
         } catch (err) {
@@ -331,7 +331,7 @@ export function createRunner(deps: RunnerDeps): {
     return 'paused'
   }
 
-  function failSource(job: Job, code: 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt'): TickResult {
+  function failSource(job: Job, code: 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'sizeLimit'): TickResult {
     setStatus(job.id, 'failed', { error: { code } })
     logError(job, 'log.error.sourceImage', { code })
     return 'ran'
@@ -496,6 +496,9 @@ export function createRunner(deps: RunnerDeps): {
 
     const info = parseInfo(response.info)
     const saved: ImageRow[] = []
+    // What comes out of a hidden source carries its prompt and look, so it is hidden from the start.
+    const hidden = (job.type === 'img2img' || job.type === 'upscale')
+      && repos.images.get((params.img2img ?? params.upscale)!.sourceImageId)?.hidden === true
     let failingPath: string | undefined
     try {
       for (const [i, image] of response.images.entries()) {
@@ -514,7 +517,7 @@ export function createRunner(deps: RunnerDeps): {
         try {
           saved.push(repos.images.insert({
             jobId: job.id, filePath: file.filePath, thumbPath: file.thumbPath,
-            width: file.width, height: file.height, seed, infotext, durationMs,
+            width: file.width, height: file.height, seed, infotext, durationMs, hidden,
             ...(job.type === 'upscale' && repos.images.get(params.upscale!.sourceImageId)
               ? { sourceImageId: params.upscale!.sourceImageId } : {}),
           }))

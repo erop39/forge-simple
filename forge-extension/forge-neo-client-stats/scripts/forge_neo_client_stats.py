@@ -21,6 +21,15 @@ def _number(call):
         return None
 
 
+# The first psutil reading is meaningless; this one starts the interval the next call measures.
+try:
+    import psutil
+
+    psutil.cpu_percent(interval=None)
+except Exception:
+    pass
+
+
 def _gpu_nvml():
     import pynvml
 

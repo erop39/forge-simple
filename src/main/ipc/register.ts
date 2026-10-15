@@ -237,7 +237,7 @@ export function validateImageQuery(q: unknown): ImageQuery {
 export function toImageRecord(row: ImageRow, opts: { tags?: string[]; locked?: boolean } = {}): ImageRecord {
   const { filePath: _filePath, thumbPath: _thumbPath, ...rest } = row
   // jobId 0 (no job has it): the job would lead to the prompt.
-  if (opts.locked) return { ...rest, jobId: 0, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
+  if (opts.locked) return { ...rest, jobId: 0, sourceImageId: null, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
   return {
     ...rest, tags: opts.tags ?? [], locked: false,
     url: toRecordImageUrl(row.id, 'image'), thumbUrl: toRecordImageUrl(row.id, 'thumb'),
@@ -776,12 +776,12 @@ export function registerIpc(
 }
 
 /** Listeners that forward runner and monitor events to the renderer through `send`. */
-export function forwardEvents(_imagesDir: () => string, send: Send) {
+export function forwardEvents(send: Send, lock: { isOpen(): boolean }) {
   return {
     runner: {
       jobUpdate: (job: AppEvents['job:update']) => send('job:update', job),
       jobProgress: (p: AppEvents['job:progress']) => send('job:progress', p),
-      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row)),
+      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row, { locked: row.hidden && !lock.isOpen() })),
       forgeHealth: (unhealthy: boolean) => send('forge:health', { unhealthy }),
     },
     capabilities: (c: ForgeCapabilities) => send('forge:capabilities', c),
