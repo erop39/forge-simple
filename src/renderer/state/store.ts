@@ -91,6 +91,7 @@ export interface AppState {
   /** Queue a finished image for upscale, preserving the current prompt-bar draft. */
   upscaleImage(id: number, sourceParams: GenerationParams, upscaler: string, scale: UpscaleSettings['scale']): Promise<boolean>
   setDefaultUpscaler(kind: 'hires' | 'finished', name: string): Promise<boolean>
+  chooseImagesDir(): Promise<string | null>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
   deleteImage(id: number): Promise<void>
@@ -600,6 +601,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (!(await attempt(async () => { await api.settings.setUpscalers(next); return true }))) return false
         set((s) => ({ settings: s.settings ? { ...s.settings, upscalers: next } : null }))
         return true
+      },
+
+      async chooseImagesDir() {
+        const selected = await api.settings.chooseImagesDir()
+        if (selected !== null) set((s) => ({ settings: s.settings ? { ...s.settings, imagesDir: selected } : null }))
+        return selected
       },
 
       async cancelJob(id) {

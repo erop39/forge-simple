@@ -15,6 +15,7 @@ const api: Api = {
   settings: {
     get: () => invoke('settings:get'),
     setUpscalers: (input) => invoke('settings:setUpscalers', input),
+    chooseImagesDir: () => invoke('settings:chooseImagesDir'),
   },
   servers: {
     list: () => invoke('servers:list'),

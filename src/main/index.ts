@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, protocol } from 'electron'
 import { eventChannel, type AppEvents } from '@shared/ipc'
 import { createActiveForge } from './forge/active-forge'
@@ -12,7 +12,7 @@ import { createLock } from './lock/lock'
 import { createOplog, RETENTION_KEY, retentionDays } from './oplog/oplog'
 import { createRunner } from './queue/runner'
 import { openDb } from './storage/db'
-import { createImageHandler, hiddenImageAccess } from './storage/image-protocol'
+import { createImageHandler } from './storage/image-protocol'
 import { createImageStore, type MakeThumb } from './storage/image-store'
 import { createRepos } from './storage/repos'
 
@@ -95,7 +95,16 @@ async function boot(): Promise<void> {
   const now = (): number => Date.now()
   const repos = createRepos(db, now)
   const oplog = createOplog(db, now, (entry) => send('oplog:added', entry))
-  const imagesDir = (): string => repos.settings.get('imagesDir') ?? join(userData, 'images')
+  const defaultImagesDir = join(userData, 'images')
+  const imagesDir = (): string => repos.settings.get('imagesDir') ?? defaultImagesDir
+  const imageRoots = (): string[] => {
+    let saved: unknown
+    try { saved = JSON.parse(repos.settings.get('images.roots') ?? '[]') }
+    catch { saved = [] }
+    const roots = [defaultImagesDir, ...(Array.isArray(saved) ? saved : []), imagesDir()]
+    return [...new Map(roots.filter((root): root is string => typeof root === 'string' && isAbsolute(root))
+      .map((root) => [resolve(root).toLowerCase(), resolve(root)])).values()]
+  }
   // Closed at every start: whether it is open lives only in memory.
   const lock = createLock(repos.settings, oplog)
 
@@ -111,7 +120,7 @@ async function boot(): Promise<void> {
     oplog,
     now,
   })
-  const images = createImageStore(imagesDir, makeThumb)
+  const images = createImageStore(imagesDir, makeThumb, imageRoots)
   const events = forwardEvents(imagesDir, send)
   const resources = createResourceMonitor({
     read: () => forge.client().memory(),
@@ -170,6 +179,7 @@ async function boot(): Promise<void> {
     images,
     oplog,
     imagesDir,
+    imageRoots,
     createClient: (url, opts) => createForgeClient(url, opts),
     // Dev builds only: points the first-run check of the local Forge at a mock (manual checks).
     localUrl: !app.isPackaged ? process.env['FNC_LOCAL_SERVER'] || undefined : undefined,
@@ -182,10 +192,21 @@ async function boot(): Promise<void> {
       const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
       return result.canceled || !result.filePath ? null : result.filePath
     },
+    chooseImagesDir: async (current) => {
+      const options = { defaultPath: current, properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
+      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+      return result.canceled || !result.filePaths[0] ? null : result.filePaths[0]
+    },
   }, send)
 
   // The files of hidden images answer 404 while the lock is closed.
-  const serveImage = createImageHandler({ baseDir: imagesDir, ...hiddenImageAccess(repos.images, lock, imagesDir) })
+  const serveImage = createImageHandler({
+    baseDir: imagesDir,
+    isBlocked: () => false,
+    lookupImage: repos.images.get,
+    roots: imageRoots,
+    lockOpen: lock.isOpen,
+  })
   protocol.handle('fnc-img', (request) => serveImage(request.url))
 
   runner.recover()

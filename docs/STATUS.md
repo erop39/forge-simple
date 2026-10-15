@@ -6,7 +6,7 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 860 pass after plan 3 Task 7; build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer queued an upscale and displayed its before/after slider; the resource panel showed `/memory` readings and a missing-extension fallback. No mutating request went to the user's Forge.
+- Tests: 867 pass after plan 3 Task 9; build and both typechecks pass. Mock end-to-end tests cover txt2img, img2img and upscale. In isolated Electron windows with mock Forge, Send to img2img generated from a saved image; the viewer queued an upscale and displayed its before/after slider; the resource panel showed `/memory` readings and a missing-extension fallback. A separate Electron smoke run loaded the new database-ID thumbnail URL (64×64) and returned 403 for path traversal attempts. No mutating request went to the user's Forge.
 - Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Plan 3 (generation and server tools): `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`. The user chose to pause plan 2 after Task 3's local commit and start plan 3 on 2026-10-15. Restart/Unload were already delivered as U4; plan 3 Task 1 (hires fix) is done, tested against mock Forge, and awaits a live-window check. No mutating request was sent to the user's Forge.
@@ -40,7 +40,9 @@ taken, or something starts waiting on the user.
 | Plan 3 Task 5 Upscale viewer | done: queue action, separate saved defaults, before/after slider, hidden-source lock handling; checked in an isolated window with mock Forge. Build, typechecks and 846 tests pass. |
 | Plan 3 Task 6 Read-only resource monitor | done: `/memory` parser, 60 in-memory readings, visibility and 2 s/1 s cadence, sampled job peak, stale-response/server-switch protection. Build, typechecks and 852 tests pass. |
 | Plan 3 Task 7 Optional Forge stats extension and resource UI | done: extension parser and read-only script, probe-on-connect with `/memory` fallback, four top-bar meters and detail panel; mock-window visual check, syntax check, build, typechecks and 860 tests pass. The extension has not run on the user's Forge. |
-| Plan 3 Tasks 8–10 | not started |
+| Plan 3 Task 8 Versioned settings export/import | waiting for plan 2's final preset, checkpoint-family override and LoRA-trigger schemas; plan 2 remains paused by user choice. Implementing only today's subset would create an incompatible export contract. |
+| Plan 3 Task 9 Image storage location | done: native folder picker, writable-folder check, append-only managed roots, DB-ID image URLs, old-root reads and path guards. Build, typechecks and 867 tests pass; isolated Electron smoke verified image loading and traversal refusal. |
+| Plan 3 Task 10 Integration and release readiness | not started |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -48,7 +50,7 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
 3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
-4. Continue plan 3 Task 8 (versioned settings export/import); plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
+4. Continue plan 3 Task 10 checks. Task 8 waits for plan 2's final schemas; plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
 
 ## Waiting on the user
 

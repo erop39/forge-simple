@@ -5,7 +5,7 @@ import type { GenerationParams } from '@shared/types'
 import { createLock } from '../lock/lock'
 import { createOplog } from '../oplog/oplog'
 import { openDb } from './db'
-import { createImageHandler, hiddenImageAccess, resolveImageRequest, toImageUrl } from './image-protocol'
+import { createImageHandler, hiddenImageAccess, resolveImageRequest, toImageUrl, toRecordImageUrl } from './image-protocol'
 import { createRepos } from './repos'
 
 const base = path.resolve(path.join('tmp-base', 'images'))
@@ -20,6 +20,40 @@ test('toImageUrl uses forward slashes and encodes each segment', () => {
   const url = toImageUrl(p, base)
   expect(url).toBe('fnc-img://local/my%20folder/a%23b%25.png')
   expect(resolveImageRequest(url, base)).toBe(p)
+})
+
+test('record URLs survive a folder change, enforce the lock, and refuse files outside managed roots', async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), 'fnc-record-url-'))
+  try {
+    const old = path.join(temp, 'old')
+    const next = path.join(temp, 'next')
+    mkdirSync(old)
+    mkdirSync(next)
+    const file = path.join(old, 'image.png')
+    const thumb = path.join(old, 'thumb.jpg')
+    writeFileSync(file, 'image')
+    writeFileSync(thumb, 'thumb')
+    let hidden = true
+    let open = false
+    const handler = createImageHandler({
+      baseDir: () => next, isBlocked: () => false, roots: () => [old, next], lockOpen: () => open,
+      lookupImage: (id) => id === 7 ? { filePath: file, thumbPath: thumb, hidden } : null,
+    })
+    expect(toRecordImageUrl(7, 'image')).toBe('fnc-img://local/image/7')
+    expect((await handler(toRecordImageUrl(7, 'image'))).status).toBe(404)
+    open = true
+    expect((await handler(toRecordImageUrl(7, 'image'))).status).toBe(200)
+    expect((await handler(toRecordImageUrl(7, 'thumb'))).headers.get('Cache-Control')).toBe('no-store')
+    hidden = false
+    open = false
+    expect((await handler(toRecordImageUrl(7, 'image'))).status).toBe(200)
+    expect((await handler('fnc-img://local/../outside.png')).status).toBe(403)
+    const outside = path.join(temp, 'outside.png')
+    writeFileSync(outside, 'private')
+    const malicious = createImageHandler({ baseDir: () => next, isBlocked: () => false, roots: () => [old, next],
+      lockOpen: () => true, lookupImage: () => ({ filePath: outside, thumbPath: outside, hidden: false }) })
+    expect((await malicious(toRecordImageUrl(7, 'image'))).status).toBe(404)
+  } finally { rmSync(temp, { recursive: true, force: true }) }
 })
 
 test('a request for a file inside baseDir resolves to its absolute path', () => {

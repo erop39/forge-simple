@@ -132,3 +132,27 @@ test('remove ignores files that are already gone', async () => {
   const store = createImageStore(() => root, stubThumb)
   await expect(store.remove(path.join(root, 'no.png'), path.join(root, 'no.jpg'))).resolves.toBeUndefined()
 })
+
+test('a folder change keeps old source images readable and deletable', async () => {
+  const oldDir = path.join(root, 'old')
+  const nextDir = path.join(root, 'next')
+  let current = oldDir
+  const store = createImageStore(() => current, stubThumb, () => [oldDir, nextDir])
+  const old = await store.save(onePixelPng().toString('base64'), name)
+  current = nextDir
+  const next = await store.save(onePixelPng().toString('base64'), { ...name, jobId: 8 })
+  expect(next.filePath.startsWith(nextDir)).toBe(true)
+  expect(await store.readSource(old.filePath)).toBe(onePixelPng().toString('base64'))
+  await store.remove(old.filePath, old.thumbPath)
+  expect(await exists(old.filePath)).toBe(false)
+})
+
+test('an unapproved path is neither read nor deleted', async () => {
+  const managed = path.join(root, 'managed')
+  const outside = path.join(root, 'outside.png')
+  await fs.writeFile(outside, onePixelPng())
+  const store = createImageStore(() => managed, stubThumb)
+  await expect(store.readSource(outside)).rejects.toThrow()
+  await expect(store.remove(outside, outside)).rejects.toThrow()
+  expect(await exists(outside)).toBe(true)
+})

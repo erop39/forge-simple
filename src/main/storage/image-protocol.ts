@@ -34,6 +34,17 @@ export function resolveImageRequest(url: string, baseDir: string): string | null
 }
 
 const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }
+const RECORD_REQUEST = /^fnc-img:\/\/local\/(image|thumb)\/([1-9]\d*)$/
+
+/** Stable URLs survive changes to the folder for future images; the database resolves each ID. */
+export function toRecordImageUrl(id: number, kind: 'image' | 'thumb'): string {
+  return `${PREFIX}/${kind}/${id}`
+}
+
+function inside(root: string, file: string): boolean {
+  const rel = path.relative(root, file)
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
+}
 
 export interface ImageHandlerDeps {
   baseDir(): string
@@ -41,6 +52,10 @@ export interface ImageHandlerDeps {
   isBlocked(relPath: string): boolean
   /** True for a file of a hidden image: served (while open) without being cached. */
   isHidden?(relPath: string): boolean
+  /** Production URLs resolve a DB image ID and check every stored path against approved folders. */
+  lookupImage?(id: number): { filePath: string; thumbPath: string; hidden: boolean } | null
+  roots?(): string[]
+  lockOpen?(): boolean
 }
 
 /**
@@ -50,6 +65,30 @@ export interface ImageHandlerDeps {
  */
 export function createImageHandler(deps: ImageHandlerDeps): (url: string) => Promise<Response> {
   return async (url) => {
+    if (deps.lookupImage) {
+      const match = RECORD_REQUEST.exec(url)
+      if (!match) return new Response(null, { status: 403 })
+      const row = deps.lookupImage(Number(match[2]))
+      if (!row || (row.hidden && !deps.lockOpen?.())) return new Response(null, { status: 404 })
+      const file = match[1] === 'image' ? row.filePath : row.thumbPath
+      const type = IMAGE_TYPES[path.extname(file).toLowerCase()]
+      if (!type) return new Response(null, { status: 403 })
+      let realFile: string
+      try { realFile = await fs.realpath(file) }
+      catch { return new Response(null, { status: 404 }) }
+      let allowed = false
+      for (const root of deps.roots?.() ?? [deps.baseDir()]) {
+        if (!inside(path.resolve(root), path.resolve(file))) continue
+        try {
+          if (inside(await fs.realpath(root), realFile)) { allowed = true; break }
+        } catch { /* the old volume may be offline */ }
+      }
+      if (!allowed) return new Response(null, { status: 404 })
+      const headers: Record<string, string> = { 'Content-Type': type }
+      if (row.hidden) headers['Cache-Control'] = 'no-store'
+      try { return new Response(new Uint8Array(await fs.readFile(realFile)), { headers }) }
+      catch { return new Response(null, { status: 404 }) }
+    }
     const base = deps.baseDir()
     const file = resolveImageRequest(url, base)
     const type = file ? IMAGE_TYPES[path.extname(file).toLowerCase()] : undefined

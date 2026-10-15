@@ -1,5 +1,7 @@
 import { appendFile, writeFile } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
@@ -15,7 +17,7 @@ import {
   isRetentionDays, retentionDays, RETENTION_KEY, toJsonLines, type Oplog, type OplogFilter,
 } from '../oplog/oplog'
 import type { createRunner } from '../queue/runner'
-import { toImageUrl } from '../storage/image-protocol'
+import { toRecordImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
   DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, isUpscaleSettings, normalizeTag, type createRepos, type ImageRow,
@@ -31,6 +33,8 @@ export interface IpcDeps {
   images: ReturnType<typeof createImageStore>
   oplog: Oplog
   imagesDir(): string
+  imageRoots?(): string[]
+  chooseImagesDir?(current: string): Promise<string | null>
   /** Builds a throwaway client for a candidate address. */
   createClient(url: string, opts?: { pingTimeoutMs?: number }): ForgeClient
   copyToClipboard(text: string): void
@@ -230,15 +234,13 @@ export function validateImageQuery(q: unknown): ImageQuery {
  * The renderer's copy of an image row. A `locked` row (a hidden image while the lock is closed) keeps only what
  * its tile needs for its place in the grid: no addresses, infotext, seed, tags or job id (jobId is 0).
  */
-export function toImageRecord(
-  row: ImageRow, imagesDir: string, opts: { tags?: string[]; locked?: boolean } = {},
-): ImageRecord {
-  const { filePath, thumbPath, ...rest } = row
+export function toImageRecord(row: ImageRow, opts: { tags?: string[]; locked?: boolean } = {}): ImageRecord {
+  const { filePath: _filePath, thumbPath: _thumbPath, ...rest } = row
   // jobId 0 (no job has it): the job would lead to the prompt.
   if (opts.locked) return { ...rest, jobId: 0, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true }
   return {
     ...rest, tags: opts.tags ?? [], locked: false,
-    url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir),
+    url: toRecordImageUrl(row.id, 'image'), thumbUrl: toRecordImageUrl(row.id, 'thumb'),
   }
 }
 
@@ -295,6 +297,27 @@ export function registerIpc(
     }
     repos.settings.set(HIRES_UPSCALER_KEY, choices.hires)
     repos.settings.set(FINISHED_UPSCALER_KEY, choices.finished)
+  })
+
+  handle('settings:chooseImagesDir', async () => {
+    const chosen = await deps.chooseImagesDir?.(deps.imagesDir())
+    if (chosen == null) return null
+    if (typeof chosen !== 'string' || !isAbsolute(chosen)) return fail('error.invalidParams')
+    let canonical: string
+    try {
+      canonical = await fs.realpath(chosen)
+      if (!(await fs.stat(canonical)).isDirectory()) return fail('error.storageUnavailable')
+      const probe = join(canonical, `.forge-neo-client-${randomUUID()}`)
+      const handle = await fs.open(probe, 'wx')
+      try { await handle.close() }
+      finally { await fs.rm(probe, { force: true }) }
+    } catch { return fail('error.storageUnavailable') }
+    const roots = [...new Map([...(deps.imageRoots?.() ?? [deps.imagesDir()]), canonical]
+      .map((root) => [resolve(root).toLowerCase(), resolve(root)])).values()]
+    repos.settings.set('images.roots', JSON.stringify(roots))
+    repos.settings.set('imagesDir', canonical)
+    oplog.write({ level: 'info', category: 'settings', messageKey: 'log.settings.imagesDirChanged' })
+    return canonical
   })
 
   // ---- saved servers ----------------------------------------------------
@@ -571,8 +594,7 @@ export function registerIpc(
   function toRecords(rows: ImageRow[]): ImageRecord[] {
     const open = lock.isOpen()
     const tags = repos.tags.forImages(rows.filter((r) => open || !r.hidden).map((r) => r.id))
-    const dir = deps.imagesDir()
-    return rows.map((r) => toImageRecord(r, dir, { tags: tags.get(r.id) ?? [], locked: r.hidden && !open }))
+    return rows.map((r) => toImageRecord(r, { tags: tags.get(r.id) ?? [], locked: r.hidden && !open }))
   }
 
   const queryImages = (q: unknown): ImageRecord[] =>
@@ -754,12 +776,12 @@ export function registerIpc(
 }
 
 /** Listeners that forward runner and monitor events to the renderer through `send`. */
-export function forwardEvents(imagesDir: () => string, send: Send) {
+export function forwardEvents(_imagesDir: () => string, send: Send) {
   return {
     runner: {
       jobUpdate: (job: AppEvents['job:update']) => send('job:update', job),
       jobProgress: (p: AppEvents['job:progress']) => send('job:progress', p),
-      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row, imagesDir())),
+      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row)),
       forgeHealth: (unhealthy: boolean) => send('forge:health', { unhealthy }),
     },
     capabilities: (c: ForgeCapabilities) => send('forge:capabilities', c),

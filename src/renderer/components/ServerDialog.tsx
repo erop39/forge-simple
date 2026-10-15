@@ -125,6 +125,7 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
         </p>
       )}
       <ForgeActions running={running} busyId={busyId} />
+      <ImageStorage />
       {error !== null && (
         <p role="alert" className={styles.error}>
           {error}
@@ -138,6 +139,29 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       </div>
     </div>
   )
+}
+
+function ImageStorage() {
+  const dir = useAppStore((s) => s.settings?.imagesDir ?? '')
+  const choose = useAppStore((s) => s.chooseImagesDir)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function pick(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try { await choose() }
+    catch (err) { setError(errorText(err)) }
+    setBusy(false)
+  }
+
+  return <section className={styles.storage} aria-label={t('storage.title')}>
+    <h3 className={styles.forgeHeading}>{t('storage.title')}</h3>
+    <p className={styles.storagePath} title={dir}>{dir}</p>
+    <p className={styles.hint}>{t('storage.futureOnly')}</p>
+    <Button disabled={busy} onClick={() => void pick()}>{t('storage.choose')}</Button>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>
 }
 
 /** Unload model and Restart Forge for the active server. Restart asks first and needs --api-server-stop. */

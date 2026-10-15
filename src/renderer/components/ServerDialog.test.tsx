@@ -48,6 +48,15 @@ test('the list shows each server with its address; the active one is marked with
   expect(within(row('Studio')).queryByText(en['server.active'])).toBeNull()
 })
 
+test('image storage shows the current folder and opens the native picker action', async () => {
+  const chooseImagesDir = vi.fn(async () => 'C:\\Pictures\\Forge')
+  setup({ settings: { serverUrl: home.url, imagesDir: 'C:\\Pictures\\Old', localUrl: '' }, chooseImagesDir })
+  expect(screen.getByText('C:\\Pictures\\Old')).toBeDefined()
+  expect(screen.getByText(en['storage.futureOnly'])).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['storage.choose'] }))
+  expect(chooseImagesDir).toHaveBeenCalledOnce()
+})
+
 test('Use activates that server', async () => {
   const { activateServer } = setup()
   await userEvent.click(within(row('Studio')).getByRole('button', { name: en['server.use'] }))

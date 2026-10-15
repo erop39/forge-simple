@@ -63,26 +63,54 @@ function monthFolder(createdAt: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function createImageStore(dir: () => string, makeThumb: MakeThumb): {
+function inside(root: string, file: string): boolean {
+  const rel = path.relative(root, file)
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
+}
+
+export function createImageStore(dir: () => string, makeThumb: MakeThumb, roots: () => string[] = () => [dir()]): {
   save(pngBase64: string, name: { jobId: number; seed: number; createdAt: number }): Promise<SavedImage>
   remove(filePath: string, thumbPath: string): Promise<void>
   readSource(filePath: string): Promise<string>
 } {
+  async function removeOne(file: string): Promise<void> {
+    const resolved = path.resolve(file)
+    for (const root of roots()) {
+      if (!inside(path.resolve(root), resolved)) continue
+      try {
+        const [realRoot, realParent] = await Promise.all([fs.realpath(root), fs.realpath(path.dirname(resolved))])
+        if (realParent === realRoot || inside(realRoot, realParent)) {
+          await fs.rm(resolved, { force: true })
+          return
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+        throw err
+      }
+    }
+    throw new SourceImageError('corrupt')
+  }
+
   async function remove(filePath: string, thumbPath: string): Promise<void> {
-    await Promise.all([fs.rm(filePath, { force: true }), fs.rm(thumbPath, { force: true })])
+    await Promise.all([removeOne(filePath), removeOne(thumbPath)])
   }
 
   return {
     async readSource(filePath) {
-      const root = path.resolve(dir())
       const resolved = path.resolve(filePath)
-      if (!resolved.startsWith(root + path.sep) || path.extname(resolved).toLowerCase() !== '.png') {
+      if (path.extname(resolved).toLowerCase() !== '.png'
+        || !roots().some((root) => inside(path.resolve(root), resolved))) {
         throw new SourceImageError('corrupt')
       }
       let bytes: Buffer
       try {
-        const [realRoot, realFile] = await Promise.all([fs.realpath(root), fs.realpath(resolved)])
-        if (!realFile.startsWith(realRoot + path.sep)) throw new SourceImageError('corrupt')
+        const realFile = await fs.realpath(resolved)
+        let managed = false
+        for (const root of roots()) {
+          if (!inside(path.resolve(root), resolved)) continue
+          if (inside(await fs.realpath(root), realFile)) { managed = true; break }
+        }
+        if (!managed) throw new SourceImageError('corrupt')
         bytes = await fs.readFile(realFile)
       } catch (err) {
         if (err instanceof SourceImageError) throw err
@@ -99,16 +127,24 @@ export function createImageStore(dir: () => string, makeThumb: MakeThumb): {
       const base = `${name.jobId}-${name.seed}`
       const filePath = path.join(root, monthFolder(name.createdAt), `${base}.png`)
       const thumbPath = path.join(root, 'thumbs', `${base}.jpg`)
+      let pngCreated = false
+      let thumbCreated = false
       try {
         const png = Buffer.from(pngBase64.replace(DATA_URL_PREFIX, ''), 'base64')
         await fs.mkdir(path.dirname(filePath), { recursive: true })
         await fs.mkdir(path.dirname(thumbPath), { recursive: true })
-        await fs.writeFile(filePath, png)
+        const realRoot = await fs.realpath(root)
+        if (!inside(realRoot, await fs.realpath(path.dirname(filePath)))
+          || !inside(realRoot, await fs.realpath(path.dirname(thumbPath)))) throw new SourceImageError('corrupt')
+        await fs.writeFile(filePath, png, { flag: 'wx' })
+        pngCreated = true
         const { thumb, width, height } = makeThumb(png)
-        await fs.writeFile(thumbPath, thumb)
+        await fs.writeFile(thumbPath, thumb, { flag: 'wx' })
+        thumbCreated = true
         return { filePath, thumbPath, width, height }
       } catch (err) {
-        await remove(filePath, thumbPath).catch(() => undefined)
+        if (pngCreated) await removeOne(filePath).catch(() => undefined)
+        if (thumbCreated) await removeOne(thumbPath).catch(() => undefined)
         throw err
       }
     },

@@ -48,6 +48,7 @@ function fakeApi(over: { serverUrl?: string | null; catalog?: Catalog } = {}) {
     settings: {
       get: vi.fn(async () => ({ serverUrl: over.serverUrl === undefined ? 'http://127.0.0.1:7861' : over.serverUrl, imagesDir: 'C:\\images', localUrl: 'http://127.0.0.1:7860' })),
       setUpscalers: vi.fn(async () => {}),
+      chooseImagesDir: vi.fn(async () => null as string | null),
     },
     servers: {
       list: vi.fn(async (): Promise<ServerInfo[]> => (over.serverUrl === null ? [] : [home])),
@@ -378,6 +379,16 @@ test('saving a default upscaler persists both preferences and updates local sett
   expect(await store.getState().setDefaultUpscaler('finished', 'R-ESRGAN 4x+')).toBe(true)
   expect(api.settings.setUpscalers).toHaveBeenCalledWith({ hires: 'Latent', finished: 'R-ESRGAN 4x+' })
   expect(store.getState().settings?.upscalers).toEqual({ hires: 'Latent', finished: 'R-ESRGAN 4x+' })
+})
+
+test('choosing a folder updates the local image-storage setting only after a selection', async () => {
+  const { store, api } = await ready()
+  const original = store.getState().settings?.imagesDir
+  expect(await store.getState().chooseImagesDir()).toBeNull()
+  expect(store.getState().settings?.imagesDir).toBe(original)
+  api.settings.chooseImagesDir.mockResolvedValueOnce('C:\\Pictures\\Forge')
+  expect(await store.getState().chooseImagesDir()).toBe('C:\\Pictures\\Forge')
+  expect(store.getState().settings?.imagesDir).toBe('C:\\Pictures\\Forge')
 })
 
 test('generate keeps a rejection key in lastError until dismissed', async () => {

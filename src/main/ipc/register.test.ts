@@ -40,6 +40,7 @@ let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
 let exportPath: string | null
 let exportNames: string[]
+let selectedImagesDir: string | null
 /** The address main treats as Forge on this PC; tests point it at the mock (or at nothing). */
 let localServer: string
 
@@ -78,6 +79,7 @@ beforeEach(async () => {
   copiedText = null
   exportPath = null
   exportNames = []
+  selectedImagesDir = null
   localServer = mock.url
   const send = <K extends keyof AppEvents>(e: K, p: AppEvents[K]): void => { sent.push({ e, p }) }
   registerIpc(
@@ -86,7 +88,8 @@ beforeEach(async () => {
       repos,
       catalog: () => (catalogThrows ? { get: () => Promise.reject(new TypeError('boom')) } : forge.catalog()),
       onServerChanged: () => { serverChanges++ },
-      runner, monitor, images, oplog, imagesDir: () => dir,
+      runner, monitor, images, oplog, imagesDir: () => repos.settings.get('imagesDir') ?? dir,
+      imageRoots: () => [dir], chooseImagesDir: async () => selectedImagesDir,
       createClient: (url) => createForgeClient(url, { pingTimeoutMs: 500 }),
       copyToClipboard: (value) => { copiedText = value },
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
@@ -114,6 +117,22 @@ const goodParams = (over: Partial<GenerationParams> = {}): GenerationParams => (
 
 const addServer = (url: string, name = '') => call('servers:add', { name, url })
 const sentOf = (e: string) => sent.filter((s) => s.e === e).map((s) => s.p)
+
+test('choosing image storage validates writability and changes only the future-image folder', async () => {
+  const next = path.join(dir, 'next')
+  mkdirSync(next)
+  selectedImagesDir = next
+  expect(await call('settings:chooseImagesDir')).toBe(next)
+  expect((await call('settings:get') as { imagesDir: string }).imagesDir).toBe(next)
+  expect(JSON.parse(repos.settings.get('images.roots')!)).toEqual([dir, next])
+  expect(logKeys()).toContain('log.settings.imagesDirChanged')
+  selectedImagesDir = null
+  expect(await call('settings:chooseImagesDir')).toBeNull()
+  expect((await call('settings:get') as { imagesDir: string }).imagesDir).toBe(next)
+  selectedImagesDir = path.join(dir, 'missing')
+  await expect(call('settings:chooseImagesDir')).rejects.toThrow('error.storageUnavailable')
+  expect((await call('settings:get') as { imagesDir: string }).imagesDir).toBe(next)
+})
 
 describe('servers', () => {
   test('add normalizes, tests, saves; the first server becomes active and the client follows it', async () => {
@@ -402,7 +421,7 @@ test('images:list maps file paths to fnc-img URLs', async () => {
   const list = (await call('images:list', { limit: 100000 })) as Record<string, unknown>[]
   expect(list).toHaveLength(1)
   expect(list[0]).toMatchObject({
-    id: row.id, url: 'fnc-img://local/2026-10/1-5.png', thumbUrl: 'fnc-img://local/thumbs/1-5.jpg',
+    id: row.id, url: `fnc-img://local/image/${row.id}`, thumbUrl: `fnc-img://local/thumb/${row.id}`,
   })
   expect(list[0]).not.toHaveProperty('filePath')
   await expect(call('images:list', { limit: 'x' })).rejects.toThrow('error.invalidParams')
@@ -412,7 +431,7 @@ test('images:details returns the full image and saved generation settings', asyn
   const { row } = seedImage()
   const details = await call('images:details', row.id)
   expect(details).toMatchObject({
-    image: { id: row.id, url: 'fnc-img://local/2026-10/1-5.png' },
+    image: { id: row.id, url: `fnc-img://local/image/${row.id}` },
     params: { prompt: 'a cat', checkpoint: CKPT },
     jobType: 'txt2img',
   })
@@ -493,7 +512,7 @@ test('forwardEvents sends job events and converts ImageRow to ImageRecord withou
   ev.runner.jobProgress({ jobId: 1 } as never)
   ev.connection({ state: 'connected', latencyMs: 1, attempts: 0, lastOkAt: 1 })
   expect(out.map((o) => o.e)).toEqual(['image:added', 'job:update', 'job:progress', 'connection'])
-  expect(out[0]!.p).toMatchObject({ id: row.id, url: 'fnc-img://local/2026-10/1-5.png', thumbUrl: 'fnc-img://local/thumbs/1-5.jpg' })
+  expect(out[0]!.p).toMatchObject({ id: row.id, url: `fnc-img://local/image/${row.id}`, thumbUrl: `fnc-img://local/thumb/${row.id}` })
   expect(out[0]!.p).not.toHaveProperty('filePath')
   expect(out[0]!.p).not.toHaveProperty('thumbPath')
 })
@@ -904,7 +923,7 @@ describe('hidden images and the lock', () => {
     await call('images:setHidden', [row.id], true)
     await call('lock:open', 'secret-pass')
     expect(await record(row.id)).toMatchObject({
-      hidden: true, locked: false, url: 'fnc-img://local/2026-10/1-5.png', seed: 5, infotext: 'i', tags: ['secret-tag'],
+      hidden: true, locked: false, url: `fnc-img://local/image/${row.id}`, seed: 5, infotext: 'i', tags: ['secret-tag'],
     })
     expect(await call('images:query', { limit: 10, tags: ['secret-tag'] })).toHaveLength(1)
     expect(await call('images:details', row.id)).toMatchObject({ image: { id: row.id, locked: false }, params: { prompt: 'a cat' } })

@@ -11,7 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
-  'error.tooManyAttempts',
+  'error.tooManyAttempts', 'error.storageUnavailable',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -66,6 +66,8 @@ export interface Api {
     get(): Promise<AppSettings>
     /** Saved preferences are used only when the active Forge offers the named upscaler. */
     setUpscalers(input: { hires: string; finished: string }): Promise<void>
+    /** Opens the native folder picker; null means cancelled. Only future images use the selected folder. */
+    chooseImagesDir(): Promise<string | null>
   }
   servers: {
     list(): Promise<ServerInfo[]>
@@ -167,7 +169,7 @@ declare global { interface Window { api: Api } }
 
 /** Request channels, `<area>:<method>`. Event channels are `event:<name>`. */
 export const CHANNELS = [
-  'settings:get', 'settings:setUpscalers',
+  'settings:get', 'settings:setUpscalers', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'catalog:get', 'catalog:defaults', 'catalog:parts',

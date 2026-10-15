@@ -157,6 +157,10 @@ export const en = {
   'resources.switchServer': 'Switch server',
   'resources.unloaded': 'Model unloaded',
   'resources.unloadFailed': 'Could not unload the model',
+  'error.storageUnavailable': 'The selected folder is unavailable or not writable.',
+  'storage.title': 'Image storage',
+  'storage.choose': 'Choose folder',
+  'storage.futureOnly': 'New images go here. Existing images stay in their original folders.',
 
   'logPanel.title': 'Activity log',
   'logPanel.close': 'Close',
@@ -243,6 +247,7 @@ export const en = {
   'log.server.unloaded': 'Model unloaded on {name}.',
   'log.settings.serverChanged': 'Active server is now {new}.',
   'log.settings.changed': 'Setting {key} changed from {old} to {new}.',
+  'log.settings.imagesDirChanged': 'Folder for future images changed.',
   'log.storage.imageDeleted': 'Image {imageId} deleted.',
   'log.storage.fileRemoveFailed': "Couldn't remove an image file: {filePath}",
   'log.storage.imagesHidden': 'Images hidden: {ids}.',
