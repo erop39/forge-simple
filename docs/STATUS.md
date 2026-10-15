@@ -42,7 +42,7 @@ taken, or something starts waiting on the user.
 | Plan 3 Task 7 Optional Forge stats extension and resource UI | done: extension parser and read-only script, probe-on-connect with `/memory` fallback, four top-bar meters and detail panel; mock-window visual check, syntax check, build, typechecks and 860 tests pass. The extension has not run on the user's Forge. |
 | Plan 3 Task 8 Versioned settings export/import | waiting for plan 2's final preset, checkpoint-family override and LoRA-trigger schemas; plan 2 remains paused by user choice. Implementing only today's subset would create an incompatible export contract. |
 | Plan 3 Task 9 Image storage location | done: native folder picker, writable-folder check, append-only managed roots, DB-ID image URLs, old-root reads and path guards. Build, typechecks and 867 tests pass; isolated Electron smoke verified image loading and traversal refusal. |
-| Plan 3 Task 10 Integration and release readiness | not started |
+| Plan 3 Task 10 Integration and release readiness | done on the mock (2026-10-15): in an isolated Electron window (throwaway profile, mock Forge) txt2img, hires, img2img and upscale each produced an image, the upscale kept its source link, and an img2img with a missing source was refused with `error.notFound`. Mock end-to-end tests and the full suite pass. Not done: real-Forge check, plan 1 release (0.1.0), plan 2 Tasks 4–10, plan 3 Task 8. |
 | Final whole-branch review | not started |
 
 ## How to resume
