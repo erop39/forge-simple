@@ -8,6 +8,12 @@ export interface HiresSettings {
   secondPassSteps: number;
   denoisingStrength: number;
 }
+export interface Img2ImgSettings {
+  sourceImageId: number;
+  denoisingStrength: number;
+  /** Forge resize_mode: resize, crop, fill, or latent upscale. */
+  resizeMode: 0 | 1 | 2 | 3;
+}
 export interface GenerationParams {
   family: Family;
   checkpoint: string;          // поле title из /sd-models
@@ -26,8 +32,10 @@ export interface GenerationParams {
   loras: LoraRef[];
   /** Optional so jobs saved before hires fix remain valid. Scale 1 means Off. */
   hires?: HiresSettings;
+  /** Optional for old txt2img jobs. Image bytes are never persisted with job params. */
+  img2img?: Img2ImgSettings;
 }
-export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'unexpected';
+export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'unexpected';
 /** detail carries server or system text verbatim; missing carries the unavailable file values. */
 export interface JobError { code: JobErrorCode; status?: number; detail?: string; missing?: string[] }
 export interface Job {

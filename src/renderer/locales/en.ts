@@ -21,6 +21,9 @@ export const en = {
   'job.error.stopped': 'Stopped before it finished: the app closed or Forge restarted.',
   'job.restartForge': 'Restart Forge',
   'job.error.corruptJob': "This job's settings are damaged. Start a new one.",
+  'job.error.sourceMissing': 'The source image was deleted or moved.',
+  'job.error.sourceLocked': 'Unlock hidden images to use this source.',
+  'job.error.sourceCorrupt': "The source image can't be read.",
   'job.error.unexpected': 'Something went wrong. Try again.',
 
   'image.frame': '№ {n} · {s} s · {w}×{h} · {time}',
@@ -190,6 +193,7 @@ export const en = {
   'log.error.generation': 'A generation failed.',
   'log.error.missingParts': 'A job needs files the server does not have: {missing}.',
   'log.error.noImages': 'Forge returned no images.',
+  'log.error.sourceImage': 'A source image was unavailable, locked, or damaged.',
   'log.error.runner': 'Unexpected error in the queue: {detail}',
   'log.error.storage': "Couldn't save an image: {detail}",
   'log.generation.started': 'Generation started: {width}×{height}, {steps} steps.',

@@ -140,6 +140,26 @@ test('hires fix sends second-pass settings and stores a larger result', async ()
   expect(app.repos.images.list({ limit: 10 }).map((image) => [image.width, image.height])).toEqual([[128, 192]])
 })
 
+test('img2img reads a saved source, sends it to mock Forge, and stores the resized result', async () => {
+  const mock = await mockForge()
+  const app = launch(mock.url)
+  app.runner.start()
+  const [first] = app.runner.enqueue(await app.params())
+  await vi.waitFor(() => expect(app.job(first!.id).status).toBe('done'), WAIT)
+  const source = app.repos.images.list({ limit: 1 })[0]!
+  const [second] = app.runner.enqueue(await app.params({
+    width: 128, height: 96,
+    img2img: { sourceImageId: source.id, denoisingStrength: 0.6, resizeMode: 2 },
+  }))
+  await vi.waitFor(() => expect(app.job(second!.id).status).toBe('done'), WAIT)
+  const sent = mock.requests.find((r) => r.path === '/sdapi/v1/img2img')
+  expect(sent?.body).toMatchObject({ denoising_strength: 0.6, resize_mode: 2, width: 128, height: 96 })
+  expect((sent?.body as { init_images: string[] }).init_images[0]).toBeTruthy()
+  expect(app.repos.images.list({ limit: 1 })[0]).toMatchObject({ jobId: second!.id, width: 128, height: 96 })
+  expect(JSON.stringify(app.oplog.list())).not.toContain('init_images')
+  expect(JSON.stringify(app.repos.jobs.get(second!.id)?.params)).not.toContain('init_images')
+})
+
 test('server goes down mid-queue → first job interrupted, second stays queued; after restart the second completes', async () => {
   const mock = await mockForge()
   const port = Number(new URL(mock.url).port)

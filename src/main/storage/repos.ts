@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, HiresSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+  GenerationParams, HiresSettings, Img2ImgSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
 } from '@shared/types'
 import type { Db } from './db'
 import { buildImageQuery, escapeLike } from './image-query'
@@ -8,7 +8,7 @@ export interface Server extends ServerInfo { lastConnectedAt: number | null }
 export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' | 'locked'> { filePath: string; thumbPath: string }
 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
-type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'>
+type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null }
 
 /** Another saved (not removed) server already has that address. */
 export class DuplicateServerError extends Error {
@@ -87,6 +87,15 @@ export function isHiresSettings(value: unknown, width: number, height: number): 
     && width * scale <= 4096 && height * scale <= 4096
 }
 
+export function isImg2ImgSettings(value: unknown): value is Img2ImgSettings {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const o = value as Record<string, unknown>
+  return typeof o.sourceImageId === 'number' && Number.isSafeInteger(o.sourceImageId) && o.sourceImageId > 0
+    && typeof o.denoisingStrength === 'number' && Number.isFinite(o.denoisingStrength)
+    && o.denoisingStrength >= 0 && o.denoisingStrength <= 1
+    && typeof o.resizeMode === 'number' && [0, 1, 2, 3].includes(o.resizeMode)
+}
+
 export function isGenerationParams(p: unknown): p is GenerationParams {
   if (typeof p !== 'object' || p === null) return false
   const o = p as Record<string, unknown>
@@ -96,6 +105,7 @@ export function isGenerationParams(p: unknown): p is GenerationParams {
     && str('prompt') && str('negativePrompt') && num('width') && num('height') && num('steps') && num('cfgScale')
     && num('distilledCfg') && str('sampler') && str('scheduler') && num('seed') && Array.isArray(o.loras)
     && (o.hires === undefined || isHiresSettings(o.hires, o.width as number, o.height as number))
+    && (o.img2img === undefined || isImg2ImgSettings(o.img2img))
 }
 
 const toJob = (r: JobSql): Job => ({
@@ -287,9 +297,9 @@ export function createRepos(db: Db, now: () => number) {
     },
     insert(row: NewImage): ImageRow {
       const res = db.prepare(
-        `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs)
+        `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms, source_image_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs, row.sourceImageId ?? null)
       return toImage(imageById.get(Number(res.lastInsertRowid)) as ImageSql)
     },
     list(opts: { limit: number; beforeId?: number }): ImageRow[] {

@@ -7,6 +7,7 @@ import type { ProbeFindings } from '../forge/findings'
 import { createOplog, type Oplog } from '../oplog/oplog'
 import { openDb, type Db } from '../storage/db'
 import type { createImageStore } from '../storage/image-store'
+import { SourceImageError } from '../storage/image-store'
 import { createRepos, type ImageRow } from '../storage/repos'
 import { createRunner, RECOVERY_UNLOAD_TIMEOUT_MS } from './runner'
 
@@ -61,25 +62,27 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
   const gens: Deferred<GenerationResponse>[] = []
   const signals: AbortSignal[] = []
   const health: boolean[] = []
-  const state = { unloadFails: false, restart: 'restarting' as RestartOutcome | Error, clientOverride: null as unknown, pingOk: true, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
+  const state = { unloadFails: false, restart: 'restarting' as RestartOutcome | Error, clientOverride: null as unknown, pingOk: true, lockOpen: false, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
+  const generate = (_body: unknown, signal?: AbortSignal) => {
+    const d = deferred<GenerationResponse>()
+    gens.push(d)
+    if (signal) {
+      signals.push(signal)
+      signal.addEventListener('abort', () => {
+        if (opts.abortResolves) d.resolve(response())
+        else d.reject(new ForgeError('network', 'aborted'))
+      })
+    }
+    if (opts.autoComplete) d.resolve(response())
+    return d.promise
+  }
   const client = {
     ping: vi.fn(async () => {
       if (!state.pingOk) throw new ForgeError('network', 'down')
       return 5
     }),
-    txt2img: vi.fn((_body: unknown, signal?: AbortSignal) => {
-      const d = deferred<GenerationResponse>()
-      gens.push(d)
-      if (signal) {
-        signals.push(signal)
-        signal.addEventListener('abort', () => {
-          if (opts.abortResolves) d.resolve(response())
-          else d.reject(new ForgeError('network', 'aborted'))
-        })
-      }
-      if (opts.autoComplete) d.resolve(response())
-      return d.promise
-    }),
+    txt2img: vi.fn(generate),
+    img2img: vi.fn(generate),
     progress: vi.fn(async () => {
       if (state.progress instanceof Error) throw state.progress
       return state.progress
@@ -100,6 +103,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
       filePath: `/img/${n.jobId}-${n.seed}.png`, thumbPath: `/img/t/${n.jobId}-${n.seed}.jpg`, width: 896, height: 1152,
     })),
     remove: vi.fn(async () => undefined),
+    readSource: vi.fn(async () => 'cG5n'),
   }
 
   const runner = createRunner({
@@ -111,6 +115,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
     findings: FINDINGS,
     repos,
     images: images as unknown as ReturnType<typeof createImageStore>,
+    lock: { isOpen: () => state.lockOpen },
     oplog,
     events: {
       jobUpdate: (j) => { updates.push(j); events.push(`update:${j.status}`) },
@@ -143,6 +148,127 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
 
 const statuses = (h: ReturnType<typeof setup>) => h.repos.jobs.listActive().map((j) => j.status)
 const logKeys = (h: ReturnType<typeof setup>) => h.oplog.list().reverse().map((e) => e.messageKey)
+
+function sourceFor(h: ReturnType<typeof setup>): ImageRow {
+  const original = h.repos.jobs.insert(h.repos.servers.active()!.id, 'txt2img', params())
+  h.repos.jobs.setStatus(original.id, 'done')
+  return h.repos.images.insert({ jobId: original.id, filePath: '/img/original.png', thumbPath: '/img/t/original.jpg',
+    width: 64, height: 64, seed: 5, infotext: '', durationMs: 10 })
+}
+
+const imgParams = (id: number): GenerationParams => params({
+  img2img: { sourceImageId: id, denoisingStrength: 0.5, resizeMode: 1 },
+})
+
+test('img2img dispatches from a managed source and keeps its job type on retry', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  const job = h.runner.enqueue(imgParams(source.id))[0]!
+  expect(job.type).toBe('img2img')
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.client.txt2img).not.toHaveBeenCalled()
+  expect(h.client.img2img).toHaveBeenCalledWith(expect.objectContaining({ init_images: ['cG5n'], resize_mode: 1 }), expect.any(AbortSignal))
+  expect(h.repos.jobs.get(job.id)?.status).toBe('done')
+  expect(JSON.stringify(h.oplog.list())).not.toContain('cG5n')
+  const failed = h.repos.jobs.insert(job.serverId, 'img2img', imgParams(source.id))
+  h.repos.jobs.setStatus(failed.id, 'failed')
+  expect(h.runner.retry(failed.id).type).toBe('img2img')
+})
+
+test('img2img refuses missing, locked, and unreadable sources before Forge receives bytes', async () => {
+  const h = setup()
+  const deletedSource = sourceFor(h)
+  const missing = h.runner.enqueue(imgParams(deletedSource.id))[0]!
+  h.repos.images.delete(deletedSource.id)
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(missing.id)?.error?.code).toBe('sourceMissing')
+  const source = sourceFor(h)
+  h.repos.images.setHidden([source.id], true)
+  h.state.lockOpen = true
+  const locked = h.runner.enqueue(imgParams(source.id))[0]!
+  h.state.lockOpen = false
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(locked.id)?.error?.code).toBe('sourceLocked')
+  h.state.lockOpen = true
+  h.images.readSource.mockRejectedValueOnce(new SourceImageError('corrupt'))
+  const corrupt = h.runner.enqueue(imgParams(source.id))[0]!
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(corrupt.id)?.error?.code).toBe('sourceCorrupt')
+  expect(h.client.img2img).not.toHaveBeenCalled()
+})
+
+test('img2img cancellation and link loss use the same queue semantics as txt2img', async () => {
+  const h = setup()
+  const source = sourceFor(h)
+  const first = h.runner.enqueue(imgParams(source.id))[0]!
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.client.img2img).toHaveBeenCalledTimes(1))
+  await h.runner.cancel(first.id)
+  expect(await ticking).toBe('ran')
+  expect(h.repos.jobs.get(first.id)?.status).toBe('cancelled')
+  const second = h.runner.enqueue(imgParams(source.id))[0]!
+  const next = h.runner.tick()
+  await vi.waitFor(() => expect(h.client.img2img).toHaveBeenCalledTimes(2))
+  h.gens.at(-1)!.reject(new ForgeError('network', 'offline'))
+  expect(await next).toBe('paused')
+  expect(h.repos.jobs.get(second.id)?.status).toBe('interrupted')
+})
+
+test('img2img does not dispatch to the old server after a switch during source read', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  const job = h.runner.enqueue(imgParams(source.id))[0]!
+  const read = deferred<string>()
+  h.images.readSource.mockImplementationOnce(() => read.promise)
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.images.readSource).toHaveBeenCalledTimes(1))
+  h.repos.servers.setActiveUrl('http://another.test')
+  read.resolve('cG5n')
+  expect(await ticking).toBe('idle')
+  expect(h.client.img2img).not.toHaveBeenCalled()
+  expect(h.repos.jobs.get(job.id)?.status).toBe('queued')
+})
+
+test('img2img does not dispatch after stop while source bytes are being read', async () => {
+  const h = setup({ autoComplete: true })
+  const source = sourceFor(h)
+  h.runner.enqueue(imgParams(source.id))
+  const read = deferred<string>()
+  h.images.readSource.mockImplementationOnce(() => read.promise)
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.images.readSource).toHaveBeenCalledTimes(1))
+  const stopping = h.runner.stop()
+  read.resolve('cG5n')
+  expect(await ticking).toBe('idle')
+  await stopping
+  expect(h.client.img2img).not.toHaveBeenCalled()
+})
+
+test('img2img rejects persisted hires settings before dispatch', async () => {
+  const h = setup()
+  const source = sourceFor(h)
+  const job = h.repos.jobs.insert(h.repos.servers.active()!.id, 'img2img', imgParams(source.id))
+  db.prepare('UPDATE jobs SET params = ? WHERE id = ?').run(JSON.stringify(params({
+    img2img: imgParams(source.id).img2img,
+    hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 },
+  })), job.id)
+  expect(await h.runner.tick()).toBe('ran')
+  expect(h.repos.jobs.get(job.id)?.error?.code).toBe('corruptJob')
+  expect(h.client.img2img).not.toHaveBeenCalled()
+})
+
+test('img2img never persists Forge error text that echoes source bytes', async () => {
+  const h = setup()
+  const source = sourceFor(h)
+  const job = h.runner.enqueue(imgParams(source.id))[0]!
+  const ticking = h.runner.tick()
+  await vi.waitFor(() => expect(h.client.img2img).toHaveBeenCalledOnce())
+  h.gens[0]!.reject(new ForgeError('http', 'invalid image', { status: 422, detail: 'init_images: cG5n' }))
+  expect(await ticking).toBe('ran')
+  expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'forgeHttp', status: 422 })
+  expect(JSON.stringify(h.repos.jobs.get(job.id))).not.toContain('cG5n')
+  expect(JSON.stringify(h.oplog.list())).not.toContain('cG5n')
+})
 
 test('enqueue creates count jobs; a fixed seed increments, -1 stays -1', () => {
   const h = setup()

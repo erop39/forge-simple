@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { deflateSync } from 'node:zlib'
 import { createImageStore, type MakeThumb } from './image-store'
 
 let root: string
@@ -21,6 +22,34 @@ const name = { jobId: 7, seed: 42, createdAt }
 
 const exists = (p: string) => fs.access(p).then(() => true, () => false)
 
+function pngChunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type), data])
+  let crc = 0xffffffff
+  for (const byte of body) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1
+  }
+  const result = Buffer.alloc(body.length + 8)
+  result.writeUInt32BE(data.length, 0)
+  body.copy(result, 4)
+  result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4)
+  return result
+}
+
+function onePixelPng(): Buffer {
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(1, 0)
+  header.writeUInt32BE(1, 4)
+  header[8] = 8
+  header[9] = 2
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(Buffer.from([0, 255, 0, 0]))),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
 test('save writes the png and the thumb and returns their sizes', async () => {
   const dir = path.join(root, 'images')
   const store = createImageStore(() => dir, stubThumb)
@@ -31,6 +60,23 @@ test('save writes the png and the thumb and returns their sizes', async () => {
   expect(r.height).toBe(480)
   expect(await fs.readFile(r.filePath)).toEqual(PNG)
   expect(await fs.readFile(r.thumbPath)).toEqual(THUMB)
+})
+
+test('readSource returns only a managed PNG and rejects corrupt or outside files', async () => {
+  const store = createImageStore(() => root, stubThumb)
+  const valid = onePixelPng()
+  const saved = await store.save(valid.toString('base64'), name)
+  expect(await store.readSource(saved.filePath)).toBe(valid.toString('base64'))
+  await fs.writeFile(saved.filePath, valid.subarray(0, 33))
+  await expect(store.readSource(saved.filePath)).rejects.toThrow()
+  await fs.writeFile(saved.filePath, valid)
+  const badCrc = Buffer.from(valid)
+  badCrc[30] = badCrc[30]! ^ 1
+  await fs.writeFile(saved.filePath, badCrc)
+  await expect(store.readSource(saved.filePath)).rejects.toThrow()
+  await expect(store.readSource(path.join(root, '..', 'outside.png'))).rejects.toThrow()
+  await fs.writeFile(saved.filePath, 'broken')
+  await expect(store.readSource(saved.filePath)).rejects.toThrow()
 })
 
 test('save hands the decoded png to makeThumb', async () => {

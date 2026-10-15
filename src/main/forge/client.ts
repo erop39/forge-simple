@@ -61,6 +61,12 @@ export interface Txt2ImgBody {
   override_settings_restore_afterwards: false
 }
 
+export interface Img2ImgBody extends Omit<Txt2ImgBody, 'enable_hr' | 'hr_scale' | 'hr_upscaler' | 'hr_second_pass_steps'> {
+  init_images: string[]
+  denoising_strength: number
+  resize_mode: 0 | 1 | 2 | 3
+}
+
 export interface GenerationResponse {
   images: string[]
   info: string
@@ -100,6 +106,7 @@ const DROPPED = /other side closed|socket hang up|ECONNRESET|EPIPE|terminated|UN
 export interface ForgeClient {
   ping(): Promise<number>
   txt2img(body: Txt2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
+  img2img(body: Img2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
   progress(): Promise<ProgressResponse>
   interrupt(): Promise<void>
   models(): Promise<SdModel[]>
@@ -259,6 +266,16 @@ export function createForgeClient(
       const json = asObj(
         await request('POST', `${API}/txt2img`, { body, ...(signal ? { signal } : {}) }),
         'txt2img',
+      )
+      const images = asArray(json.images, 'images')
+      if (!images.every((i): i is string => typeof i === 'string')) throw invalid('images holds a non-string')
+      return { images, info: typeof json.info === 'string' ? json.info : '' }
+    },
+
+    async img2img(body, signal) {
+      const json = asObj(
+        await request('POST', `${API}/img2img`, { body, ...(signal ? { signal } : {}) }),
+        'img2img',
       )
       const images = asArray(json.images, 'images')
       if (!images.every((i): i is string => typeof i === 'string')) throw invalid('images holds a non-string')

@@ -1,11 +1,20 @@
 import { defaultParams } from '@shared/profiles'
 import type { Family, GenerationParams } from '@shared/types'
-import { buildTxt2ImgBody } from './payload'
+import { buildImg2ImgBody, buildTxt2ImgBody } from './payload'
 
 const avail = { samplers: ['Euler a', 'Euler'], schedulers: ['Automatic', 'Simple'] }
 const base = defaultParams('sdxl', 'sd_xl_base.safetensors [abc]', avail)
 const F = { shiftField: 'distilled_cfg_scale', modulesAs: 'path', thumbRoute: true } as const
 const forFamily = (family: Family): GenerationParams => defaultParams(family, `${family}.safetensors`, avail)
+
+test('img2img maps source bytes and resize controls without txt2img hires fields', () => {
+  const p: GenerationParams = { ...base, img2img: { sourceImageId: 42, denoisingStrength: 0.55, resizeMode: 2 } }
+  const body = buildImg2ImgBody(p, 'cG5n', F)
+  expect(body).toMatchObject({ init_images: ['cG5n'], denoising_strength: 0.55, resize_mode: 2,
+    prompt: p.prompt, width: p.width, height: p.height })
+  expect(body).not.toHaveProperty('enable_hr')
+  expect(body).not.toHaveProperty('hr_scale')
+})
 
 test('sdxl: checkpoint, clip skip and fixed flags', () => {
   const b = buildTxt2ImgBody({ ...base, prompt: 'a cat', negativePrompt: 'blurry' }, F)

@@ -288,6 +288,13 @@ describe('generation', () => {
   })
 })
 
+test('img2img posts source bytes and resize settings to its endpoint', async () => {
+  const imgBody = { ...body, init_images: ['cG5n'], denoising_strength: 0.6, resize_mode: 1 as const }
+  const result = await createForgeClient(mock.url).img2img(imgBody)
+  expect(result.images).toHaveLength(1)
+  expect(mock.requests.at(-1)).toMatchObject({ method: 'POST', path: '/sdapi/v1/img2img', body: imgBody })
+})
+
 describe('server control', () => {
   test('cmdFlags() reads the launch flags', async () => {
     expect(await createForgeClient(mock.url).cmdFlags()).toMatchObject({ api_server_stop: false })

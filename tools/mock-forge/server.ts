@@ -263,9 +263,9 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
       steps,
       infotexts: [`${prompt}\nSteps: ${steps}, Seed: ${seed}`],
     })
-    const width = scale > 1 && typeof params.width === 'number'
+    const width = (scale > 1 || Array.isArray(params.init_images)) && typeof params.width === 'number'
       ? Math.max(1, Math.min(4096, Math.round(params.width * scale))) : 64
-    const height = scale > 1 && typeof params.height === 'number'
+    const height = (scale > 1 || Array.isArray(params.init_images)) && typeof params.height === 'number'
       ? Math.max(1, Math.min(4096, Math.round(params.height * scale))) : 64
     return { images: [solidPng(width, [90, 140, 200], height)], info }
   }
@@ -324,7 +324,7 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
         case '/sdapi/v1/progress': return ok(progress(query.get('skip_current_image') === 'true'))
       }
     } else if (method === 'POST') {
-      if (path === '/sdapi/v1/txt2img') {
+      if (path === '/sdapi/v1/txt2img' || path === '/sdapi/v1/img2img') {
         if (failing === 'untilUnload' || failing > 0) {
           if (failing !== 'untilUnload') failing--
           return { status: 500, json: FORGE_500 }

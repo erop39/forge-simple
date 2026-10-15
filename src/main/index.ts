@@ -118,6 +118,7 @@ async function boot(): Promise<void> {
     findings: FINDINGS,
     repos,
     images,
+    lock,
     oplog,
     events: events.runner,
     now,

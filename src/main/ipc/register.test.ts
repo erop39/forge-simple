@@ -514,6 +514,10 @@ describe('jobs:enqueue boundary', () => {
     ['hires steps', { hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 0, denoisingStrength: 0.4 } }],
     ['hires target too wide', { width: 4096, hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }],
     ['hires primitive', { hires: 'on' as never }],
+    ['img2img source zero', { img2img: { sourceImageId: 0, denoisingStrength: 0.5, resizeMode: 0 } }],
+    ['img2img denoising', { img2img: { sourceImageId: 1, denoisingStrength: 2, resizeMode: 0 } }],
+    ['img2img resize mode', { img2img: { sourceImageId: 1, denoisingStrength: 0.5, resizeMode: 8 } as never }],
+    ['img2img with hires', { img2img: { sourceImageId: 1, denoisingStrength: 0.5, resizeMode: 0 }, hires: { scale: 2, upscaler: 'Latent', secondPassSteps: 12, denoisingStrength: 0.4 } }],
   ]
   test.each(rejections)('rejects %s', async (_name, over) => {
     await addServer(mock.url)
@@ -534,6 +538,25 @@ describe('jobs:enqueue boundary', () => {
       ...goodParams(), hires: { scale: 1.5, upscaler: 'Latent', secondPassSteps: 14, denoisingStrength: 0.45, extra: 'x' },
     })) as { params: Record<string, unknown> }[]
     expect(jobs[0]!.params.hires).toEqual({ scale: 1.5, upscaler: 'Latent', secondPassSteps: 14, denoisingStrength: 0.45 })
+  })
+
+  test('img2img accepts only an existing accessible image ID and strips extra settings', async () => {
+    await addServer(mock.url)
+    const settings = { sourceImageId: 1, denoisingStrength: 0.5, resizeMode: 0, sourceBytes: 'secret' }
+    await expect(call('jobs:enqueue', { ...goodParams(), img2img: settings })).rejects.toThrow('error.notFound')
+    const origin = repos.jobs.insert(repos.servers.active()!.id, 'txt2img', goodParams())
+    const source = repos.images.insert({ jobId: origin.id, filePath: path.join(dir, 'source.png'),
+      thumbPath: path.join(dir, 'source.jpg'), width: 64, height: 64, seed: 1, infotext: '', durationMs: 1 })
+    await lock.setPassword(null, 'secret-pass')
+    repos.images.setHidden([source.id], true)
+    await expect(call('jobs:enqueue', { ...goodParams(), img2img: settings })).rejects.toThrow('error.notFound')
+    await lock.open('secret-pass')
+    const jobs = await call('jobs:enqueue', { ...goodParams(), img2img: settings }) as { id: number; type: string; params: Record<string, unknown> }[]
+    expect(jobs[0]).toMatchObject({ type: 'img2img', params: { img2img: { sourceImageId: source.id, denoisingStrength: 0.5, resizeMode: 0 } } })
+    expect(JSON.stringify(jobs)).not.toContain('sourceBytes')
+    repos.jobs.setStatus(jobs[0]!.id, 'failed')
+    lock.close()
+    await expect(call('jobs:retry', jobs[0]!.id)).rejects.toThrow('error.notFound')
   })
 })
 

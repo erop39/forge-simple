@@ -6,7 +6,7 @@ taken, or something starts waiting on the user.
 ## Where things stand
 
 - Repository: `https://github.com/erop39/forge-simple` (public). Work branch `feature/core`; `main` holds only the spec and plan docs. Before the first push, commit `d84ab06` (it held the user's real Forge path and model names) was squashed with its fix, so no published commit carries them.
-- Tests: 811 pass; typecheck and build clean (2026-10-15, after plan 3 Task 1).
+- Tests: 827 pass after plan 3 Task 2 backend; build and typecheck pass. Its mock end-to-end flow is covered; the live-window check belongs to Task 3.
 - Agents: `AGENTS.md` is the guide for any agent (read order, what exists, working rules, git and push checklist). `node scripts/scan-private.mjs` checks unpushed commits for private data.
 - Plan 1 (core): `docs/superpowers/plans/2026-10-13-plan-1-core.md`.
 - Plan 3 (generation and server tools): `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`. The user chose to pause plan 2 after Task 3's local commit and start plan 3 on 2026-10-15. Restart/Unload were already delivered as U4; plan 3 Task 1 (hires fix) is done, tested against mock Forge, and awaits a live-window check. No mutating request was sent to the user's Forge.
@@ -34,7 +34,8 @@ taken, or something starts waiting on the user.
 | Plan 2 Tasks 4–10, 12 | not started |
 | Plan 2 Task 11 Log panel | done earlier as U4 |
 | Plan 3 Task 1 Hires fix | done; payload, IPC, second-pass progress, panel and viewer covered by tests; live-window check pending |
-| Plan 3 Tasks 2–10 | not started |
+| Plan 3 Task 2 Img2img request and queued job | done, reviewed and tested; no renderer controls yet |
+| Plan 3 Tasks 3–10 | not started |
 | Final whole-branch review | not started |
 
 ## How to resume
@@ -42,7 +43,7 @@ taken, or something starts waiting on the user.
 1. Read `CLAUDE.md`, then this file.
 2. On a new PC: clone `https://github.com/erop39/forge-simple`, `git checkout feature/core`, `pnpm install` (see README). Pull before you start, push when a task is done — after the private-data scan described in `CLAUDE.md`.
 3. The detailed ledger (`.superpowers/sdd/2026-10-13-plan-1-core/progress.md`, task briefs, review reports) exists only on the PC that wrote it (git-ignored). If it is there, it has every fix round; if not, this file and `git log` are the record — the decisions below are complete. Regenerate a task brief from the plan file with the subagent-driven-development `task-brief` script.
-4. Continue plan 3 from Task 2 in its tracked plan; plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
+4. Continue plan 3 Task 3 (img2img viewer and prompt-bar entry points); plan 2 is paused after Task 3's local commit. The real-Forge check and release work from plan 1 remain separate.
 
 ## Waiting on the user
 

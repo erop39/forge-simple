@@ -18,7 +18,7 @@ import type { createRunner } from '../queue/runner'
 import { toImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, normalizeTag, type createRepos, type ImageRow,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, normalizeTag, type createRepos, type ImageRow,
   type Server,
 } from '../storage/repos'
 
@@ -136,6 +136,7 @@ function validateEnqueue(p: unknown): GenerationParams {
   const clipSkip = isOptionalNumber(o.clipSkip)
   const loras = o.loras
   const hires = o.hires
+  const img2img = o.img2img
   const validHires = hires === undefined || isHiresSettings(hires, o.width, o.height)
   if (!Object.hasOwn(PROFILES, o.family)
     || !isNonEmptyString(o.prompt) || o.prompt.length > MAX_TEXT || o.negativePrompt.length > MAX_TEXT
@@ -143,7 +144,7 @@ function validateEnqueue(p: unknown): GenerationParams {
     || !isInt(o.count, 1, 8) || !isInt(o.width, 64, 4096) || !isInt(o.height, 64, 4096) || !isInt(o.steps, 1, 200)
     || !isInt(o.seed, -1, MAX_ID) || !isNumberIn(o.cfgScale, 0, 30) || !isNumberIn(o.distilledCfg, 0, 30)
     || shift === undefined || clipSkip === undefined
-    || !validHires
+    || !validHires || (img2img !== undefined && (!isImg2ImgSettings(img2img) || hires?.scale !== undefined && hires.scale > 1))
     || o.modules.length > 8 || !o.modules.every((m) => typeof m === 'string')
     || loras.length > 16
     || !loras.every((l) => typeof l === 'object' && l !== null && isNonEmptyString(l.name)
@@ -158,6 +159,10 @@ function validateEnqueue(p: unknown): GenerationParams {
     ...(hires ? { hires: {
       scale: hires.scale, upscaler: hires.upscaler, secondPassSteps: hires.secondPassSteps,
       denoisingStrength: hires.denoisingStrength,
+    } } : {}),
+    ...(img2img ? { img2img: {
+      sourceImageId: img2img.sourceImageId, denoisingStrength: img2img.denoisingStrength,
+      resizeMode: img2img.resizeMode,
     } } : {}),
   }
 }
@@ -482,6 +487,10 @@ export function registerIpc(
   handle('jobs:enqueue', (params) => {
     const valid = validateEnqueue(params)
     requireServer()
+    if (valid.img2img) {
+      const source = repos.images.get(valid.img2img.sourceImageId) ?? fail('error.notFound')
+      if (source.hidden && !lock.isOpen()) return fail('error.notFound')
+    }
     try {
       return runner.enqueue(valid)
     } catch (err) {
@@ -503,6 +512,11 @@ export function registerIpc(
     }
     // A job of a removed server is retried on the active one; without one there is nowhere to run it.
     if (!repos.servers.get(job.serverId)) requireServer()
+    if (job.type === 'img2img') {
+      const valid = validateEnqueue(job.params)
+      const source = repos.images.get(valid.img2img?.sourceImageId ?? -1) ?? fail('error.notFound')
+      if (source.hidden && !lock.isOpen()) return fail('error.notFound')
+    }
     return runner.retry(id)
   })
 

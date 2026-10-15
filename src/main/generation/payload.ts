@@ -1,6 +1,6 @@
 import { PROFILES } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
-import type { Txt2ImgBody } from '../forge/client'
+import type { Img2ImgBody, Txt2ImgBody } from '../forge/client'
 import type { ProbeFindings } from '../forge/findings'
 
 /** Pure: turns the form state into a Forge txt2img request body without touching its input. */
@@ -46,4 +46,13 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
     body.denoising_strength = p.hires.denoisingStrength
   }
   return body
+}
+
+/** Source bytes arrive only at execution; the persisted params hold only the image ID. */
+export function buildImg2ImgBody(p: GenerationParams, sourceBase64: string, findings: ProbeFindings): Img2ImgBody {
+  if (!p.img2img) throw new Error('Missing img2img settings')
+  const { enable_hr: _enabled, hr_scale: _scale, hr_upscaler: _upscaler,
+    hr_second_pass_steps: _steps, denoising_strength: _denoise, ...base } = buildTxt2ImgBody(p, findings)
+  return { ...base, init_images: [sourceBase64], denoising_strength: p.img2img.denoisingStrength,
+    resize_mode: p.img2img.resizeMode }
 }
