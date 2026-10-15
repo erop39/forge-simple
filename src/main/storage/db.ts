@@ -27,6 +27,11 @@ CREATE INDEX oplog_time ON oplog(time);
   // 3: named negative prompts the user can put back into the Negative field.
   `CREATE TABLE negative_presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   text TEXT NOT NULL, created_at INTEGER NOT NULL);`,
+  // 4: image tags; a tag no image uses is deleted by the repos.
+  `CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);
+CREATE TABLE image_tags (image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (image_id, tag_id));
+CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
 ]
 
 export function openDb(path: string): Db {

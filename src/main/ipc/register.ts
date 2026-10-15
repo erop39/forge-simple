@@ -178,7 +178,8 @@ const localDay = (d: Date): string =>
 
 export function toImageRecord(row: ImageRow, imagesDir: string): ImageRecord {
   const { filePath, thumbPath, ...rest } = row
-  return { ...rest, url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir) }
+  // Tags and the lock are wired in by a later task.
+  return { ...rest, tags: [], locked: false, url: toImageUrl(filePath, imagesDir), thumbUrl: toImageUrl(thumbPath, imagesDir) }
 }
 
 export function registerIpc(

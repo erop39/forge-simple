@@ -28,7 +28,7 @@ const job = (id: number, status: Job['status'] = 'queued'): Job => ({
 })
 const image = (id: number): ImageRecord => ({
   id, jobId: 1, url: `fnc-img://local/${id}.png`, thumbUrl: `fnc-img://local/t${id}.jpg`, width: 1, height: 1,
-  seed: 1, infotext: '', createdAt: 1, durationMs: null, hidden: false, sourceImageId: null,
+  seed: 1, infotext: '', createdAt: 1, durationMs: null, hidden: false, sourceImageId: null, tags: [], locked: false,
 })
 const progress = (jobId: number): JobProgress => ({
   jobId, step: 3, totalSteps: 20, stage: 'sampling', stepsPerSec: 2, elapsedMs: 1000, preview: null,

@@ -32,7 +32,12 @@ export interface ImageRecord {
   id: number; jobId: number; url: string; thumbUrl: string;   // fnc-img://…
   width: number; height: number; seed: number; infotext: string;
   createdAt: number; durationMs: number | null; hidden: boolean; sourceImageId: number | null;
+  tags: string[];
+  /** Hidden image while hidden images are locked: url, thumbUrl, infotext are empty, seed is 0, tags are empty. */
+  locked: boolean;
 }
+/** Gallery query: newest first; `text` and every tag in `tags` must match. */
+export interface ImageQuery { limit: number; beforeId?: number; text?: string; tags?: string[] }
 /** Saved image with the exact settings from its generation job. */
 export interface ImageDetails { image: ImageRecord; params: GenerationParams; jobType: JobType }
 export interface JobProgress {

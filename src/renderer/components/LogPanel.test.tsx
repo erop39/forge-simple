@@ -29,7 +29,7 @@ const failedJob: Job = {
 }
 const image7: ImageRecord = {
   id: 70, jobId: 7, url: 'fnc-img://local/70.png', thumbUrl: 'fnc-img://local/t70.jpg', width: 832, height: 1216,
-  seed: 5, infotext: '', createdAt: 1, durationMs: 41_000, hidden: false, sourceImageId: null,
+  seed: 5, infotext: '', createdAt: 1, durationMs: 41_000, hidden: false, sourceImageId: null, tags: [], locked: false,
 }
 
 function setup(state: Partial<AppState> = {}) {

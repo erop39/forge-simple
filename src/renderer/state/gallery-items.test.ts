@@ -9,7 +9,7 @@ const job = (id: number, status: JobStatus): Job => ({
 })
 const image = (id: number): ImageRecord => ({
   id, jobId: id, url: `fnc-img://local/${id}.png`, thumbUrl: `fnc-img://local/${id}.jpg`, width: 832, height: 1216,
-  seed: 1, infotext: '', createdAt: id, durationMs: 1000, hidden: false, sourceImageId: null,
+  seed: 1, infotext: '', createdAt: id, durationMs: 1000, hidden: false, sourceImageId: null, tags: [], locked: false,
 })
 const label = (items: ReturnType<typeof galleryItems>) =>
   items.map((i) => (i.kind === 'job' ? `job${i.job.id}` : `img${i.image.id}`))

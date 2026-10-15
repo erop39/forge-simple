@@ -414,3 +414,100 @@ test('a database at user_version 2 upgrades with an empty preset table and keeps
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a database at user_version 3 upgrades with empty tag tables and keeps its image', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fnc-db-'))
+  const file = join(dir, 'app.db')
+  try {
+    const old = new Database(file)
+    for (let i = 0; i < 3; i++) old.exec(MIGRATIONS[i]!)
+    old.pragma('user_version = 3')
+    old.prepare("INSERT INTO servers (name, url, active) VALUES ('home', 'http://home:7860', 1)").run()
+    old.prepare("INSERT INTO jobs (server_id, type, status, params, created_at) VALUES (1, 'txt2img', 'done', '{}', 1)").run()
+    old.prepare(
+      `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at)
+       VALUES (1, 'a.png', 'a.jpg', 8, 8, 1, 'i', 1)`,
+    ).run()
+    old.close()
+
+    const db = openDb(file)
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length)
+    const repos = createRepos(db, () => 7)
+    expect(repos.images.get(1)?.filePath).toBe('a.png')
+    expect(repos.tags.forImages([1]).size).toBe(0)
+    repos.tags.add([1], ['cat'])
+    expect(repos.tags.forImages([1]).get(1)).toEqual(['cat'])
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+const withImages = (n: number) => {
+  const ctx = setup()
+  const s = ctx.repos.servers.setActiveUrl('http://a:7860')
+  const ids: number[] = []
+  for (let i = 0; i < n; i++) {
+    const j = ctx.repos.jobs.insert(s.id, 'txt2img', params())
+    ids.push(ctx.repos.images.insert(imageRow(j.id)).id)
+  }
+  return { ...ctx, ids }
+}
+
+test('tags.add normalizes names, ignores blanks and over-long names, and is case-insensitive', () => {
+  const { repos, ids } = withImages(1)
+  repos.tags.add(ids, ['  Red   Hair ', 'red hair', '', '   ', 'x'.repeat(41), 'y'.repeat(40)])
+  expect(repos.tags.forImages(ids).get(ids[0]!)).toEqual(['Red Hair', 'y'.repeat(40)])
+})
+
+test('tags.add skips unknown image ids and is idempotent', () => {
+  const { repos, ids } = withImages(1)
+  repos.tags.add([ids[0]!, 999], ['a'])
+  repos.tags.add(ids, ['A'])
+  expect([...repos.tags.forImages([ids[0]!, 999]).keys()]).toEqual([ids[0]])
+  expect(repos.tags.forImages(ids).get(ids[0]!)).toEqual(['a'])
+})
+
+test('tags.remove detaches tags and deletes tags no image uses', () => {
+  const { repos, db, ids } = withImages(2)
+  repos.tags.add(ids, ['shared'])
+  repos.tags.add([ids[0]!], ['solo'])
+  repos.tags.remove([ids[0]!], ['shared', 'solo'])
+  expect(repos.tags.forImages(ids).get(ids[1]!)).toEqual(['shared'])
+  expect(db.prepare('SELECT name FROM tags').all()).toEqual([{ name: 'shared' }])
+  repos.tags.remove([ids[1]!], ['SHARED'])
+  expect(db.prepare('SELECT COUNT(*) AS n FROM tags').get()).toEqual({ n: 0 })
+})
+
+test('deleting the only image with a tag deletes the tag; a shared tag stays', () => {
+  const { repos, db, ids } = withImages(2)
+  repos.tags.add([ids[0]!], ['solo'])
+  repos.tags.add(ids, ['shared'])
+  repos.images.delete(ids[0]!)
+  expect(db.prepare('SELECT name FROM tags').all()).toEqual([{ name: 'shared' }])
+  repos.images.delete(ids[1]!)
+  expect(db.prepare('SELECT COUNT(*) AS n FROM tags').get()).toEqual({ n: 0 })
+})
+
+test('tags.suggest matches the prefix without case, orders by use, and ignores hidden images unless revealed', () => {
+  const { repos, ids } = withImages(3)
+  repos.tags.add([ids[0]!], ['cat', 'castle'])
+  repos.tags.add([ids[1]!, ids[2]!], ['Cart'])
+  repos.tags.add([ids[2]!], ['car_'])
+  expect(repos.tags.suggest('CA', 10, { revealHidden: false })).toEqual(['Cart', 'car_', 'castle', 'cat'])
+  expect(repos.tags.suggest('ca', 2, { revealHidden: false })).toEqual(['Cart', 'car_'])
+  expect(repos.tags.suggest('car_', 10, { revealHidden: false })).toEqual(['car_'])
+  expect(repos.tags.suggest('c%', 10, { revealHidden: false })).toEqual([])
+  repos.images.setHidden([ids[0]!], true)
+  expect(repos.tags.suggest('ca', 10, { revealHidden: false })).toEqual(['Cart', 'car_'])
+  expect(repos.tags.suggest('ca', 10, { revealHidden: true })).toEqual(['Cart', 'car_', 'castle', 'cat'])
+})
+
+test('images.setHidden counts existing images and flips the flag both ways', () => {
+  const { repos, ids } = withImages(2)
+  expect(repos.images.setHidden([ids[0]!, 999], true)).toBe(1)
+  expect(repos.images.get(ids[0]!)?.hidden).toBe(true)
+  expect(repos.images.get(ids[1]!)?.hidden).toBe(false)
+  expect(repos.images.setHidden([ids[0]!], false)).toBe(1)
+  expect(repos.images.get(ids[0]!)?.hidden).toBe(false)
+})

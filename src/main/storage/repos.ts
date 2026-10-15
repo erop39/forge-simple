@@ -1,10 +1,11 @@
 import type {
-  GenerationParams, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
+  GenerationParams, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo,
 } from '@shared/types'
 import type { Db } from './db'
+import { buildImageQuery, escapeLike } from './image-query'
 
 export interface Server extends ServerInfo { lastConnectedAt: number | null }
-export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl'> { filePath: string; thumbPath: string }
+export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' | 'locked'> { filePath: string; thumbPath: string }
 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
 type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'>
@@ -265,11 +266,100 @@ export function createRepos(db: Db, now: () => number) {
       ) as ImageSql[]
       return rows.map(toImage)
     },
+    /** Filtered, newest-first page; hidden images are left out of text/tag matches unless `revealHidden`. */
+    query(q: ImageQuery, opts: { revealHidden: boolean }): ImageRow[] {
+      const { sql, args } = buildImageQuery(q, opts.revealHidden)
+      return (db.prepare(sql).all(...args) as ImageSql[]).map(toImage)
+    },
+    /** Sets the flag on the given ids; returns how many images exist among them. */
+    setHidden(ids: number[], hidden: boolean): number {
+      return db.transaction(() => {
+        const stmt = db.prepare('UPDATE images SET hidden = ? WHERE id = ?')
+        let n = 0
+        for (const id of ids) n += stmt.run(hidden ? 1 : 0, id).changes
+        return n
+      })()
+    },
     delete(id: number): ImageRow | null {
-      const r = imageById.get(id) as ImageSql | undefined
-      if (!r) return null
-      db.prepare('DELETE FROM images WHERE id = ?').run(id)
-      return toImage(r)
+      return db.transaction(() => {
+        const r = imageById.get(id) as ImageSql | undefined
+        if (!r) return null
+        db.prepare('DELETE FROM images WHERE id = ?').run(id)
+        deleteOrphanTags()
+        return toImage(r)
+      })()
+    },
+  }
+
+  /** A tag no image uses is deleted. */
+  function deleteOrphanTags(): void {
+    db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM image_tags)').run()
+  }
+  const TAG_MAX = 40
+  /** Trimmed, inner whitespace collapsed; empty or over-long names are dropped; duplicates (any case) merged. */
+  const normalizeTags = (names: string[]): string[] => {
+    const seen = new Map<string, string>()
+    for (const raw of names) {
+      const name = raw.trim().replace(/\s+/g, ' ')
+      if (name.length < 1 || name.length > TAG_MAX) continue
+      const key = name.toLowerCase()
+      if (!seen.has(key)) seen.set(key, name)
+    }
+    return [...seen.values()]
+  }
+
+  const tags = {
+    /** Tag names per image id, sorted; ids without tags are absent. */
+    forImages(ids: number[]): Map<number, string[]> {
+      const out = new Map<number, string[]>()
+      if (ids.length === 0) return out
+      const rows = db.prepare(
+        `SELECT it.image_id AS image_id, t.name AS name FROM image_tags it JOIN tags t ON t.id = it.tag_id
+         WHERE it.image_id IN (${ids.map(() => '?').join(',')}) ORDER BY t.name COLLATE NOCASE, t.id`,
+      ).all(...ids) as { image_id: number; name: string }[]
+      for (const r of rows) {
+        const list = out.get(r.image_id)
+        if (list) list.push(r.name)
+        else out.set(r.image_id, [r.name])
+      }
+      return out
+    },
+    /** Attaches the tags (created when missing) to every existing image in `imageIds`. */
+    add(imageIds: number[], names: string[]): void {
+      const clean = normalizeTags(names)
+      if (clean.length === 0) return
+      db.transaction(() => {
+        const insertTag = db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)')
+        const tagId = db.prepare('SELECT id FROM tags WHERE name = ?')
+        const link = db.prepare(
+          'INSERT OR IGNORE INTO image_tags (image_id, tag_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM images WHERE id = ?)',
+        )
+        for (const name of clean) {
+          insertTag.run(name)
+          const id = (tagId.get(name) as { id: number }).id
+          for (const imageId of imageIds) link.run(imageId, id, imageId)
+        }
+        deleteOrphanTags()
+      })()
+    },
+    /** Detaches the tags from the images, then deletes tags no image uses. */
+    remove(imageIds: number[], names: string[]): void {
+      const clean = normalizeTags(names)
+      db.transaction(() => {
+        const unlink = db.prepare('DELETE FROM image_tags WHERE image_id = ? AND tag_id = (SELECT id FROM tags WHERE name = ?)')
+        for (const name of clean) for (const imageId of imageIds) unlink.run(imageId, name)
+        deleteOrphanTags()
+      })()
+    },
+    /** Tags starting with `prefix` (no case), most used first; without `revealHidden` only visible images count. */
+    suggest(prefix: string, limit: number, opts: { revealHidden: boolean }): string[] {
+      const like = `${escapeLike(prefix)}%`
+      const visible = opts.revealHidden ? '' : 'AND i.hidden = 0'
+      const rows = db.prepare(
+        `SELECT t.name AS name FROM tags t JOIN image_tags it ON it.tag_id = t.id JOIN images i ON i.id = it.image_id
+         WHERE t.name LIKE ? ESCAPE '\\' ${visible} GROUP BY t.id ORDER BY COUNT(*) DESC, t.name COLLATE NOCASE LIMIT ?`,
+      ).all(like, limit) as { name: string }[]
+      return rows.map((r) => r.name)
     },
   }
 
@@ -327,5 +417,5 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, settings, negativePresets }
+  return { servers, jobs, images, tags, settings, negativePresets }
 }

@@ -7,7 +7,7 @@ import { ImageTile } from './ImageTile'
 
 const image = (over: Partial<ImageRecord> = {}): ImageRecord => ({
   id: 412, jobId: 1, url: 'fnc-img://local/a.png', thumbUrl: 'fnc-img://local/thumbs/a.jpg', width: 832, height: 1216,
-  seed: 1, infotext: '', createdAt: new Date().setHours(14, 3, 0, 0), durationMs: 41400, hidden: false, sourceImageId: null, ...over,
+  seed: 1, infotext: '', createdAt: new Date().setHours(14, 3, 0, 0), durationMs: 41400, hidden: false, sourceImageId: null, tags: [], locked: false, ...over,
 })
 
 test('renders the thumbnail with the aspect ratio reserved and loading="lazy"', () => {

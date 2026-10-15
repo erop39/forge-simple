@@ -14,7 +14,7 @@ const job = (id: number, status: Job['status']): Job => ({
 })
 const image = (id: number): ImageRecord => ({
   id, jobId: id, url: `fnc-img://local/${id}.png`, thumbUrl: `fnc-img://local/t${id}.jpg`, width: 832, height: 1216,
-  seed: 1, infotext: '', createdAt: id, durationMs: 41000, hidden: false, sourceImageId: null,
+  seed: 1, infotext: '', createdAt: id, durationMs: 41000, hidden: false, sourceImageId: null, tags: [], locked: false,
 })
 const frame = (id: number) => frameCaption(image(id))
 
