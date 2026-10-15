@@ -1,4 +1,4 @@
-import { ArrowUp, SlidersHorizontal, X } from '@phosphor-icons/react'
+import { ArrowUp, SlidersHorizontal, SquaresFour, X } from '@phosphor-icons/react'
 import { useCallback, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
@@ -110,6 +110,7 @@ export function PromptBar() {
   const attachImageSource = useAppStore((s) => s.attachImageSource)
   const removeImageSource = useAppStore((s) => s.removeImageSource)
   const selectCheckpoint = useAppStore((s) => s.selectCheckpoint)
+  const openModelGallery = useAppStore((s) => s.openModelGallery)
   const generate = useAppStore((s) => s.generate)
   const togglePanel = useAppStore((s) => s.togglePanel)
   const [negativeOpen, setNegativeOpen] = useState(false)
@@ -222,13 +223,20 @@ export function PromptBar() {
       />
       <div className={styles.row}>
         {model ? (
-          <Select
-            grow
-            label={t('params.model')}
-            value={model.params.checkpoint}
-            options={checkpointOptions(model.catalog.checkpoints)}
-            onChange={(title) => void selectCheckpoint(title)}
-          />
+          <>
+            <Select
+              grow
+              label={t('params.model')}
+              value={model.params.checkpoint}
+              options={checkpointOptions(model.catalog.checkpoints)}
+              onChange={(title) => void selectCheckpoint(title)}
+            />
+            <IconButton
+              label={t('models.openCheckpoints')}
+              icon={<SquaresFour size={20} />}
+              onClick={() => openModelGallery('checkpoint')}
+            />
+          </>
         ) : loading && <span role="status" className={styles.pending}>{t('prompt.loadingModels')}</span>}
         <div className={styles.controls}>
           {model && (

@@ -156,6 +156,10 @@ export function checkParts(p: GenerationParams, c: Catalog, findings: ProbeFindi
   return [
     { role: 'model', value: p.checkpoint, found: c.checkpoints.some((x) => x.title === p.checkpoint) },
     ...p.modules.map((m): PartStatus => ({ role: 'module', value: m, found: known.has(m) })),
+    // An enabled LoRA the server does not list would be ignored or fail inside Forge; a switched-off one is not sent.
+    ...p.loras.filter((l) => l.enabled).map((l): PartStatus => ({
+      role: 'lora', value: l.name, found: c.loras.some((x) => x.name === l.name),
+    })),
     // A second pass sends the upscaler's name; one the server no longer lists would end in a Forge 500.
     ...(p.hires && p.hires.scale > 1
       ? [{ role: 'upscaler', value: p.hires.upscaler, found: c.upscalers.includes(p.hires.upscaler) } as PartStatus]

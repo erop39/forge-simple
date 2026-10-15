@@ -44,6 +44,7 @@ taken, or something starts waiting on the user.
 | Plan 3 Task 9 Image storage location | done: native folder picker, writable-folder check, append-only managed roots, DB-ID image URLs, old-root reads and path guards. Build, typechecks and 867 tests pass; isolated Electron smoke verified image loading and traversal refusal. |
 | Extras 2026-10-15 (user requests): resource monitor on demand; Send to hires (tile action, dialog, second-pass CFG); HD mark; viewer zoom, Show in folder and fixed info area; Clear all failed and interrupted; upscaler list above the viewer dialog | done, 888 tests; checked in an isolated window on the mock |
 | Release 0.1.0 | tagged v0.1.0 on 2026-10-15 (CHANGELOG [0.1.0], version 0.1.0). Not seen by eye: Slow state, animations, native caption buttons |
+| Plan 2 Tasks 8-9 (checkpoint gallery, LoRA stack) with favorites, notes, folders, model card | done 2026-10-15: previews, marks, family override, LoRA metadata/triggers, gallery dialog, LoRA stack; mock checked, real-Forge look pending |
 | Plan 3 Task 10 Integration and release readiness | done on the mock (2026-10-15): in an isolated Electron window (throwaway profile, mock Forge) txt2img, hires, img2img and upscale each produced an image, the upscale kept its source link, and an img2img with a missing source was refused with `error.notFound`. Mock end-to-end tests and the full suite pass. Not done: real-Forge check, plan 1 release (0.1.0), plan 2 Tasks 4–10, plan 3 Task 8. |
 | Final whole-branch review | not started |
 

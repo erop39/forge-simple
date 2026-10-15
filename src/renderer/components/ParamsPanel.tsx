@@ -9,6 +9,7 @@ import { ModelCard } from './ModelCard'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
+import { LoraStack } from './LoraStack'
 import { ParamRow } from './ui/ParamRow'
 import { Select } from './ui/Select'
 import { Slider } from './ui/Slider'
@@ -318,6 +319,7 @@ function Body() {
       <Img2Img />
       <Hires />
       <Modules />
+      <LoraStack />
     </>
   )
 }

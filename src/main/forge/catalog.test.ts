@@ -199,3 +199,17 @@ test('checkParts flags a hires upscaler the server does not list, and ignores it
   expect(checkParts(hires('Latent', 2), withUp, findings('path'))[1]).toEqual({ role: 'upscaler', value: 'Latent', found: true })
   expect(checkParts(hires('Gone 4x', 1), withUp, findings('path'))).toHaveLength(1)
 })
+
+test('checkParts flags an enabled LoRA the server does not list and skips a switched-off one', () => {
+  const withLoras = { ...catalog, loras: [{ name: 'known', path: 'C:\l\known.safetensors' }] }
+  const base = params('a.safetensors [1]', [])
+  const parts = checkParts({ ...base, loras: [
+    { name: 'known', weight: 1, enabled: true },
+    { name: 'ghost', weight: 1, enabled: true },
+    { name: 'off', weight: 1, enabled: false },
+  ] }, withLoras, findings('path'))
+  expect(parts.filter((p) => p.role === 'lora')).toEqual([
+    { role: 'lora', value: 'known', found: true },
+    { role: 'lora', value: 'ghost', found: false },
+  ])
+})

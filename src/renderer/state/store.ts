@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, NegativePreset, UpscaleSettings, HiresSettings,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, LockState, ModelKind, NegativePreset, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -69,6 +69,8 @@ export interface AppState {
   restartAsked: boolean
   /** The saved image whose Send to hires dialog is open. */
   hiresFor: number | null
+  /** Which model gallery is open (checkpoints or LoRA), if any. */
+  modelGallery: ModelKind | null
   logOpen: boolean
   /** Newest first, matching logFilters; new entries arrive live while the panel is open. */
   logEntries: OplogEntry[]
@@ -120,6 +122,14 @@ export interface AppState {
   togglePanel(): void
   askRestart(): void
   openHires(id: number): void
+  openModelGallery(kind: ModelKind): void
+  closeModelGallery(): void
+  setModelFavorite(kind: ModelKind, id: string, favorite: boolean): Promise<void>
+  setModelNote(kind: ModelKind, id: string, note: string): Promise<void>
+  setCheckpointFamily(file: string, family: Family | null): Promise<void>
+  setLoraTriggers(path: string, triggers: string[] | null): Promise<void>
+  /** Adds a LoRA (by its Forge name) to the stack, enabled at weight 1; false at the 16 limit or when present. */
+  addLora(name: string): boolean
   closeHires(): void
   /** Re-runs the image's own job (same model, prompt and seed) with a hires second pass. */
   queueHires(id: number, hires: HiresSettings): Promise<'queued' | 'notTxt2img' | 'failed'>
@@ -249,6 +259,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       }
       set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, draftNegative) })
       await refreshParts(params)
+    }
+
+    /** Saves a mark on a model file and reads the catalog again (main applies marks without refetching Forge). */
+    async function markModel(call: () => Promise<void>): Promise<void> {
+      const seq = catalogSeq
+      if (await attempt(async () => { await call(); return true }) === undefined) return
+      const fresh = await attempt(() => api.catalog.get())
+      if (fresh && seq === catalogSeq) set({ catalog: fresh })
     }
 
     /** Loads the catalog and selects the loaded checkpoint, else the first one. */
@@ -511,6 +529,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       forgeUnhealthy: false,
       restartAsked: false,
       hiresFor: null,
+      modelGallery: null,
       logOpen: false,
       logEntries: [],
       logFilters: { level: 'all', category: 'all', period: '24h' },
@@ -807,6 +826,41 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       openHires(id) {
         set({ hiresFor: id })
+      },
+
+      openModelGallery(kind) {
+        set({ modelGallery: kind })
+      },
+
+      closeModelGallery() {
+        set({ modelGallery: null })
+      },
+
+      async setModelFavorite(kind, id, favorite) {
+        await markModel(() => api.models.setFavorite(kind, id, favorite))
+      },
+
+      async setModelNote(kind, id, note) {
+        await markModel(() => api.models.setNote(kind, id, note))
+      },
+
+      async setCheckpointFamily(file, family) {
+        await markModel(() => api.models.setFamily(file, family))
+        // The family decides the defaults and the checkpoint list grouping: an open selection follows it.
+        const { params, catalog } = get()
+        const current = catalog?.checkpoints.find((c) => c.title === params?.checkpoint)
+        if (current && current.filename === file && current.family !== params?.family) await useCheckpoint(current.title)
+      },
+
+      async setLoraTriggers(path, triggers) {
+        await markModel(() => api.models.setTriggers(path, triggers))
+      },
+
+      addLora(name) {
+        const params = get().params
+        if (!params || params.loras.length >= 16 || params.loras.some((l) => l.name === name)) return false
+        get().setParams({ loras: [...params.loras, { name, weight: 1, enabled: true }] })
+        return true
       },
 
       closeHires() {

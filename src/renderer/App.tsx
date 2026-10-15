@@ -4,6 +4,7 @@ import { useAppStore } from './state/StoreProvider'
 import { EmptyState, NoModelsState } from './components/EmptyState'
 import { RestartDialog } from './components/ForgeRestart'
 import { HiresDialog } from './components/HiresDialog'
+import { ModelGalleryDialog } from './components/ModelGallery'
 import { LockDialog } from './components/LockDialog'
 import { LogPanel } from './components/LogPanel'
 import { Gallery } from './components/Gallery'
@@ -49,6 +50,7 @@ export function App() {
       <ServerDialog open={dialogOpen || noServer} onOpenChange={setDialogOpen} />
       <RestartDialog />
       <HiresDialog />
+      <ModelGalleryDialog />
       <LockDialog />
     </div>
   )
