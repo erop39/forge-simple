@@ -1,4 +1,5 @@
 import { appendFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { inLibrary } from '../forge/wishlist'
 import { ArchiveError, createArchive, restoreArchive } from '../archive/archive'
 import { applyBackup, BackupError, buildBackup, MAX_BACKUP_BYTES, parseBackup, previewBackup, type BackupFile } from '../backup/settings-backup'
 import { randomUUID } from 'node:crypto'
@@ -8,11 +9,11 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type ArchiveCreated, type ArchiveRestored, type ArchiveState, type Catalog, type ImportSummary, type PresetParams, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
+  type ArchiveCreated, type ArchiveRestored, type ArchiveState, type WishlistItem, type Catalog, type ImportSummary, type PresetParams, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, moduleValue, type createCatalog } from '../forge/catalog'
-import { browseCivitai, CivitaiBusyError, createCivitaiClient, fetchThumb, type CivitaiClient } from '../forge/civitai'
+import { browseCivitai, CivitaiBusyError, type BrowseEntry, createCivitaiClient, fetchThumb, type CivitaiClient } from '../forge/civitai'
 import { createCivitaiUpdater } from '../forge/civitai-updater'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
@@ -292,7 +293,9 @@ export function registerIpc(
   async function loadCatalog(refresh = false): Promise<Catalog> {
     requireServer()
     try {
-      return await deps.catalog().get(refresh)
+      const catalog = await deps.catalog().get(refresh)
+      pruneWishlist(catalog)
+      return catalog
     } catch (err) {
       if (err instanceof ForgeError) return fail(forgeErrorKey(err))
       throw err // not a Forge failure: the wrapper logs it and reports error.unexpected
@@ -803,14 +806,55 @@ export function registerIpc(
         if (url) thumbs[i] = await fetchThumb(url, deps.civitaiFetch)
       }
     }))
+    page.entries.forEach((e, i) => {
+      shown.set(wishKey(e.modelId, e.versionId), { entry: e, kind: q.kind as ModelKind, site: q.site as 'com' | 'red', thumb: thumbs[i] ?? null })
+    })
+    while (shown.size > 300) shown.delete(shown.keys().next().value as string)
     return {
       items: page.entries.map((e, i): CivitaiBrowseItem => {
         const versions = have.get(e.modelId)
-        const { imageUrl: _drop, ...rest } = e
+        const { imageUrl: _drop, files: _files, ...rest } = e
         return { ...rest, thumb: thumbs[i] ?? null, inLibrary: versions ? (versions.has(e.versionId) ? 'have' : 'older') : null }
       }),
       next: page.next,
     }
+  })
+
+  // ---- download later ---------------------------------------------------------
+
+  /** The listing entries the browser showed lately, so `wishlist:add` can take everything from main instead of trusting the renderer. */
+  const shown = new Map<string, { entry: BrowseEntry; kind: ModelKind; site: 'com' | 'red'; thumb: string | null }>()
+  const wishKey = (modelId: number, versionId: number): string => `${modelId}:${versionId}`
+  const toWishlistItem = (r: ReturnType<typeof repos.wishlist.list>[number]): WishlistItem => {
+    const { files: _files, ...item } = r
+    return item
+  }
+  /** Drops the wished models whose files are in the library now (a comparison in memory, no request). */
+  function pruneWishlist(catalog: Catalog): void {
+    const gone = repos.wishlist.list().filter((w) => inLibrary(w, catalog))
+    if (gone.length === 0) return
+    for (const w of gone) repos.wishlist.remove(w.id)
+    oplog.write({ level: 'info', category: 'storage', messageKey: 'log.storage.wishlistFound', details: { names: gone.map((w) => w.name).slice(0, 10), count: gone.length } })
+    send('wishlist:changed', { removed: gone.length })
+  }
+
+  handle('wishlist:list', () => repos.wishlist.list().map(toWishlistItem))
+
+  handle('wishlist:add', (modelId, versionId) => {
+    if (!isInt(modelId, 1, MAX_ID) || !isInt(versionId, 1, MAX_ID)) return fail('error.invalidParams')
+    const found = shown.get(wishKey(modelId as number, versionId as number)) ?? fail('error.wishlistUnknown')
+    const e = found.entry
+    repos.wishlist.add({
+      modelId: e.modelId, versionId: e.versionId, kind: found.kind, name: e.name, versionName: e.versionName, baseModel: e.baseModel,
+      creator: e.creator, site: found.site, thumb: found.thumb, files: e.files,
+    })
+    send('wishlist:changed', { removed: 0 })
+  })
+
+  handle('wishlist:remove', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    if (!repos.wishlist.remove(id as number)) return fail('error.notFound')
+    send('wishlist:changed', { removed: 0 })
   })
 
   handle('civitai:openModel', (modelId, versionId, site) => {

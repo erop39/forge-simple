@@ -115,8 +115,28 @@
 }
 
 .item {
+  position: relative;
   display: flex;
   min-width: 0;
+}
+
+.bookmark {
+  position: absolute;
+  top: var(--sp-2);
+  right: calc(var(--sp-2) + 30px);
+  background: var(--surface-2);
+}
+
+.views {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
 }
 
 .card {

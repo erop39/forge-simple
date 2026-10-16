@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  ArchiveCreated, ArchiveRestored, ArchiveState, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  ArchiveCreated, ArchiveRestored, ArchiveState, WishlistItem, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -175,6 +175,11 @@ export interface AppState {
   openHires(id: number): void
   openModelGallery(kind: ModelKind): void
   civitaiBrowser: ModelKind | null
+  /** Models marked to download later (a model leaves it by itself when its file shows up in the library). */
+  wishlist: WishlistItem[]
+  /** Marks a model version of the listing the browser just showed; rejects with error.wishlistUnknown. */
+  addToWishlist(modelId: number, versionId: number): Promise<void>
+  removeFromWishlist(id: number): Promise<void>
   openCivitaiBrowser(kind: ModelKind): void
   closeCivitaiBrowser(): void
   /** Leaves the Civitai browser for the model library it was opened from. */
@@ -421,6 +426,12 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     }
 
     /** Reloads the negative presets; only the newest request may set the list. */
+    async function loadWishlist(): Promise<void> {
+      try {
+        set({ wishlist: await api.wishlist.list() })
+      } catch { /* the list stays as it was; a failed read is no reason for a banner */ }
+    }
+
     async function loadPresets(): Promise<void> {
       const seq = ++presetsSeq
       const list = await attempt(() => api.negativePresets.list())
@@ -475,6 +486,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (was && !civitai.running) void markModel(async () => undefined)
       })
       api.on('servers', (servers) => set({ servers }))
+      api.on('wishlist:changed', () => { void loadWishlist() })
       api.on('forge:capabilities', (capabilities) => {
         capabilitiesSeq++
         set({ capabilities })
@@ -608,6 +620,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       if (current) set({ settings: current })
       // The presets come first: a family's default negative is applied while the first model is selected.
       await loadPresets()
+      void loadWishlist()
       await Promise.all([loadForgeState(), current?.serverUrl ? loadCatalog() : undefined])
     }
 
@@ -651,6 +664,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       batchJobIds: [],
       modelGallery: null,
       civitaiBrowser: null,
+      wishlist: [],
       civitai: { running: false, done: 0, total: 0, found: 0, paused: false },
       logOpen: false,
       logEntries: [],
@@ -1168,6 +1182,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       closeCivitaiBrowser() {
         set({ civitaiBrowser: null })
+      },
+
+      async addToWishlist(modelId, versionId) {
+        await api.wishlist.add(modelId, versionId)
+        await loadWishlist()
+      },
+
+      async removeFromWishlist(id) {
+        await attempt(() => api.wishlist.remove(id))
+        await loadWishlist()
       },
 
       backFromCivitaiBrowser() {

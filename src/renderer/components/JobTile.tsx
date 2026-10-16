@@ -58,6 +58,7 @@ function RunningBody({ job, progress, tabIndex }: BodyProps & { progress: JobPro
     t('job.step', { current: step, total }),
     progress?.stepsPerSec != null ? t('job.speed', { v: progress.stepsPerSec.toFixed(1) }) : null,
     progress ? t('job.elapsed', { s: Math.floor(progress.elapsedMs / 1000) }) : null,
+    progress?.stalledMs ? t('job.noProgress', { s: Math.floor(progress.stalledMs / 1000) }) : null,
   ]
     .filter((part) => part !== null)
     .join(' · ')

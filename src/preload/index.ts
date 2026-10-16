@@ -106,6 +106,11 @@ const api: Api = {
     apply: () => invoke('backup:apply'),
     discard: () => invoke('backup:discard'),
   },
+  wishlist: {
+    list: () => invoke('wishlist:list'),
+    add: (modelId, versionId) => invoke('wishlist:add', modelId, versionId),
+    remove: (id) => invoke('wishlist:remove', id),
+  },
   archive: {
     state: () => invoke('archive:state'),
     chooseDir: () => invoke('archive:chooseDir'),

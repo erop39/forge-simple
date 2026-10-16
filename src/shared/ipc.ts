@@ -1,5 +1,5 @@
 import type {
-  ArchiveCreated, ArchiveRestored, ArchiveState, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  ArchiveCreated, ArchiveRestored, ArchiveState, Catalog, ImportSummary, WishlistItem, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -11,7 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
-  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy', 'error.backupNotBackup', 'error.backupVersion', 'error.backupMalformed', 'error.backupTooBig', 'error.lockedImages', 'error.archiveNothing', 'error.archiveNoSpace', 'error.archiveUnavailable', 'error.archiveUnreadable', 'error.archiveVersion', 'error.archiveBusy',
+  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy', 'error.backupNotBackup', 'error.backupVersion', 'error.backupMalformed', 'error.backupTooBig', 'error.lockedImages', 'error.archiveNothing', 'error.archiveNoSpace', 'error.archiveUnavailable', 'error.archiveUnreadable', 'error.archiveVersion', 'error.archiveBusy', 'error.wishlistUnknown',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -66,6 +66,7 @@ export interface AppEvents {
   'lock': LockState
   /** These images were hidden or unhidden. */
   'images:changed': { ids: number[] }
+  'wishlist:changed': { removed: number }
 }
 
 export interface Api {
@@ -231,6 +232,16 @@ export interface Api {
     discard(): Promise<void>
   }
   /**
+   * Models marked to download later. `add` takes a model version from a listing the browser just showed (error.wishlistUnknown
+   * otherwise); the list also loses a model by itself when its file appears in the library (pushes 'wishlist:changed').
+   */
+  wishlist: {
+    list(): Promise<WishlistItem[]>
+    add(modelId: number, versionId: number): Promise<void>
+    /** Takes one off the list (Mark as downloaded, or changed your mind). */
+    remove(id: number): Promise<void>
+  }
+  /**
    * Archives: images moved out of the gallery into a folder (files, thumbnails, records) after a verified copy. Hidden images
    * are never archived. `create` needs at least one archivable image (error.archiveNothing) and room on the disk
    * (error.archiveNoSpace); `restore` puts an archive's images back into the gallery (error.archiveUnavailable when its
@@ -284,7 +295,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:setFamilyModules', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'archive:state', 'archive:chooseDir', 'archive:create', 'archive:restore', 'generations:count', 'generations:deleteAll', 'backup:export', 'backup:preview', 'backup:apply', 'backup:discard', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'wishlist:list', 'wishlist:add', 'wishlist:remove', 'archive:state', 'archive:chooseDir', 'archive:create', 'archive:restore', 'generations:count', 'generations:deleteAll', 'backup:export', 'backup:preview', 'backup:apply', 'backup:discard', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',
@@ -296,7 +307,7 @@ export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'resources', 'servers',
-  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed', 'civitai:progress',
+  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed', 'wishlist:changed', 'civitai:progress',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

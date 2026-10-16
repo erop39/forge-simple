@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Download later in the Civitai browser: a bookmark on each model card marks it, the Download later view lists the marked models (preview, base model, creator, Open on Civitai, Mark as downloaded), and a model leaves the list by itself once its file shows up in the library. That check is a comparison in memory of file names and of the Civitai answers the app already holds; it makes no request and runs whenever the model list loads.
+- The base-model filter of the Civitai browser takes several base models at once (tick any number, or clear them).
 - A Site menu in the Civitai browser: civitai.com (safe for work, the default) or civitai.red (everything, with its mature previews and models). The choice is remembered, a notice shows while civitai.red is on, and a card opens its page on the chosen site. Cards that have no safe-for-work preview now say so instead of just No preview.
 - Archives (phase 1): Archive in the selection bar moves the selected images into a folder (default next to the images folder, changeable in settings) with their prompts, settings, tags and thumbnails. Every file is copied and its SHA-256 read back before the images leave the gallery; hidden images are never archived and a failure leaves the gallery untouched. The server dialog lists the archives with their size and date and restores one (files, jobs, original times, tags and upscale links; a second restore adds nothing). Design in `docs/archive-design.md`.
 - A red Delete all generations button in the server dialog's Danger zone: after a count and a second confirmation it deletes every image with its files and every finished job (servers, presets and settings stay). It refuses while a job waits or runs, and while hidden images exist behind a closed lock.
@@ -16,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A generation that Forge silently dropped no longer runs forever: when Forge has been seen running the job and then reports nothing running for 45 s while the answer never arrives, the job fails as stalled (Retry is offered). The running tile also says "no progress for N s" once neither the step nor the pass has moved for 30 s.
 - Archiving and Delete all generations write one log entry for the whole operation instead of one "Image N deleted" line per image.
 - Civitai browser previews: the image CDN redirects to its blob host, which the downloader refused; redirects are followed again, and the final address must still be on civitai.com.
 - Quick successive marks on models (favorite on, then off) can no longer be overwritten by a late answer; a model preview image is read through the managed-folder check; PromptBar's pill radius and loading duration use tokens; the viewer's Set as model preview result stays with the image it was made for.

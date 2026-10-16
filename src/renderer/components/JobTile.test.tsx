@@ -127,3 +127,8 @@ describe('Restart Forge on a failed tile', () => {
     expect(screen.queryByRole('button', { name: en['job.restartForge'] })).toBeNull()
   })
 })
+
+test('a running tile warns when nothing has moved for a while', () => {
+  renderWithStore(<JobTile job={job('running')} progress={progress({ stalledMs: 64_000 })} queuePosition={null} />)
+  expect(screen.getByText(/no progress for 64 s/)).toBeDefined()
+})

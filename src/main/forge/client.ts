@@ -90,7 +90,8 @@ export interface ProgressResponse {
   progress: number
   eta_relative: number
   current_image: string | null
-  state: { sampling_step: number; sampling_steps: number; job_no: number; job_count: number }
+  /** `job` is Forge's name for the job it is running ('' when idle); null when this Forge does not say. */
+  state: { sampling_step: number; sampling_steps: number; job_no: number; job_count: number; job: string | null }
 }
 
 export interface SdModel {
@@ -216,6 +217,7 @@ function parseProgress(value: unknown): ProgressResponse {
       sampling_steps: num(state, 'sampling_steps', 'state'),
       job_no: typeof state.job_no === 'number' ? state.job_no : 0,
       job_count: typeof state.job_count === 'number' ? state.job_count : 0,
+      job: typeof state.job === 'string' ? state.job : null,
     },
   }
 }

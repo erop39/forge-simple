@@ -1355,6 +1355,34 @@ describe('civitai lookup', () => {
     await expect(call('civitai:openModel', '7', 70)).rejects.toThrow('error.invalidParams')
   })
 
+  test('download later: mark from a shown listing, list, remove, and a model whose file appears in the library leaves the list by itself', async () => {
+    await call('civitai:setEnabled', true)
+    const when = new Date(Date.now() - 1000).toISOString()
+    browseAnswer = { items: [
+      { id: 9, name: 'Detail Tweaker XL', creator: { username: 'maker' }, modelVersions: [{ id: 90, name: 'v3', baseModel: 'SDXL 1.0', publishedAt: when, files: [{ name: 'detail_tweaker.safetensors' }], images: [] }] },
+      { id: 10, name: 'Other', modelVersions: [{ id: 100, name: 'v1', baseModel: 'SDXL 1.0', publishedAt: when, files: [{ name: 'other.safetensors' }], images: [] }] },
+    ], metadata: {} }
+    await call('civitai:browse', { site: 'com', kind: 'lora', period: 'week', sort: 'newest', baseModels: [], text: '' })
+    await expect(call('wishlist:add', 9999, 1)).rejects.toThrow('error.wishlistUnknown')
+    await expect(call('wishlist:add', '9', 90)).rejects.toThrow('error.invalidParams')
+    await call('wishlist:add', 9, 90)
+    await call('wishlist:add', 10, 100)
+    await call('wishlist:add', 10, 100)
+    const listed = (await call('wishlist:list')) as { id: number; name: string; site: string; kind: string }[]
+    expect(listed.map((w) => [w.name, w.site, w.kind]).sort()).toEqual([['Detail Tweaker XL', 'com', 'lora'], ['Other', 'com', 'lora']])
+    expect(listed[0]).not.toHaveProperty('files')
+    mock.respond('/sdapi/v1/loras', { json: [{ name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH, metadata: {} }] })
+    sent.length = 0
+    await call('catalog:get', true)
+    const left = (await call('wishlist:list')) as { id: number; name: string }[]
+    expect(left.map((w) => w.name)).toEqual(['Other'])
+    expect(sent.some((s) => s.e === 'wishlist:changed' && (s.p as { removed: number }).removed === 1)).toBe(true)
+    expect(oplog.list().map((e) => e.messageKey)).toContain('log.storage.wishlistFound')
+    await call('wishlist:remove', left[0]!.id)
+    expect(await call('wishlist:list')).toEqual([])
+    await expect(call('wishlist:remove', left[0]!.id)).rejects.toThrow('error.notFound')
+  })
+
   test('one file can be updated on its own: needs consent, reports found / unknown / no hash', async () => {
     mock.respond('/sdapi/v1/loras', { json: [
       { name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH, metadata: { sshs_model_hash: LORA_HASH } },

@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ArrowLeft, ArrowSquareOut, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowSquareOut, BookmarkSimple, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import type { CivitaiBrowseItem, CivitaiBrowseQuery, ModelKind } from '@shared/types'
 import { errorText } from '../i18n/error-text'
@@ -7,13 +7,14 @@ import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
+import { MultiSelect } from './ui/MultiSelect'
 import { Select } from './ui/Select'
 import styles from './CivitaiBrowser.module.css'
 
 const PERIODS = ['day', 'week', 'month'] as const
 const SORTS = ['newest', 'downloads', 'rating'] as const
-/** Civitai's own names for the base models; '' = any. */
-const BASES = ['', 'SD 1.5', 'SDXL 1.0', 'Pony', 'Illustrious', 'Flux.1 D', 'Flux.1 S', 'SD 3.5', 'Qwen', 'Anima'] as const
+/** Civitai's own names for the base models. */
+const BASES = ['SD 1.5', 'SDXL 1.0', 'Pony', 'Illustrious', 'Flux.1 D', 'Flux.1 S', 'SD 3.5', 'Qwen', 'Anima'] as const
 const SITE_KEY = 'fnc.civitaiSite'
 const readSite = (): 'com' | 'red' => {
   try { return localStorage.getItem(SITE_KEY) === 'red' ? 'red' : 'com' } catch { return 'com' }
@@ -43,11 +44,16 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
   const setCivitaiEnabled = useAppStore((s) => s.setCivitaiEnabled)
   const browse = useAppStore((s) => s.browseCivitai)
   const openModel = useAppStore((s) => s.openCivitaiModel)
+  const wishlist = useAppStore((s) => s.wishlist)
+  const addToWishlist = useAppStore((s) => s.addToWishlist)
+  const removeFromWishlist = useAppStore((s) => s.removeFromWishlist)
+  const [view, setView] = useState<'browse' | 'later'>('browse')
+  const [wishError, setWishError] = useState<string | null>(null)
   const [kind, setKind] = useState<ModelKind>(initialKind)
   const [site, setSite] = useState<'com' | 'red'>(readSite)
   const [period, setPeriod] = useState<CivitaiBrowseQuery['period']>('week')
   const [sort, setSort] = useState<CivitaiBrowseQuery['sort']>('newest')
-  const [base, setBase] = useState('')
+  const [bases, setBases] = useState<string[]>([])
   const [text, setText] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [items, setItems] = useState<CivitaiBrowseItem[]>([])
@@ -61,7 +67,7 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
     setLoading(true)
     setError(null)
     try {
-      const page = await browse({ site, kind, period, sort, baseModels: base === '' ? [] : [base], text: submitted, cursor })
+      const page = await browse({ site, kind, period, sort, baseModels: bases, text: submitted, cursor })
       if (mine !== seq.current) return
       setItems((old) => (cursor === null ? page.items : [...old, ...page.items.filter((n) => !old.some((o) => o.versionId === n.versionId))]))
       setNext(page.next)
@@ -79,13 +85,30 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
     else seq.current++
     // `load` reads the filters above; a change of any of them starts a new listing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consent, site, kind, period, sort, base, submitted])
+  }, [consent, site, kind, period, sort, bases, submitted])
+
+  const wished = (item: { modelId: number; versionId: number }) =>
+    wishlist.find((w) => w.modelId === item.modelId && w.versionId === item.versionId)
+  async function toggleWish(item: CivitaiBrowseItem): Promise<void> {
+    setWishError(null)
+    try {
+      const have = wished(item)
+      if (have) await removeFromWishlist(have.id)
+      else await addToWishlist(item.modelId, item.versionId)
+    } catch (e) {
+      setWishError(errorText(e))
+    }
+  }
 
   return (
     <div className={styles.layout}>
       <div className={styles.head}>
         <IconButton label={t('browser.back')} icon={<ArrowLeft size={20} />} onClick={onBack} />
         <Dialog.Title className={styles.title}>{t('browser.title')}</Dialog.Title>
+        <div className={styles.views} role="group" aria-label={t('browser.views')}>
+          <Button aria-pressed={view === 'browse'} variant={view === 'browse' ? 'primary' : 'plain'} onClick={() => setView('browse')}>{t('browser.viewBrowse')}</Button>
+          <Button aria-pressed={view === 'later'} variant={view === 'later' ? 'primary' : 'plain'} onClick={() => setView('later')}>{t('browser.viewLater', { n: wishlist.length })}</Button>
+        </div>
         <IconButton label={t('models.close')} icon={<X size={20} />} onClick={onClose} />
       </div>
       {!consent ? (
@@ -97,6 +120,30 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
             <Button onClick={onClose}>{t('civitai.consentNo')}</Button>
           </div>
         </div>
+      ) : view === 'later' ? (
+        <>
+          <p className={styles.hint}>{t('later.hint')}</p>
+          {wishError && <p role="alert" className={styles.error}>{wishError}</p>}
+          {wishlist.length === 0 && <p className={styles.empty}>{t('later.empty')}</p>}
+          <ul className={styles.grid} aria-label={t('later.title')}>
+            {wishlist.map((w) => (
+              <li key={w.id} className={styles.item}>
+                <div className={styles.card}>
+                  <span className={styles.frame}>
+                    {w.thumb ? <img className={styles.thumb} src={w.thumb} alt="" /> : <span className={styles.noThumb}>{t('browser.noPreview')}</span>}
+                  </span>
+                  <span className={styles.name} title={w.name}>{w.name}</span>
+                  <span className={styles.meta}>{[w.baseModel, w.versionName].filter((x) => x !== '').join(' · ')}</span>
+                  <span className={styles.meta}>{[w.kind === 'lora' ? t('browser.loras') : t('browser.checkpoints'), w.creator].filter((x) => x !== '').join(' · ')}</span>
+                  <div className={styles.cardActions}>
+                    <Button onClick={() => void openModel(w.modelId, w.versionId, w.site)}>{t('browser.open')}</Button>
+                    <Button onClick={() => void removeFromWishlist(w.id)}>{t('later.markDownloaded')}</Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : (
         <>
           <div className={styles.toolbar}>
@@ -112,14 +159,16 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
               options={PERIODS.map((p) => ({ value: p, label: t(`browser.period.${p}` as MessageKey) }))} />
             <Select label={t('browser.sort')} value={sort} onChange={(v) => setSort(v as typeof sort)}
               options={SORTS.map((s) => ({ value: s, label: t(`browser.sort.${s}` as MessageKey) }))} />
-            <Select label={t('browser.base')} value={base} onChange={setBase}
-              options={BASES.map((b) => ({ value: b, label: b === '' ? t('browser.baseAny') : b }))} />
+            <MultiSelect label={t('browser.base')} values={bases} onChange={setBases} clearLabel={t('browser.baseClear')}
+              summary={bases.length === 0 ? t('browser.baseAny') : bases.length === 1 ? bases[0]! : t('browser.baseMany', { n: bases.length })}
+              options={BASES.map((b) => ({ value: b, label: b }))} />
             <input className={styles.search} type="search" aria-label={t('browser.search')} placeholder={t('browser.search')}
               value={text} maxLength={100} onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') setSubmitted(text.trim()) }} />
           </div>
           {site === 'red' && <p className={styles.hint}>{t('browser.redNotice')}</p>}
           {error && <p role="alert" className={styles.error}>{error}</p>}
+          {wishError && <p role="alert" className={styles.error}>{wishError}</p>}
           {!error && !loading && items.length === 0 && <p className={styles.empty}>{t('browser.empty')}</p>}
           <ul className={styles.grid}>
             {items.map((item) => (
@@ -143,6 +192,8 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
                     {[item.publishedAt ? day.format(item.publishedAt) : '', item.creator, t('browser.downloads', { n: count.format(item.downloads) })].filter((x) => x !== '').join(' · ')}
                   </span>
                 </button>
+                <IconButton className={styles.bookmark} label={t(wished(item) ? 'later.remove' : 'later.add')} aria-pressed={wished(item) !== undefined}
+                  icon={<BookmarkSimple size={16} weight={wished(item) ? 'fill' : 'regular'} />} onClick={() => void toggleWish(item)} />
               </li>
             ))}
           </ul>

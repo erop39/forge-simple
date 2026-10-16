@@ -43,6 +43,7 @@ export function isCivitaiImage(url: string): boolean {
   }
 }
 
+const isObjectLike = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 const text = (v: unknown, max = 200): string => (typeof v === 'string' ? v.slice(0, max) : '')
 
 /** Reduces Civitai's answer to the few fields the app keeps. Anything off-shape reads as "not known". */
@@ -118,6 +119,8 @@ const SORT_NAME = { newest: 'Newest', downloads: 'Most Downloaded', rating: 'Hig
 export interface BrowseEntry {
   modelId: number; versionId: number; name: string; versionName: string; baseModel: string; creator: string
   publishedAt: number | null; downloads: number; url: string; imageUrl: string | null
+  /** File names of the version (at most 5), used to notice a download. */
+  files: string[]
 }
 
 /** The newest version of every model in a listing page, reduced to what the browser shows. */
@@ -151,6 +154,7 @@ export function parseBrowse(json: unknown): { entries: BrowseEntry[]; next: stri
       modelId: m.id, versionId: best.id as number, name: text(m.name), versionName: text(best.name), baseModel: text(best.baseModel, 60), creator,
       publishedAt: bestAt > 0 ? bestAt : null, downloads: typeof stats.downloadCount === 'number' ? stats.downloadCount : 0,
       url: `https://civitai.com/models/${m.id}?modelVersionId=${best.id as number}`, imageUrl: img ? (img.url as string) : null,
+      files: (Array.isArray(best.files) ? best.files : []).flatMap((f: unknown) => (isObjectLike(f) && typeof f.name === 'string' && f.name !== '' ? [f.name.slice(0, 200)] : [])).slice(0, 5),
     })
   }
   return { entries, next }

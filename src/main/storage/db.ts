@@ -50,6 +50,10 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   // 10: archives of generations moved out of the gallery (the folder holds the files and records; this row lists it).
   `CREATE TABLE archives (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
   created_at INTEGER NOT NULL, image_count INTEGER NOT NULL, bytes INTEGER NOT NULL);`,
+  // 11: models marked to download later (from the Civitai browser); `files` are the version's file names, used to notice the download.
+  `CREATE TABLE wishlist (id INTEGER PRIMARY KEY, model_id INTEGER NOT NULL, version_id INTEGER NOT NULL, kind TEXT NOT NULL,
+  name TEXT NOT NULL, version_name TEXT NOT NULL, base_model TEXT NOT NULL, creator TEXT NOT NULL, site TEXT NOT NULL,
+  thumb TEXT, files TEXT NOT NULL, added_at INTEGER NOT NULL, UNIQUE (model_id, version_id));`,
 ]
 
 export function openDb(path: string): Db {

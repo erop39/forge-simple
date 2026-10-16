@@ -30,6 +30,8 @@ export interface RunnerDeps {
   sleep(ms: number): Promise<void>
   /** How long an upscale request may stay unanswered before it is given up; EXTRAS_TIMEOUT_MS by default. */
   extrasTimeoutMs?: number
+  /** How long Forge may be seen idle before the job counts as stalled (tests shorten it). */
+  idleStallMs?: number
   /** Consumes the largest VRAM reading collected for this job, if any. */
   peakVram?(jobId: number): number | null
 }
@@ -37,6 +39,10 @@ export interface RunnerDeps {
 export type TickResult = 'idle' | 'ran' | 'paused'
 
 export const PROGRESS_INTERVAL_MS = 1000
+/** Forge idle (it had been running the job) for this long with no answer: the job is given up as stalled. */
+export const IDLE_STALL_MS = 45_000
+/** The tile warns when neither the step nor the job number has moved for this long. */
+export const STALL_NOTICE_MS = 30_000
 export const PAUSE_INTERVAL_MS = 5000
 /** Consecutive failed progress polls after which a silent link drop ends the job. */
 export const PROGRESS_FAILURE_LIMIT = 15
@@ -55,6 +61,8 @@ interface ActiveJob {
   cancelling: boolean
   stopping: boolean
   watchdog: boolean
+  /** Forge was seen running this job and then idle for a long time while its answer never came. */
+  stalled: boolean
 }
 
 type Outcome = { ok: true; value: GenerationResponse } | { ok: false; error: unknown }
@@ -355,7 +363,7 @@ export function createRunner(deps: RunnerDeps): {
       : job.type === 'img2img' ? buildImg2ImgBody(params, sourceBase64!, deps.findings)
         : buildTxt2ImgBody(params, deps.findings)
 
-    const a: ActiveJob = { jobId: job.id, client, controller: new AbortController(), cancelling: false, stopping: false, watchdog: false }
+    const a: ActiveJob = { jobId: job.id, client, controller: new AbortController(), cancelling: false, stopping: false, watchdog: false, stalled: false }
     active = a
     setStatus(job.id, 'running')
 
@@ -375,6 +383,10 @@ export function createRunner(deps: RunnerDeps): {
     let speed: number | null = null
     let lastJobNo = 0
     let settled = false
+    let sawRunning = false
+    let idleSince: number | null = null
+    let lastMoveAt = deps.now()
+    let lastStep = -1
 
     const request: Promise<Outcome> = (async () => job.type === 'upscale'
       ? client.upscale(body as ReturnType<typeof buildUpscaleBody>, a.controller.signal)
@@ -410,6 +422,19 @@ export function createRunner(deps: RunnerDeps): {
               samples.length = 0
               speed = null
               lastJobNo = prog.state.job_no
+              lastMoveAt = now
+            }
+            if (prog.state.sampling_step !== lastStep) { lastStep = prog.state.sampling_step; lastMoveAt = now }
+            // Forge says it runs nothing, yet our request has not been answered: the answer is not coming.
+            if (prog.state.job !== null) {
+              if (prog.state.job !== '') { sawRunning = true; idleSince = null } else if (sawRunning) {
+                idleSince ??= now
+                if (now - idleSince >= (deps.idleStallMs ?? IDLE_STALL_MS) && !settled) {
+                  a.stalled = true
+                  a.controller.abort()
+                  return
+                }
+              }
             }
             samples.push({ t: now, step: prog.state.sampling_step })
             const sps = stepsPerSec(samples)
@@ -422,6 +447,7 @@ export function createRunner(deps: RunnerDeps): {
                 : params.hires && params.hires.scale > 1 && prog.state.job_no > 0 ? 'hires' : 'sampling',
               stepsPerSec: sps,
               elapsedMs: now - startedAt,
+              stalledMs: now - lastMoveAt >= STALL_NOTICE_MS ? now - lastMoveAt : null,
               preview: prog.current_image ? `data:image/png;base64,${prog.current_image}` : null,
             }))
           } catch {
@@ -469,6 +495,11 @@ export function createRunner(deps: RunnerDeps): {
 
     if (!outcome.ok) {
       const err = outcome.error
+      if (a.stalled) {
+        setStatus(job.id, 'failed', { error: { code: 'stalled' } })
+        logError(job, 'log.error.stalled', {})
+        return 'ran'
+      }
       if (a.watchdog) {
         interrupted(job, { code: 'network' }, 'log.error.connectionLost', { kind: 'watchdog' })
         return markPaused()

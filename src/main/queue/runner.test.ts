@@ -40,13 +40,13 @@ const response = (n = 1, info: unknown = { all_seeds: [111, 222], infotexts: ['i
 })
 const progressAt = (step: number, image: string | null = null): ProgressResponse => ({
   progress: 0, eta_relative: 0, current_image: image,
-  state: { sampling_step: step, sampling_steps: 28, job_no: 0, job_count: 1 },
+  state: { sampling_step: step, sampling_steps: 28, job_no: 0, job_count: 1, job: null },
 })
 
 let db: Db
 afterEach(() => { if (db?.open) db.close() })
 
-function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean; peakVram?: number; extrasTimeoutMs?: number } = {}) {
+function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean; peakVram?: number; extrasTimeoutMs?: number; idleStallMs?: number } = {}) {
   db = openDb(':memory:')
   let clock = 0
   const now = () => clock
@@ -126,15 +126,16 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
     },
     now,
     ...(opts.extrasTimeoutMs !== undefined ? { extrasTimeoutMs: opts.extrasTimeoutMs } : {}),
+    ...(opts.idleStallMs !== undefined ? { idleStallMs: opts.idleStallMs } : {}),
     sleep: (ms) => { const d = deferred<void>(); sleeps.push({ ms, d, used: false }); return d.promise },
     peakVram: () => opts.peakVram ?? null,
   })
 
   const at = (t: number) => { clock = t }
   /** Lets the in-flight request's progress poll fire once, with Forge reporting `step`. */
-  async function poll(step: number, t: number, image: string | null = null, jobNo = 0) {
+  async function poll(step: number, t: number, image: string | null = null, jobNo = 0, job: string | null = null) {
     const reported = progressAt(step, image)
-    state.progress = { ...reported, state: { ...reported.state, job_no: jobNo, job_count: jobNo > 0 ? 2 : 1 } }
+    state.progress = { ...reported, state: { ...reported.state, job_no: jobNo, job_count: jobNo > 0 ? 2 : 1, job } }
     at(t)
     const before = progress.length
     const s = sleeps.find((x) => x.ms === 1000 && !x.used)
@@ -400,7 +401,7 @@ test('progress events carry step, totalSteps, stepsPerSec and a data-URL preview
   await h.poll(4, 1000, 'AAAA')
   await h.poll(10, 3000)
   expect(h.progress[0]).toEqual({
-    jobId: job.id, step: 4, totalSteps: 28, stage: 'sampling', stepsPerSec: null, elapsedMs: 1000,
+    jobId: job.id, step: 4, totalSteps: 28, stage: 'sampling', stepsPerSec: null, elapsedMs: 1000, stalledMs: null,
     preview: 'data:image/png;base64,AAAA',
   })
   expect(h.progress[1]).toMatchObject({ step: 10, stepsPerSec: 3, elapsedMs: 3000, preview: null })
@@ -961,6 +962,37 @@ describe('review fixes', () => {
     expect(await t).toBe('paused')
     expect(h.signals[0]!.aborted).toBe(true)
     expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'network' } })
+  })
+
+  test('Forge seen running the job and then idle for too long without an answer: the job fails as stalled', async () => {
+    const h = setup({ idleStallMs: 10_000 })
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await h.started()
+    await h.poll(3, 1000, null, 0, 'task(x)')
+    await h.poll(0, 2000, null, 1, '')
+    await h.poll(0, 8000, null, 1, '')
+    expect(h.signals[0]!.aborted).toBe(false)
+    await h.poll(0, 12_000, null, 1, '').catch(() => undefined)
+    await t
+    expect(h.signals[0]!.aborted).toBe(true)
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: { code: 'stalled' } })
+    expect(h.oplog.list().map((e) => e.messageKey)).toContain('log.error.stalled')
+  })
+
+  test('a Forge that does not name its job, or that is busy, is never judged idle; the tile is warned after 30 s without movement', async () => {
+    const h = setup({ idleStallMs: 1000 })
+    h.runner.enqueue(params())
+    const t = h.runner.tick()
+    await h.started()
+    await h.poll(0, 1000, null, 0, null)
+    await h.poll(0, 40_000, null, 0, null)
+    expect(h.signals[0]!.aborted).toBe(false)
+    expect(h.progress[1]).toMatchObject({ stalledMs: 39_000 })
+    await h.poll(5, 41_000, null, 0, 'task(y)')
+    expect(h.progress[2]).toMatchObject({ stalledMs: null })
+    h.gens[0]!.resolve(response())
+    await t
   })
 
   test('an upscale request that gets no answer in time is given up and the job is interrupted', async () => {

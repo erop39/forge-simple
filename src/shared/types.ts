@@ -46,7 +46,7 @@ export interface GenerationParams {
   /** Tags put on every image this job makes (optional: older saved jobs have none). */
   tags?: string[];
 }
-export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'sizeLimit' | 'unexpected';
+export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'sizeLimit' | 'stalled' | 'unexpected';
 /** detail carries server or system text for txt2img only; source-image jobs omit arbitrary Forge text. */
 export interface JobError { code: JobErrorCode; status?: number; detail?: string; missing?: string[] }
 export interface Job {
@@ -73,6 +73,8 @@ export interface JobProgress {
   jobId: number; step: number; totalSteps: number;
   stage: 'sampling' | 'hires' | 'upscaling';
   stepsPerSec: number | null; elapsedMs: number; preview: string | null; // data URL
+  /** How long neither the step nor the job number has moved, once that is 30 s or more (the tile warns); null otherwise. */
+  stalledMs?: number | null
 }
 export type ConnectionState = 'connected' | 'slow' | 'reconnecting' | 'offline';
 export interface ConnectionStatus { state: ConnectionState; latencyMs: number | null; attempts: number; lastOkAt: number | null }
@@ -193,6 +195,12 @@ export interface ArchiveInfo { id: number; name: string; createdAt: number; imag
 export interface ArchiveState { dir: string; archives: ArchiveInfo[] }
 export interface ArchiveCreated { name: string; archived: number; skippedHidden: number; unreadable: number; notRemoved: number }
 export interface ArchiveRestored { restored: number; alreadyThere: number; damaged: number }
+
+/** A model marked in the Civitai browser to download later; it leaves the list when the file shows up in the library. */
+export interface WishlistItem {
+  id: number; modelId: number; versionId: number; kind: ModelKind; name: string; versionName: string; baseModel: string
+  creator: string; site: 'com' | 'red'; thumb: string | null; addedAt: number
+}
 
 /** What an import of a settings file adds (or would add). `renamed`: names that got "(imported)"; `skipped`: what was already there. */
 export interface ImportSummary {

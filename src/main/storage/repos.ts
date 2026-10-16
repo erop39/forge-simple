@@ -11,6 +11,11 @@ export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
 type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null; hidden?: boolean; createdAt?: number }
 
+export interface WishRow {
+  id: number; modelId: number; versionId: number; kind: ModelKind; name: string; versionName: string; baseModel: string
+  creator: string; site: 'com' | 'red'; thumb: string | null; files: string[]; addedAt: number
+}
+
 export interface ArchiveRow { id: number; name: string; path: string; createdAt: number; imageCount: number; bytes: number }
 
 /** Another saved (not removed) server already has that address. */
@@ -723,7 +728,29 @@ export function createRepos(db: Db, now: () => number) {
       return this.get(Number(res.lastInsertRowid)) as ArchiveRow
     },
   }
+  interface WishSql {
+    id: number; model_id: number; version_id: number; kind: ModelKind; name: string; version_name: string; base_model: string
+    creator: string; site: 'com' | 'red'; thumb: string | null; files: string; added_at: number
+  }
+  const toWish = (r: WishSql): WishRow => ({
+    id: r.id, modelId: r.model_id, versionId: r.version_id, kind: r.kind, name: r.name, versionName: r.version_name, baseModel: r.base_model,
+    creator: r.creator, site: r.site, thumb: r.thumb, files: JSON.parse(r.files) as string[], addedAt: r.added_at,
+  })
+  const wishlist = {
+    list(): WishRow[] {
+      return (db.prepare('SELECT * FROM wishlist ORDER BY id DESC').all() as WishSql[]).map(toWish)
+    },
+    /** Adds a model version once; false when it is already on the list. */
+    add(row: Omit<WishRow, 'id' | 'addedAt'>): boolean {
+      return db.prepare(`INSERT OR IGNORE INTO wishlist (model_id, version_id, kind, name, version_name, base_model, creator, site, thumb, files, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(row.modelId, row.versionId, row.kind, row.name, row.versionName, row.baseModel,
+        row.creator, row.site, row.thumb, JSON.stringify(row.files), now()).changes > 0
+    },
+    remove(id: number): boolean {
+      return db.prepare('DELETE FROM wishlist WHERE id = ?').run(id).changes > 0
+    },
+  }
   /** Runs the function in one transaction: all its writes land, or none do. */
   const transaction = <T>(fn: () => T): T => db.transaction(fn)()
-  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta, archives, transaction }
+  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta, archives, wishlist, transaction }
 }
