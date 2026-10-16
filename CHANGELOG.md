@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Archiving and Delete all generations write one log entry for the whole operation instead of one "Image N deleted" line per image.
 - Civitai browser previews: the image CDN redirects to its blob host, which the downloader refused; redirects are followed again, and the final address must still be on civitai.com.
 - Quick successive marks on models (favorite on, then off) can no longer be overwritten by a late answer; a model preview image is read through the managed-folder check; PromptBar's pill radius and loading duration use tokens; the viewer's Set as model preview result stays with the image it was made for.
 

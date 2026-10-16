@@ -1076,7 +1076,7 @@ export function registerIpc(
   })
 
   /** Removes one saved image and its files; false when it is gone or hidden behind a closed lock. */
-  async function removeImage(id: number): Promise<boolean> {
+  async function removeImage(id: number, log = true): Promise<boolean> {
     // Like unhiding: a hidden image cannot be removed without the password.
     if (!lock.isOpen() && repos.images.get(id)?.hidden) return false
     const row = repos.images.delete(id)
@@ -1090,10 +1090,13 @@ export function registerIpc(
       })
     }
     send('image:removed', { id })
-    oplog.write({
-      level: 'info', category: 'storage', messageKey: 'log.storage.imageDeleted',
-      jobId: row.jobId, details: { imageId: id },
-    })
+    // Archiving and delete-all write one summary entry instead of one line per image.
+    if (log) {
+      oplog.write({
+        level: 'info', category: 'storage', messageKey: 'log.storage.imageDeleted',
+        jobId: row.jobId, details: { imageId: id },
+      })
+    }
     return true
   }
 
@@ -1158,7 +1161,7 @@ export function registerIpc(
     archiveBusy = true
     try {
       const result = await createArchive({
-        repos, now: Date.now, resolveManaged: (file) => deps.images.resolveManaged(file), removeImage,
+        repos, now: Date.now, resolveManaged: (file) => deps.images.resolveManaged(file), removeImage: (id) => removeImage(id, false),
       }, archiveDir(), [...new Set(ids as number[])], label)
       for (const id of result.removedJobIds) send('job:removed', { id })
       oplog.write({
@@ -1209,7 +1212,7 @@ export function registerIpc(
       if (page.length === 0) break
       let progress = 0
       for (const row of page) {
-        if (await removeImage(row.id)) { deleted++; progress++ } else failed++
+        if (await removeImage(row.id, false)) { deleted++; progress++ } else failed++
       }
       if (progress === 0) break
     }

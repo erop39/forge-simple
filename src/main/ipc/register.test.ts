@@ -1445,6 +1445,8 @@ test('archive: the folder is chosen and tested, create moves images out after a 
   const state = (await call('archive:state')) as { dir: string; archives: { id: number; name: string; imageCount: number; available: boolean }[] }
   expect(state.archives).toMatchObject([{ name: created.name, imageCount: 2, available: true }])
   expect(JSON.stringify(oplog.list())).not.toContain('arch-a')
+  expect(oplog.list().map((e) => e.messageKey)).toContain('log.storage.archived')
+  expect(oplog.list().filter((e) => e.messageKey === 'log.storage.imageDeleted')).toEqual([])
   rmSync(path.join(canonical, created.name), { recursive: true })
   expect(((await call('archive:state')) as { archives: { available: boolean }[] }).archives[0]!.available).toBe(false)
   await expect(call('archive:restore', state.archives[0]!.id)).rejects.toThrow('error.archiveUnavailable')
@@ -1470,6 +1472,7 @@ test('generations:deleteAll empties the gallery and finished jobs, but not while
   expect(repos.jobs.get(waiting.id)).toBeNull()
   expect(sent.filter((s) => s.e === 'image:removed')).toHaveLength(2)
   expect(oplog.list().map((e) => e.messageKey)).toContain('log.storage.allDeleted')
+  expect(oplog.list().filter((e) => e.messageKey === 'log.storage.imageDeleted')).toEqual([])
   expect(repos.servers.list().length).toBeGreaterThan(0)
 })
 
