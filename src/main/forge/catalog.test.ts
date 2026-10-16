@@ -50,7 +50,7 @@ test('get() loads every list once and caches it', async () => {
   ])
   expect(first.samplers).toEqual(['Euler', 'Euler a'])
   expect(first.schedulers).toEqual(['Automatic', 'Simple'])
-  expect(first.upscalers).toEqual(['Latent', 'R-ESRGAN 4x+'])
+  expect(first.upscalers).toEqual(['Latent', 'Latent (nearest)', 'None', 'R-ESRGAN 4x+'])
 })
 
 test('get(true) refetches', async () => {
@@ -134,7 +134,7 @@ test('writes a catalog log entry with item counts and duration', async () => {
   expect(e).toMatchObject({
     level: 'info',
     messageKey: 'log.catalog.loaded',
-    details: { checkpoints: 2, modules: 2, loras: 2, samplers: 2, schedulers: 2, upscalers: 2 },
+    details: { checkpoints: 2, modules: 2, loras: 2, samplers: 2, schedulers: 2, upscalers: 4 },
   })
   expect(e?.durationMs).toBeGreaterThanOrEqual(0)
 })

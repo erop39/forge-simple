@@ -137,6 +137,8 @@ export interface ForgeClient {
   /** Scheduler labels (e.g. "Automatic"), falling back to the internal name. */
   schedulers(): Promise<string[]>
   upscalers(): Promise<string[]>
+  /** Forge's latent second-pass modes (`Latent`, `Latent (nearest)`…): they are not in `upscalers()`. */
+  latentUpscaleModes(): Promise<string[]>
   options(): Promise<Record<string, unknown>>
   /** Forge's launch flags (`/cmd-flags`), e.g. `api_server_stop`. */
   cmdFlags(): Promise<Record<string, unknown>>
@@ -393,6 +395,10 @@ export function createForgeClient(
 
     async upscalers() {
       return names(await list('upscalers'), 'upscalers item')
+    },
+
+    async latentUpscaleModes() {
+      return names(await list('latent-upscale-modes'), 'latent-upscale-modes item')
     },
 
     async options() {

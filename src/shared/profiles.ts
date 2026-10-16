@@ -98,6 +98,11 @@ function pick(preferred: string, available: string[]): string {
   return available.includes(preferred) ? preferred : (available[0] ?? preferred)
 }
 
+/** Latent when the server has it, else the first real upscaler; "None" is never a second-pass choice. */
+export function hiresUpscaler(upscalers: string[]): string {
+  return upscalers.includes('Latent') ? 'Latent' : upscalers.find((name) => name !== 'None') ?? 'Latent'
+}
+
 export function defaultParams(
   family: Family,
   checkpoint: string,
@@ -123,6 +128,6 @@ export function defaultParams(
     seed: -1,
     count: 1,
     loras: [],
-    hires: { scale: 1, upscaler: pick('Latent', available.upscalers ?? []), secondPassSteps: 12, denoisingStrength: 0.4 },
+    hires: { scale: 1, upscaler: hiresUpscaler(available.upscalers ?? []), secondPassSteps: 12, denoisingStrength: 0.4 },
   }
 }

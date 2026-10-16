@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useEffect, useState } from 'react'
 import type { GenerationParams, HiresSettings } from '@shared/types'
-import { PROFILES } from '@shared/profiles'
+import { PROFILES, hiresUpscaler } from '@shared/profiles'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
@@ -49,7 +49,7 @@ function HiresForm({ id, onClose }: { id: number; onClose: () => void }) {
       if (!current) return
       if (details.jobType !== 'txt2img') { setSource('notTxt2img'); return }
       const upscaler = [preferred, details.params.hires?.upscaler].find((name) => name && upscalers.includes(name))
-        ?? upscalers[0] ?? 'Latent'
+        ?? hiresUpscaler(upscalers)
       const scale = SCALES.find((value) => details.params.width * value <= 4096 && details.params.height * value <= 4096)
       setSource(details.params)
       setHires({ scale: scale ?? 1.5, upscaler, secondPassSteps: details.params.hires?.secondPassSteps ?? 12,
@@ -100,7 +100,7 @@ function HiresForm({ id, onClose }: { id: number; onClose: () => void }) {
       </ParamRow>
       <ParamRow label={t('params.hiresUpscaler')}>
         <Select showLabel={false} label={t('params.hiresUpscaler')} value={settings.upscaler}
-          options={options(upscalers.length ? upscalers : [settings.upscaler])}
+          options={options(upscalers.filter((name) => name !== 'None').length ? upscalers.filter((name) => name !== 'None') : [settings.upscaler])}
           onChange={(upscaler) => change({ upscaler })} />
       </ParamRow>
       <ParamRow label={t('params.hiresSteps')}>

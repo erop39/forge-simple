@@ -122,7 +122,8 @@ describe('list calls', () => {
   test('schedulers() returns labels and upscalers() plain names', async () => {
     const client = createForgeClient(mock.url)
     expect(await client.schedulers()).toEqual(['Automatic', 'Simple'])
-    expect(await client.upscalers()).toEqual(['Latent', 'R-ESRGAN 4x+'])
+    expect(await client.upscalers()).toEqual(['None', 'R-ESRGAN 4x+'])
+    expect(await client.latentUpscaleModes()).toEqual(['Latent', 'Latent (nearest)'])
   })
 
   test('schedulers() falls back to the name when the label is missing', async () => {

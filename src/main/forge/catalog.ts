@@ -102,10 +102,15 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         })
         return []
       })
-      const [models, modules, loras, samplers, schedulers, upscalers, options] = await Promise.all([
-        client.models(), client.modules(), lorasOrEmpty, client.samplers(),
-        client.schedulers(), client.upscalers(), client.options(),
+      // The latent modes are a separate list in Forge; without them a hires pass could only name "None".
+      const latentModes = client.latentUpscaleModes().catch((): string[] => [
+        'Latent', 'Latent (antialiased)', 'Latent (bicubic)', 'Latent (bicubic antialiased)', 'Latent (nearest)', 'Latent (nearest-exact)',
       ])
+      const [models, modules, loras, samplers, schedulers, realUpscalers, latent, options] = await Promise.all([
+        client.models(), client.modules(), lorasOrEmpty, client.samplers(),
+        client.schedulers(), client.upscalers(), latentModes, client.options(),
+      ])
+      const upscalers = [...new Set([...latent, ...realUpscalers])]
       const loaded = options['sd_model_checkpoint']
       const catalog: Catalog = {
         checkpoints: models.map((m) => ({

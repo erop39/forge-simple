@@ -1,6 +1,6 @@
 import { Shuffle, X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
-import { PROFILES } from '@shared/profiles'
+import { PROFILES, hiresUpscaler } from '@shared/profiles'
 import type { HiresSettings, Img2ImgSettings } from '@shared/types'
 import { baseName } from '../format'
 import { t } from '../i18n/t'
@@ -123,7 +123,7 @@ function Hires() {
   const [presetError, setPresetError] = useState(false)
   if (!params || params.img2img) return null
   const hires: HiresSettings = params.hires ?? {
-    scale: 1, upscaler: upscalers[0] ?? 'Latent', secondPassSteps: 12, denoisingStrength: 0.4,
+    scale: 1, upscaler: hiresUpscaler(upscalers), secondPassSteps: 12, denoisingStrength: 0.4,
   }
   const change = (patch: Partial<HiresSettings>) => setParams({ hires: { ...hires, ...patch } })
   async function commitPreset(): Promise<void> {
@@ -189,7 +189,8 @@ function Hires() {
               showLabel={false}
               label={t('params.hiresUpscaler')}
               value={hires.upscaler}
-              options={options(upscalers.length ? upscalers : [hires.upscaler])}
+              options={options(upscalers.filter((name) => name !== 'None' || name === hires.upscaler).length
+                ? upscalers.filter((name) => name !== 'None' || name === hires.upscaler) : [hires.upscaler])}
               onChange={(upscaler) => { change({ upscaler }); setDefaultSaved(false) }}
             />
           </ParamRow>

@@ -322,7 +322,8 @@ export function startMockForge(opts: MockForgeOptions = {}): Promise<MockForge> 
         case '/sdapi/v1/loras': return ok(LORAS)
         case '/sdapi/v1/samplers': return ok(SAMPLERS)
         case '/sdapi/v1/schedulers': return ok(SCHEDULERS)
-        case '/sdapi/v1/upscalers': return ok([{ name: 'Latent' }, { name: 'R-ESRGAN 4x+' }])
+        case '/sdapi/v1/upscalers': return ok([{ name: 'None' }, { name: 'R-ESRGAN 4x+' }])
+        case '/sdapi/v1/latent-upscale-modes': return ok([{ name: 'Latent' }, { name: 'Latent (nearest)' }])
         case '/sdapi/v1/options':
           return ok({
             sd_model_checkpoint: checkpoints[0]?.title,
