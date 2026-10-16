@@ -98,6 +98,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The window buttons could cover the content: the 44 px title-bar overlay no longer matched a zoomed page, so page zoom is switched off (Ctrl+wheel, Ctrl+plus/minus/0 do nothing, and a zoom Chromium had remembered is reset at start). The viewer has its own zoom for pictures.
+- A new image arrives in the gallery with the tags of its job (they showed only after a reload).
+- Checkpoints without a full sha256 (Forge computes it lazily, 156 of 480 on the real server) are looked up on Civitai by Forge's short hash, which Civitai also accepts.
+- Model cards show the letter placeholder while a preview loads, up to 8 previews are fetched at once, and cards of a row have equal height.
 - Buttons never wrap their text (the Open on Civitai and Update from Civitai buttons overflowed in the details panel); button rows wrap whole buttons instead.
 - The bottom row of the prompt bar fills every line: sliders and the other controls share the free room, and a narrow window wraps whole controls instead of clipping them.
 - The loading bar at start spans the whole row up to the Generate button instead of two thirds of it, and its text wraps instead of being cut.

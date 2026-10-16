@@ -325,12 +325,21 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   )
 }
 
+/** The letter placeholder stands behind the picture, so a card is never blank while its preview is fetched or when it has none. */
 function Preview({ url, name }: { url: string; name: string }) {
-  const [failed, setFailed] = useState(false)
-  if (url === '' || failed) {
-    return <span className={styles.placeholder} aria-label={t('models.noPreview')}>{name.slice(0, 1).toUpperCase()}</span>
-  }
-  return <img className={styles.preview} src={url} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const none = url === '' || state === 'failed'
+  return (
+    <span className={styles.frame}>
+      <span className={styles.placeholder} aria-label={none ? t('models.noPreview') : undefined} aria-hidden={none ? undefined : true}>
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+      {url !== '' && state !== 'failed' && (
+        <img className={`${styles.preview} ${state === 'ready' ? styles.previewReady : ''}`} src={url} alt="" loading="lazy"
+          decoding="async" onLoad={() => setState('ready')} onError={() => setState('failed')} />
+      )}
+    </span>
+  )
 }
 
 type DetailsProps = {

@@ -684,8 +684,8 @@ export function registerIpc(
       const checkpoints = stored('checkpoint')
       const loras = stored('lora')
       return [
-        ...lastCatalog.checkpoints.flatMap((c) => c.sha256
-          ? [{ kind: 'checkpoint' as const, id: c.filename, hash: c.sha256, checkedAt: checkedAt(checkpoints.get(c.filename)) }] : []),
+        ...lastCatalog.checkpoints.flatMap((c) => (c.sha256 ?? c.hash)
+          ? [{ kind: 'checkpoint' as const, id: c.filename, hash: (c.sha256 ?? c.hash)!, checkedAt: checkedAt(checkpoints.get(c.filename)) }] : []),
         ...lastCatalog.loras.flatMap((l) => l.hash
           ? [{ kind: 'lora' as const, id: l.path, hash: l.hash, checkedAt: checkedAt(loras.get(l.path)) }] : []),
       ]
@@ -721,7 +721,7 @@ export function registerIpc(
     const target = await modelTarget(kind, id)
     const catalog = await loadCatalog()
     const hash = target.kind === 'checkpoint'
-      ? catalog.checkpoints.find((c) => c.filename === target.id)?.sha256
+      ? (() => { const c = catalog.checkpoints.find((x) => x.filename === target.id); return c?.sha256 ?? c?.hash })()
       : catalog.loras.find((l) => l.path === target.id)?.hash
     if (!hash) return 'noHash'
     const client = deps.civitai ?? createCivitaiClient({ now: Date.now })
@@ -1118,12 +1118,12 @@ export function registerIpc(
 }
 
 /** Listeners that forward runner and monitor events to the renderer through `send`. */
-export function forwardEvents(send: Send, lock: { isOpen(): boolean }) {
+export function forwardEvents(send: Send, lock: { isOpen(): boolean }, tagsOf?: (imageId: number) => string[]) {
   return {
     runner: {
       jobUpdate: (job: AppEvents['job:update']) => send('job:update', job),
       jobProgress: (p: AppEvents['job:progress']) => send('job:progress', p),
-      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row, { locked: row.hidden && !lock.isOpen() })),
+      imageAdded: (row: ImageRow) => send('image:added', toImageRecord(row, { locked: row.hidden && !lock.isOpen(), ...(tagsOf ? { tags: tagsOf(row.id) } : {}) })),
       forgeHealth: (unhealthy: boolean) => send('forge:health', { unhealthy }),
     },
     capabilities: (c: ForgeCapabilities) => send('forge:capabilities', c),

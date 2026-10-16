@@ -73,6 +73,15 @@ function createWindow(onVisibilityChange: () => void, onLoaded: () => void): voi
     }
     if (origin !== appOrigin) event.preventDefault()
   })
+  // The title bar overlay (the window buttons) is a fixed 44 px: a zoomed page would no longer match it and the
+  // buttons would cover the content. Page zoom is switched off (the viewer has its own zoom for pictures).
+  const resetZoom = (): void => { created.webContents.setZoomLevel(0) }
+  created.webContents.setVisualZoomLevelLimits(1, 1)
+  created.webContents.on('zoom-changed', resetZoom)
+  created.webContents.on('did-finish-load', resetZoom) // Chromium remembers a zoom per origin, also across restarts
+  created.webContents.on('before-input-event', (event, input) => {
+    if ((input.control || input.meta) && input.type === 'keyDown' && ['+', '=', '-', '_', '0'].includes(input.key)) event.preventDefault()
+  })
   created.once('ready-to-show', () => created.show())
   created.webContents.on('did-finish-load', onLoaded) // a reloaded page must not start from a stale status
   created.on('show', onVisibilityChange)
@@ -149,7 +158,7 @@ async function boot(): Promise<void> {
     meta: repos.modelMeta,
   })
   const images = createImageStore(imagesDir, makeThumb, imageRoots)
-  const events = forwardEvents(send, lock)
+  const events = forwardEvents(send, lock, (id) => repos.tags.forImages([id]).get(id) ?? [])
   const resources = createResourceMonitor({
     read: () => forge.client().memory(),
     readStats: () => forge.client().stats(),

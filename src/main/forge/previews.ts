@@ -8,7 +8,7 @@ import { isCivitaiImage } from './civitai'
 
 const EXTENSIONS = ['png', 'preview.png', 'jpg', 'preview.jpg', 'jpeg', 'preview.jpeg', 'webp', 'preview.webp']
 const TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
-const MAX_PARALLEL = 4
+const MAX_PARALLEL = 8
 const KEY = /^[0-9a-f]{20}$/
 
 /** The files Forge's extra-networks UI treats as a preview of a model file, in the order they are tried. */

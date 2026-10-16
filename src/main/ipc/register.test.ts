@@ -554,6 +554,13 @@ test('forwardEvents sends job events and converts ImageRow to ImageRecord withou
   expect(out[0]!.p).not.toHaveProperty('thumbPath')
 })
 
+test('a new image is announced with the tags of its job', () => {
+  const out: Record<string, unknown>[] = []
+  const ev = forwardEvents(((_e: string, p: Record<string, unknown>) => { out.push(p) }) as never, { isOpen: () => true }, () => ['night'])
+  ev.runner.imageAdded(seedImage().row)
+  expect(out[0]).toMatchObject({ tags: ['night'] })
+})
+
 test('forwardEvents redacts a hidden image while the lock is closed', () => {
   const out: Record<string, unknown>[] = []
   let open = false
@@ -1277,6 +1284,14 @@ describe('civitai lookup', () => {
     expect(civitaiAsked).toEqual([LORA_HASH, 'c'.repeat(64)])
     const lora = ((await call('catalog:get')) as Catalog).loras.find((l) => l.path === LORA_PATH)!
     expect(lora.triggers).toEqual(['civi word'])
+  })
+
+  test('a checkpoint without a full sha256 is looked up by the short hash Forge gives', async () => {
+    await call('catalog:get', true)
+    await call('civitai:setEnabled', true)
+    const file = ['C:', 'forge', 'models', 'Stable-diffusion', 'sd_xl_base.safetensors'].join(String.fromCharCode(92))
+    expect(await call('civitai:updateOne', 'checkpoint', file)).toBe('missing')
+    expect(civitaiAsked).toEqual(['31e35c80fc'])
   })
 
   test('switching it off is logged', async () => {
