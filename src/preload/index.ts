@@ -40,6 +40,11 @@ const api: Api = {
     open: (kind, id, which) => invoke('civitai:open', kind, id, which),
     updateOne: (kind, id) => invoke('civitai:updateOne', kind, id),
   },
+  tags: {
+    suggest: (prefix) => invoke('tags:suggest', prefix),
+    add: (ids, names) => invoke('tags:add', ids, names),
+    remove: (ids, names) => invoke('tags:remove', ids, names),
+  },
   hiresPresets: {
     list: () => invoke('hiresPresets:list'),
     add: (input) => invoke('hiresPresets:add', input),

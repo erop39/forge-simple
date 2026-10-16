@@ -149,6 +149,7 @@ export function isGenerationParams(p: unknown): p is GenerationParams {
     && (o.hires === undefined || isHiresSettings(o.hires, o.width as number, o.height as number))
     && (o.img2img === undefined || isImg2ImgSettings(o.img2img))
     && (o.upscale === undefined || isUpscaleSettings(o.upscale))
+    && (o.tags === undefined || (Array.isArray(o.tags) && o.tags.every((tag) => typeof tag === 'string')))
 }
 
 const toJob = (r: JobSql): Job => ({

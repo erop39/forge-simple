@@ -43,6 +43,8 @@ export interface GenerationParams {
   img2img?: Img2ImgSettings;
   /** A finished image to upscale; the source bytes stay in the managed image store. */
   upscale?: UpscaleSettings;
+  /** Tags put on every image this job makes (optional: older saved jobs have none). */
+  tags?: string[];
 }
 export type JobErrorCode = 'missingParts' | 'forgeHttp' | 'forgeInvalid' | 'noImages' | 'storage' | 'network' | 'stopped' | 'corruptJob' | 'sourceMissing' | 'sourceLocked' | 'sourceCorrupt' | 'sizeLimit' | 'unexpected';
 /** detail carries server or system text for txt2img only; source-image jobs omit arbitrary Forge text. */

@@ -1286,3 +1286,15 @@ test('a hires upscaler the server does not list fails before Forge is called', a
   expect(h.repos.jobs.get(job.id)?.error).toEqual({ code: 'missingParts', missing: ['Gone 4x'] })
   expect(h.client.txt2img).not.toHaveBeenCalled()
 })
+
+test('tags of a job go onto every image it saves; an empty list adds nothing', async () => {
+  const h = setup({ autoComplete: true })
+  h.runner.enqueue(params({ tags: ['night', 'Sea', 'night'] }))
+  expect(await h.runner.tick()).toBe('ran')
+  const image = h.repos.images.list({ limit: 1 })[0]!
+  expect(h.repos.tags.forImages([image.id]).get(image.id)).toEqual(['night', 'Sea'])
+  h.runner.enqueue(params({ tags: [] }))
+  await h.runner.tick()
+  const plain = h.repos.images.list({ limit: 1 })[0]!
+  expect(h.repos.tags.forImages([plain.id]).has(plain.id)).toBe(false)
+})

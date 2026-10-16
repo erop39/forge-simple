@@ -1,4 +1,24 @@
 /* The scroll area. The prompt bar floats over it, so the bottom padding is its height plus one step. */
+.searchLine {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4) 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.searchClear {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .gallery {
   display: flex;
   flex: 1;

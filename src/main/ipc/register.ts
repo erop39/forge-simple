@@ -22,7 +22,7 @@ import type { createRunner } from '../queue/runner'
 import { toRecordImageUrl } from '../storage/image-protocol'
 import type { createImageStore } from '../storage/image-store'
 import {
-  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, isUpscaleSettings, normalizeTag, type createRepos, type ImageRow,
+  DuplicatePresetError, DuplicateServerError, hostOf, isGenerationParams, isHiresSettings, isImg2ImgSettings, isUpscaleSettings, normalizeTag, normalizeTags, type createRepos, type ImageRow,
   type Server,
 } from '../storage/repos'
 
@@ -163,6 +163,7 @@ function validateEnqueue(p: unknown): GenerationParams {
     || shift === undefined || clipSkip === undefined
     || !validHires || (img2img !== undefined && (!isImg2ImgSettings(img2img) || upscale !== undefined || hires?.scale !== undefined && hires.scale > 1))
     || (upscale !== undefined && (!isUpscaleSettings(upscale) || hires?.scale !== undefined && hires.scale > 1))
+    || (o.tags !== undefined && (!Array.isArray(o.tags) || o.tags.length > MAX_QUERY_TAGS || !o.tags.every((tag) => typeof tag === 'string' && normalizeTag(tag) !== null)))
     || o.modules.length > 8 || !o.modules.every((m) => typeof m === 'string')
     || loras.length > 16
     || !loras.every((l) => typeof l === 'object' && l !== null && isNonEmptyString(l.name)
@@ -174,6 +175,7 @@ function validateEnqueue(p: unknown): GenerationParams {
     width: o.width, height: o.height, steps: o.steps, cfgScale: o.cfgScale, distilledCfg: o.distilledCfg,
     shift, clipSkip, sampler: o.sampler, scheduler: o.scheduler, seed: o.seed, count: o.count,
     loras: loras.map((l) => ({ name: l.name, weight: l.weight, enabled: l.enabled })),
+    ...(o.tags !== undefined && o.tags.length > 0 ? { tags: normalizeTags(o.tags) } : {}),
     ...(hires ? { hires: {
       scale: hires.scale, upscaler: hires.upscaler, secondPassSteps: hires.secondPassSteps,
       denoisingStrength: hires.denoisingStrength,
@@ -519,6 +521,40 @@ export function registerIpc(
   }
 
   handle('negativePresets:list', () => repos.negativePresets.list())
+
+  // ---- tags on images --------------------------------------------------------
+
+  handle('tags:suggest', (prefix) => {
+    if (typeof prefix !== 'string' || prefix.length > 80) return fail('error.invalidParams')
+    return repos.tags.suggest(prefix, 8, { revealHidden: lock.isOpen() })
+  })
+
+  /** The ids the renderer may touch now: existing images, hidden ones only while the lock is open. */
+  function taggable(ids: unknown, names: unknown): { ids: number[]; names: string[] } {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_IMAGE_BATCH || !ids.every((id: unknown) => isInt(id, 1, MAX_ID))
+      || !Array.isArray(names) || names.length < 1 || names.length > MAX_QUERY_TAGS || !names.every((n: unknown) => typeof n === 'string')) {
+      return fail('error.invalidParams')
+    }
+    const open = lock.isOpen()
+    const usable = (ids as number[]).filter((id) => { const row = repos.images.get(id); return row !== null && (open || !row.hidden) })
+    return { ids: usable, names: names as string[] }
+  }
+
+  handle('tags:add', (ids, names) => {
+    const valid = taggable(ids, names)
+    if (valid.ids.length > 0) {
+      repos.tags.add(valid.ids, valid.names)
+      send('images:changed', { ids: valid.ids })
+    }
+  })
+
+  handle('tags:remove', (ids, names) => {
+    const valid = taggable(ids, names)
+    if (valid.ids.length > 0) {
+      repos.tags.remove(valid.ids, valid.names)
+      send('images:changed', { ids: valid.ids })
+    }
+  })
 
   // ---- hires presets (the log carries names only) --------------------------
 

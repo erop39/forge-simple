@@ -10,6 +10,7 @@ import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { LoraStack } from './LoraStack'
+import { TagEditor } from './TagEditor'
 import { ParamRow } from './ui/ParamRow'
 import { Select } from './ui/Select'
 import { Slider } from './ui/Slider'
@@ -260,6 +261,20 @@ function Hires() {
   )
 }
 
+const NO_TAGS: string[] = []
+
+/** Tags that every image of the next jobs gets when it is saved. */
+function ResultTags() {
+  const tags = useAppStore((s) => s.params?.tags ?? NO_TAGS)
+  const setParams = useAppStore((s) => s.setParams)
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.heading}>{t('tags.forResults')}</h3>
+      <TagEditor tags={tags} label={t('tags.forResults')} onChange={(next) => setParams({ tags: next })} />
+    </section>
+  )
+}
+
 function Img2Img() {
   const settings = useAppStore((s) => s.params?.img2img)
   const setParams = useAppStore((s) => s.setParams)
@@ -364,6 +379,7 @@ function Body() {
       <Hires />
       <Modules />
       <LoraStack />
+      <ResultTags />
     </>
   )
 }

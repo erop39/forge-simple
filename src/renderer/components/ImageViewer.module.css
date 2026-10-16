@@ -183,6 +183,17 @@
   background: var(--surface-1);
 }
 
+.tagsRow {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.tagsRow > :last-child {
+  flex: 1;
+}
+
 .promptHead {
   display: flex;
   align-items: center;

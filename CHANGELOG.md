@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Gallery search in the top bar: free text (prompt, model, LoRA, tags) plus tag chips with suggestions (all tags must match); `/` focuses it, Esc clears the text, then the chips. While a search is on only saved images show, with a results line, Clear search and its own text when nothing matches.
+- Tags on images: a tag editor in the viewer (`T` focuses it) and Tags for results in the parameters panel, so every image of a job is tagged when it is saved. Tag IPC (`tags:suggest/add/remove`).
+- Reuse settings in the viewer puts the saved job (model, prompt, negative, size, steps, LoRA, seed, hires, tags) into the prompt bar.
 - A model's own preview: the card lists the images generated with that checkpoint or LoRA (newest 24, visible ones only); click one to use it as the preview, the magnifier opens it in the viewer, and Remove my preview returns to Forge's or Civitai's. The viewer has Use as model preview for text-to-image results. The picture you chose survives a catalog refresh.
 - Newer-version check: the Civitai lookup also asks for the model's newest version (one more request per model, cached). A card shows a "Newer version" chip, the details panel names it with Open newer version, and the filter menu lists those models.
 - Duplicate finder: models that share a file hash or a Civitai version are marked "Duplicate ×N" and listed under the Duplicates filter (copies side by side); the details panel lists the other files.

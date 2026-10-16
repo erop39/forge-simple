@@ -1172,6 +1172,26 @@ test('hires presets: add, list ordered, duplicate name refused, rename, remove; 
   expect(JSON.stringify(oplog.list())).toContain('log.preset.hiresCreated')
 })
 
+test('tags: add, suggest, remove; hidden images are left alone while locked; bad input is refused', async () => {
+  const { row } = seedImage()
+  await call('tags:add', [row.id], [' Night ', 'sea', 'night'])
+  expect(sent.some((s) => s.e === 'images:changed')).toBe(true)
+  const withTags = (await call('images:query', { limit: 10, tags: ['night'] })) as { id: number; tags: string[] }[]
+  expect(withTags.map((i) => i.id)).toEqual([row.id])
+  expect(withTags[0]!.tags).toEqual(['Night', 'sea'])
+  expect(await call('tags:suggest', 'n')).toEqual(['Night'])
+  expect(await call('tags:suggest', 'zzz')).toEqual([])
+  await call('tags:remove', [row.id], ['NIGHT'])
+  expect(await call('tags:suggest', 'n')).toEqual([])
+  repos.images.setHidden([row.id], true)
+  await call('tags:add', [row.id], ['secret'])
+  expect(repos.tags.forImages([row.id]).get(row.id)).toEqual(['sea'])
+  await expect(call('tags:add', [], ['x'])).rejects.toThrow('error.invalidParams')
+  await expect(call('tags:add', [row.id], 'x')).rejects.toThrow('error.invalidParams')
+  await expect(call('tags:add', ['a'], ['x'])).rejects.toThrow('error.invalidParams')
+  await expect(call('tags:suggest', 5)).rejects.toThrow('error.invalidParams')
+})
+
 describe('model previews from generations', () => {
   const CKPT_FILE = ['C:', 'forge', 'models', 'Stable-diffusion', 'sd_xl_base.safetensors'].join(String.fromCharCode(92))
   beforeEach(() => { repos.servers.setActiveUrl(mock.url) })
@@ -1264,4 +1284,15 @@ describe('civitai lookup', () => {
     await call('civitai:setEnabled', false)
     expect(oplog.list().map((e) => e.messageKey)).toEqual(expect.arrayContaining(['log.civitai.enabled', 'log.civitai.disabled']))
   })
+})
+
+test('job tags are cleaned on the way in and refused when malformed', async () => {
+  repos.servers.setActiveUrl(mock.url)
+  const jobs = (await call('jobs:enqueue', goodParams({ tags: ['  Night ', 'night', 'sea'] } as never))) as { params: { tags?: string[] } }[]
+  expect(jobs[0]!.params.tags).toEqual(['Night', 'sea'])
+  const plain = (await call('jobs:enqueue', goodParams({ tags: [] } as never))) as { params: { tags?: string[] } }[]
+  expect(plain[0]!.params).not.toHaveProperty('tags')
+  await expect(call('jobs:enqueue', goodParams({ tags: ['x'.repeat(41)] } as never))).rejects.toThrow('error.invalidParams')
+  await expect(call('jobs:enqueue', goodParams({ tags: 'sea' } as never))).rejects.toThrow('error.invalidParams')
+  await expect(call('jobs:enqueue', goodParams({ tags: Array.from({ length: 21 }, (_, i) => `t${i}`) } as never))).rejects.toThrow('error.invalidParams')
 })

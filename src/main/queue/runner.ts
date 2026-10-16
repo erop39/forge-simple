@@ -531,12 +531,14 @@ export function createRunner(deps: RunnerDeps): {
           throw err
         }
         try {
-          saved.push(repos.images.insert({
+          const row = repos.images.insert({
             jobId: job.id, filePath: file.filePath, thumbPath: file.thumbPath,
             width: file.width, height: file.height, seed, infotext, durationMs, hidden,
             ...(job.type === 'upscale' && repos.images.get(params.upscale!.sourceImageId)
               ? { sourceImageId: params.upscale!.sourceImageId } : {}),
-          }))
+          })
+          saved.push(row)
+          if (params.tags && params.tags.length > 0) repos.tags.add([row.id], params.tags)
         } catch (err) {
           failingPath = file.filePath
           await deps.images.remove(file.filePath, file.thumbPath).catch(() => undefined)

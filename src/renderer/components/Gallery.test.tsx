@@ -588,3 +588,29 @@ test('the viewer sets the model preview from a text-to-image result and reports 
   expect(setModelPreviewFromImage).toHaveBeenCalledWith('checkpoint', 'C:\m\m.safetensors', 7)
   expect(await screen.findByText(en['viewer.modelPreviewSet'])).toBeDefined()
 })
+
+test('while a search is on only saved images show, with a results line; no match gives its own text and Clear leaves the search', async () => {
+  const clearQuery = vi.fn()
+  const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(7)], clearQuery,
+    jobs: { 1: { id: 1, serverId: 1, type: 'txt2img', status: 'queued', params, error: null, createdAt: 1, finishedAt: null,
+      durationMs: null, stepsPerSec: null, peakVram: null } } })
+  expect(screen.queryByText(/results$/)).toBeNull()
+  act(() => store.setState({ query: { text: 'fox', tags: [] } }))
+  expect(screen.getByText((text) => text.startsWith('1') && text.endsWith(' results'))).toBeDefined()
+  expect(screen.queryByText(en['job.queued'])).toBeNull()
+  act(() => store.setState({ images: [] }))
+  expect(screen.getByText(en['search.none.title'])).toBeDefined()
+  expect(screen.queryByText(en['empty.gallery.title'])).toBeNull()
+  await userEvent.click(screen.getAllByRole('button', { name: en['search.clear'] }).at(-1)!)
+  expect(clearQuery).toHaveBeenCalled()
+})
+
+test('the viewer offers Reuse settings for a text-to-image result and warns when the model is not on the server', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' })) } })
+  const reuseSettings = vi.fn(() => false)
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)], reuseSettings })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await userEvent.click(await screen.findByRole('button', { name: en['viewer.reuse'] }))
+  expect(reuseSettings).toHaveBeenCalledWith(params)
+  expect(await screen.findByText(en['viewer.reuseFailed'])).toBeDefined()
+})

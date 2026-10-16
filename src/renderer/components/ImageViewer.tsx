@@ -8,6 +8,7 @@ import { errorText } from '../i18n/error-text'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
+import { TagEditor } from './TagEditor'
 import { Select } from './ui/Select'
 import styles from './ImageViewer.module.css'
 
@@ -34,6 +35,8 @@ type Props = {
 /** Full-size local image with settings read from the persisted job, including after a restart. */
 export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPrevious, hasNext, position, loadedCount }: Props) {
   const attachImageSource = useAppStore((s) => s.attachImageSource)
+  const reuseSettings = useAppStore((s) => s.reuseSettings)
+  const [reuseFailed, setReuseFailed] = useState(false)
   const upscaleImage = useAppStore((s) => s.upscaleImage)
   const setDefaultUpscaler = useAppStore((s) => s.setDefaultUpscaler)
   const upscalers = useAppStore((s) => s.catalog?.upscalers)
@@ -55,6 +58,10 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const catalogCheckpoints = useAppStore((s) => s.catalog?.checkpoints)
   const usePreviewFromImage = useAppStore((s) => s.setModelPreviewFromImage)
   const stage = useRef<HTMLDivElement>(null)
+  const tagInput = useRef<HTMLInputElement>(null)
+  const addImageTags = useAppStore((s) => s.addImageTags)
+  const removeImageTags = useAppStore((s) => s.removeImageTags)
+  const liveTags = useAppStore((s) => (image ? s.images.find((i) => i.id === image.id)?.tags : undefined))
   const id = image?.id
   // The image on screen now: a copy that settles after navigation or close must not mark another image.
   const shownId = useRef(id)
@@ -67,6 +74,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     setZoom(1)
     setRevealFailed(false)
     setModelPreviewState(null)
+    setReuseFailed(false)
     setUpscaleOpen(false)
     setUpscaleFailed(false)
     setDefaultSaved(false)
@@ -94,6 +102,8 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (id === undefined) return
     const onArrow = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement && event.target.type === 'range') return
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+      if (event.key === 't' || event.key === 'T') { event.preventDefault(); tagInput.current?.focus(); return }
       if (event.key === '+' || event.key === '=') setZoom((value) => zoomStep(value, 1))
       else if (event.key === '-') setZoom((value) => zoomStep(value, -1))
       else if (event.key === '0') setZoom(1)
@@ -273,9 +283,27 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
           <div className={styles.details}>
             {params ? (
               <>
+                <div className={styles.tagsRow}>
+                  <span className={styles.label}>{t('tags.title')}</span>
+                  <TagEditor
+                    tags={liveTags ?? image.tags}
+                    label={t('tags.title')}
+                    inputRef={tagInput}
+                    onChange={(next) => {
+                      const current = liveTags ?? image.tags
+                      const added = next.filter((tag) => !current.some((c) => c.toLowerCase() === tag.toLowerCase()))
+                      const removed = current.filter((tag) => !next.some((n) => n.toLowerCase() === tag.toLowerCase()))
+                      if (added.length > 0) void addImageTags([image.id], added)
+                      if (removed.length > 0) void removeImageTags([image.id], removed)
+                    }}
+                  />
+                </div>
                 <div className={styles.promptHead}>
                   <span className={styles.label}>{t('viewer.prompt')}</span>
                   <div className={styles.promptActions}>
+                    {details?.jobType === 'txt2img' && (
+                      <Button onClick={() => { if (reuseSettings(params)) onClose(); else setReuseFailed(true) }}>{t('viewer.reuse')}</Button>
+                    )}
                     <Button onClick={() => { if (attachImageSource(image.id)) onClose() }}>{t('img2img.send')}</Button>
                     {methods.length > 0 && (
                       <Button disabled={allowedScales.length === 0} onClick={() => setUpscaleOpen((open) => !open)}>{t('viewer.upscale')}</Button>
@@ -314,6 +342,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                   )}
                 </div>
                 {copyState === 'failed' && <p role="alert" className={styles.error}>{t('viewer.copyFailed')}</p>}
+                {reuseFailed && <p role="alert" className={styles.error}>{t('viewer.reuseFailed')}</p>}
                 {revealFailed && <p role="alert" className={styles.error}>{t('viewer.revealFailed')}</p>}
                 {modelPreviewState === 'set' && <p role="status" className={styles.state}>{t('viewer.modelPreviewSet')}</p>}
                 {modelPreviewState === 'failed' && <p role="alert" className={styles.error}>{t('viewer.modelPreviewFailed')}</p>}

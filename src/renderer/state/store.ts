@@ -33,6 +33,9 @@ export type LockDialogMode = 'set' | 'open' | 'change'
 export const lockedCopy = (image: ImageRecord): ImageRecord =>
   ({ ...image, jobId: 0, sourceImageId: null, enhanced: false, url: '', thumbUrl: '', infotext: '', seed: 0, tags: [], locked: true })
 
+export interface ImageSearch { text: string; tags: string[] }
+export const isSearching = (q: ImageSearch): boolean => q.text.trim() !== '' || q.tags.length > 0
+
 export interface AppState {
   connection: ConnectionStatus
   resources: ResourceSnapshot
@@ -61,6 +64,8 @@ export interface AppState {
   images: ImageRecord[]
   /** True once a page came back short: there are no older images to load. */
   imagesExhausted: boolean
+  /** The gallery's search: empty text and no tags is the plain gallery. */
+  query: ImageSearch
   panelOpen: boolean
   /** What the active Forge allows; restart needs --api-server-stop. */
   capabilities: ForgeCapabilities
@@ -88,6 +93,8 @@ export interface AppState {
   setParams(patch: Partial<GenerationParams>): void
   /** Attach a visible saved image; false when it is unavailable, locked, or no model is selected. */
   attachImageSource(id: number): boolean
+  /** Puts a saved job's settings (model, prompt, negative, size, steps, LoRA, seed, hires…) into the prompt bar; false when its model is not on this server. */
+  reuseSettings(saved: GenerationParams): boolean
   /** Return to txt2img and restore the previous hires setting. */
   removeImageSource(): void
   /** Takes the family defaults for a checkpoint, keeping the prompt, negative prompt and image size. */
@@ -110,6 +117,12 @@ export interface AppState {
   clearUnfinished(): Promise<void>
   /** Appends the next page of older images; concurrent calls share one request. */
   loadMoreImages(): Promise<void>
+  /** Narrows the gallery to images whose prompt, model, LoRA or tags match; tags must all match. Applied 250 ms after the last change. */
+  setQuery(patch: Partial<ImageSearch>): void
+  clearQuery(): void
+  suggestTags(prefix: string): Promise<string[]>
+  addImageTags(ids: number[], names: string[]): Promise<void>
+  removeImageTags(ids: number[], names: string[]): Promise<void>
   /** Tests and saves a server; resolves the check (a failed refresh afterwards counts as a failure). */
   addServer(input: ServerInput): Promise<ConnectionCheck>
   updateServer(id: number, input: ServerInput): Promise<ConnectionCheck>
@@ -214,6 +227,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   /** Images to hide once the first password is set. */
   let pendingHide: number[] | null = null
   let morePromise: Promise<void> | null = null
+  let queryTimer: ReturnType<typeof setTimeout> | null = null
   let hiresBeforeImg2Img: GenerationParams['hires'] | null = null
   /** Jobs a terminal update or a dismissal removed this session; a stale copy of them is never merged back. */
   const finished = new Set<number>()
@@ -390,7 +404,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       )
       api.on('job:progress', (p) => set((s) => ({ progress: { ...s.progress, [p.jobId]: p } })))
       api.on('image:added', (image) =>
-        set((s) => (s.images.some((i) => i.id === image.id) ? s : { images: [image, ...s.images] })),
+        // While a search is on the new image is not known to match; it shows when the search is cleared.
+        set((s) => (isSearching(s.query) || s.images.some((i) => i.id === image.id) ? s : { images: [image, ...s.images] })),
       )
       api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id) })))
       api.on('connection', (connection) => set({ connection }))
@@ -432,6 +447,22 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       )
     }
 
+    /** One page of the gallery, newest first: the plain list, or the search results while a search is on. */
+    function pageOf(beforeId?: number): Promise<ImageRecord[]> {
+      const q = get().query
+      const paging = { limit: IMAGE_PAGE, ...(beforeId !== undefined ? { beforeId } : {}) }
+      if (!isSearching(q)) return api.images.list(paging)
+      return api.images.query({ ...paging, ...(q.text.trim() !== '' ? { text: q.text.trim() } : {}), ...(q.tags.length > 0 ? { tags: q.tags } : {}) })
+    }
+
+    /** Replaces the gallery with the first page of the current search (or of the plain gallery). */
+    async function applyQuery(): Promise<void> {
+      const seq = ++imagesSeq
+      const page = await attempt(() => pageOf())
+      if (!page || seq !== imagesSeq) return
+      set({ images: page, imagesExhausted: page.length < IMAGE_PAGE })
+    }
+
     /**
      * Reads the gallery again from the newest image down to the oldest one loaded before, so the pages already
      * scrolled through stay. Only the newest reload may set the images.
@@ -446,7 +477,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       let exhausted = false
       for (;;) {
         const last = pages[pages.length - 1]
-        const page = await attempt(() => api.images.list(last ? { limit: IMAGE_PAGE, beforeId: last.id } : { limit: IMAGE_PAGE }))
+        const page = await attempt(() => pageOf(last?.id))
         if (!page || seq !== imagesSeq) return
         pages.push(...page)
         if (page.length < IMAGE_PAGE) {
@@ -552,6 +583,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       progress: {},
       images: [],
       imagesExhausted: false,
+      query: { text: '', tags: [] },
       panelOpen: false,
       capabilities: { canRestart: false },
       forgeUnhealthy: false,
@@ -590,6 +622,19 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (params.checkpoint !== before.checkpoint || !sameList(params.modules, before.modules)) {
           void refreshParts(params)
         }
+      },
+
+      reuseSettings(saved) {
+        const { catalog } = get()
+        if (!catalog?.checkpoints.some((c) => c.title === saved.checkpoint)) return false
+        const params: GenerationParams = {
+          ...saved, count: 1, img2img: undefined, upscale: undefined,
+          hires: saved.hires ? { ...saved.hires } : get().params?.hires,
+        }
+        selectSeq++
+        set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, get().draftNegative) })
+        void refreshParts(params)
+        return true
       },
 
       attachImageSource(id) {
@@ -714,6 +759,33 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         }
       },
 
+      setQuery(patch) {
+        const next = { ...get().query, ...patch }
+        set({ query: next })
+        if (queryTimer) clearTimeout(queryTimer)
+        queryTimer = setTimeout(() => { queryTimer = null; void applyQuery() }, 250)
+      },
+
+      clearQuery() {
+        if (queryTimer) clearTimeout(queryTimer)
+        queryTimer = null
+        if (!isSearching(get().query)) return
+        set({ query: { text: '', tags: [] } })
+        void applyQuery()
+      },
+
+      async suggestTags(prefix) {
+        return (await attempt(() => api.tags.suggest(prefix))) ?? []
+      },
+
+      async addImageTags(ids, names) {
+        await attempt(() => api.tags.add(ids, names))
+      },
+
+      async removeImageTags(ids, names) {
+        await attempt(() => api.tags.remove(ids, names))
+      },
+
       loadMoreImages() {
         morePromise ??= (async () => {
           try {
@@ -721,7 +793,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
             if (imagesExhausted || images.length === 0) return
             const seq = imagesSeq
             const beforeId = Math.min(...images.map((i) => i.id))
-            const page = await attempt(() => api.images.list({ limit: IMAGE_PAGE, beforeId }))
+            const page = await attempt(() => pageOf(beforeId))
             if (!page || seq !== imagesSeq) return
             set((s) => ({
               images: [...s.images, ...page.filter((p) => !s.images.some((i) => i.id === p.id))],

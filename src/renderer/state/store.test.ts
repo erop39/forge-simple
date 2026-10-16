@@ -1137,3 +1137,54 @@ describe('family default negative', () => {
     expect(store.getState().settings?.familyNegatives).toEqual({})
   })
 })
+
+describe('gallery search', () => {
+  test('a query reloads the first page through images.query after 250 ms; images that arrive meanwhile are not added; clearing restores the plain gallery', async () => {
+    const { api, store } = await ready()
+    api.images.query = vi.fn(async () => [image(3)])
+    vi.useFakeTimers()
+    try {
+      store.getState().setQuery({ text: ' fox ' })
+      store.getState().setQuery({ tags: ['night'] })
+      expect(api.images.query).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(260)
+      expect(api.images.query).toHaveBeenCalledTimes(1)
+      expect(api.images.query).toHaveBeenCalledWith({ limit: 100, text: 'fox', tags: ['night'] })
+      expect(store.getState().images.map((i) => i.id)).toEqual([3])
+      expect(store.getState().imagesExhausted).toBe(true)
+      const onAdded = (api.on as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'image:added')![1] as (i: ImageRecord) => void
+      onAdded(image(9))
+      expect(store.getState().images.map((i) => i.id)).toEqual([3])
+      store.getState().clearQuery()
+      await vi.advanceTimersByTimeAsync(5)
+      expect(store.getState().images.map((i) => i.id)).toEqual([5, 4])
+      expect(store.getState().query).toEqual({ text: '', tags: [] })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('tag suggestions and tag changes go through the API', async () => {
+    const { api, store } = await ready()
+    api.tags = { suggest: vi.fn(async () => ['night']), add: vi.fn(async () => {}), remove: vi.fn(async () => {}) }
+    expect(await store.getState().suggestTags('n')).toEqual(['night'])
+    await store.getState().addImageTags([1, 2], ['sea'])
+    await store.getState().removeImageTags([1], ['sea'])
+    expect(api.tags.add).toHaveBeenCalledWith([1, 2], ['sea'])
+    expect(api.tags.remove).toHaveBeenCalledWith([1], ['sea'])
+  })
+})
+
+test('reuseSettings puts a saved job into the prompt bar (prompt, negative, seed, LoRA, hires) or refuses a model the server lacks', async () => {
+  const { store } = await ready()
+  const current = store.getState().params!
+  const saved = { ...current, prompt: 'saved prompt', negativePrompt: 'saved negative', seed: 42, count: 4, steps: 31,
+    loras: [{ name: 'detail', weight: 0.7, enabled: true }],
+    hires: { scale: 2 as const, upscaler: 'Latent', secondPassSteps: 9, denoisingStrength: 0.3 } }
+  expect(store.getState().reuseSettings(saved)).toBe(true)
+  expect(store.getState().params).toMatchObject({ prompt: 'saved prompt', negativePrompt: 'saved negative', seed: 42, count: 1, steps: 31,
+    loras: [{ name: 'detail', weight: 0.7, enabled: true }], hires: { scale: 2 } })
+  expect(store.getState().draftPrompt).toBe('saved prompt')
+  expect(store.getState().reuseSettings({ ...saved, checkpoint: 'not on this server' })).toBe(false)
+  expect(store.getState().params?.prompt).toBe('saved prompt')
+})

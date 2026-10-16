@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { t } from '../i18n/t'
 import { galleryItems, itemKey, type GalleryItem } from '../state/gallery-items'
+import { isSearching } from '../state/store'
 import { neighbour, placeItems, visibleSlice, type Direction, type Placed } from '../state/masonry'
 import { useAppStore } from '../state/StoreProvider'
 import { useToday } from '../state/use-today'
-import { GalleryEmpty } from './EmptyState'
+import { GalleryEmpty, NoResults } from './EmptyState'
 import { ImageTile } from './ImageTile'
 import { ImageViewer } from './ImageViewer'
 import { JobTile } from './JobTile'
@@ -63,6 +64,9 @@ export function Gallery() {
   const servers = useAppStore((s) => s.servers)
   const exhausted = useAppStore((s) => s.imagesExhausted)
   const hasParams = useAppStore((s) => s.params !== null)
+  const query = useAppStore((s) => s.query)
+  const clearQuery = useAppStore((s) => s.clearQuery)
+  const searching = isSearching(query)
   const deleteImage = useAppStore((s) => s.deleteImage)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
   const viewRequest = useAppStore((s) => s.viewRequest)
@@ -98,9 +102,10 @@ export function Gallery() {
   // Without a loaded server list every queued job counts as the active server's.
   const activeServerId = servers.length === 0 ? undefined : (servers.find((s) => s.active)?.id ?? null)
   const items = useMemo(
-    () => galleryItems(jobs, progress, images, activeServerId)
+    // A search shows saved images only: the queue is not part of its results.
+    () => galleryItems(searching ? {} : jobs, searching ? {} : progress, images, activeServerId)
       .filter((i) => i.kind !== 'image' || !hidden.has(i.image.id)),
-    [jobs, progress, images, activeServerId, hidden],
+    [jobs, progress, images, activeServerId, hidden, searching],
   )
   // The viewer pages through the images it can show: a locked tile has nothing to open.
   const visibleImages = useMemo(
@@ -238,7 +243,8 @@ export function Gallery() {
   const unlock = (): void => openLockDialog(hasPassword ? 'open' : 'set')
   const serverName = (id: number): string | null => servers.find((s) => s.id === id)?.name ?? null
 
-  const empty = items.length === 0 && hasParams && hidden.size === 0
+  const empty = items.length === 0 && hasParams && hidden.size === 0 && !searching
+  const noResults = items.length === 0 && searching
   const renderTile = (item: GalleryItem, tabStop: boolean) =>
     item.kind === 'job' ? (
       <JobTile
@@ -267,7 +273,15 @@ export function Gallery() {
   return (
     <>
       <div ref={scrollRef} className={styles.gallery} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
-        {empty ? (
+        {searching && (
+          <div className={styles.searchLine} role="status">
+            <span>{t('search.results', { n: items.length, more: exhausted ? '' : '+' })}</span>
+            <button type="button" className={styles.searchClear} onClick={clearQuery}>{t('search.clear')}</button>
+          </div>
+        )}
+        {noResults ? (
+          <NoResults onClear={clearQuery} />
+        ) : empty ? (
           <GalleryEmpty />
         ) : (
           <div

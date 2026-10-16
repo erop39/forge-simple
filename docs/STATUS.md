@@ -46,6 +46,7 @@ taken, or something starts waiting on the user.
 | Release 0.1.0 | tagged v0.1.0 on 2026-10-15 (CHANGELOG [0.1.0], version 0.1.0). Not seen by eye: Slow state, animations, native caption buttons |
 | Plan 2 Tasks 8-9 (checkpoint gallery, LoRA stack) with favorites, notes, folders, model card | done 2026-10-15: previews, marks, family override, LoRA metadata/triggers, gallery dialog, LoRA stack; mock checked, real-Forge look pending |
 | Civitai lookup (opt-in, hashes only), loading bar at start, hires presets, CFG/Steps order | done 2026-10-15, mock-checked; the live Civitai API has not been called from the app yet |
+| Plan 2 Tasks 5-7 (viewer reuse settings, tags, search) | done 2026-10-16 except Save as (Show in folder covers it); Task 4 (selection and batch actions) still open |
 | Plan 3 Task 10 Integration and release readiness | done on the mock (2026-10-15): in an isolated Electron window (throwaway profile, mock Forge) txt2img, hires, img2img and upscale each produced an image, the upscale kept its source link, and an img2img with a missing source was refused with `error.notFound`. Mock end-to-end tests and the full suite pass. Not done: real-Forge check, plan 1 release (0.1.0), plan 2 Tasks 4–10, plan 3 Task 8. |
 | Final whole-branch review | not started |
 

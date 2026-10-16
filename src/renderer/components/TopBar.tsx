@@ -4,6 +4,7 @@ import { useAppStore } from '../state/StoreProvider'
 import { IconButton } from './ui/IconButton'
 import { ConnectionChip } from './ConnectionChip'
 import { LockButton } from './LockButton'
+import { SearchField } from './SearchField'
 import { LOG_TOGGLE_ID } from './LogPanel'
 import { Resources } from './Resources'
 import styles from './TopBar.module.css'
@@ -25,6 +26,7 @@ export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
         className={styles.noDrag}
       />
       <Resources onOpenServer={onOpenServer} />
+      <SearchField />
       <IconButton
         label={t('topbar.clearUnfinished')}
         icon={<Broom size={20} />}

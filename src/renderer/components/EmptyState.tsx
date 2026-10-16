@@ -23,6 +23,17 @@ export function NoModelsState({ onRefresh }: { onRefresh: () => void }) {
   )
 }
 
+/** A search matched nothing: not the first-run text, the gallery is not empty. */
+export function NoResults({ onClear }: { onClear: () => void }) {
+  return (
+    <section className={styles.empty}>
+      <h1 className={styles.title}>{t('search.none.title')}</h1>
+      <p className={styles.body}>{t('search.none.body')}</p>
+      <Button onClick={onClear}>{t('search.clear')}</Button>
+    </section>
+  )
+}
+
 /** Nothing generated yet. */
 export function GalleryEmpty() {
   return (
