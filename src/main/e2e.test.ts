@@ -14,6 +14,7 @@ import { createOplog } from './oplog/oplog'
 import { createRunner } from './queue/runner'
 import { openDb, type Db } from './storage/db'
 import { createImageStore, type MakeThumb } from './storage/image-store'
+import { createImageHandler, toRecordImageUrl } from './storage/image-protocol'
 import { createRepos } from './storage/repos'
 
 const WAIT = { timeout: 10_000, interval: 10 }
@@ -245,4 +246,46 @@ test('restart of the app with a running job → recover() marks it interrupted a
   // The dead launch is shut down only now so it cannot touch the queue during the check.
   await after.quit()
   await before.quit()
+})
+
+test('tags and LoRA make an image findable; a hidden image drops out of search and its file is not served while locked; a preset survives a restart', async () => {
+  const mock = await mockForge()
+  const first = launch(mock.url)
+  first.runner.start()
+  const base = await first.params({ tags: ['harbour', 'Dusk'] })
+  const [tagged, plain] = [
+    first.runner.enqueue({ ...base, loras: [{ name: 'detail_tweaker', weight: 0.8, enabled: true }] })[0]!,
+    first.runner.enqueue({ ...base, tags: [] })[0]!,
+  ]
+  await vi.waitFor(() => {
+    expect(first.job(tagged.id).status).toBe('done')
+    expect(first.job(plain.id).status).toBe('done')
+  }, WAIT)
+  const idOf = (jobId: number): number => first.repos.images.list({ limit: 10 }).find((r) => r.jobId === jobId)!.id
+
+  const byTag = first.repos.images.query({ limit: 10, tags: ['harbour'] }, { revealHidden: false })
+  expect(byTag.map((r) => r.jobId)).toEqual([tagged.id])
+  expect(first.repos.images.query({ limit: 10, tags: ['dusk'] }, { revealHidden: false }).map((r) => r.jobId)).toEqual([tagged.id])
+  expect(first.repos.images.query({ limit: 10, text: 'detail_tweaker' }, { revealHidden: false }).map((r) => r.jobId)).toEqual([tagged.id])
+
+  // Hidden while locked: gone from search, and the protocol answers 404 for its file and thumbnail.
+  const taggedImage = idOf(tagged.id)
+  first.repos.images.setHidden([taggedImage], true)
+  expect(first.repos.images.query({ limit: 10, tags: ['harbour'] }, { revealHidden: false })).toEqual([])
+  const row = first.repos.images.list({ limit: 10 }).find((r) => r.id === taggedImage)!
+  const handler = createImageHandler({
+    baseDir: () => join(dir, 'images'), isBlocked: () => false, roots: () => [join(dir, 'images')], lockOpen: () => false,
+    lookupImage: (id) => (id === taggedImage ? { filePath: row.filePath, thumbPath: row.thumbPath, hidden: true } : null),
+  })
+  expect((await handler(toRecordImageUrl(taggedImage, 'image'))).status).toBe(404)
+  expect((await handler(toRecordImageUrl(taggedImage, 'thumb'))).status).toBe(404)
+
+  // A preset saved on this launch is still there after the app restarts on the same database.
+  const { prompt: _p, negativePrompt: _n, seed: _s, count: _c, img2img: _i, upscale: _u, ...kept } = base
+  first.repos.presets.add('Evening harbour', kept)
+  await first.quit()
+  const second = launch(mock.url)
+  expect(second.repos.presets.list().map((p) => p.name)).toEqual(['Evening harbour'])
+  expect(second.repos.presets.list()[0]!.params.steps).toBe(8)
+  expect(second.repos.images.query({ limit: 10, tags: ['harbour'] }, { revealHidden: true }).map((r) => r.jobId)).toEqual([tagged.id])
 })

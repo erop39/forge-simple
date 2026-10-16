@@ -4,7 +4,7 @@ A desktop client (Electron + React + TypeScript) for the Forge Neo image-generat
 on one PC; the client runs on another machine (for example a laptop on the same VPN) and talks to
 Forge's HTTP API. One user, no login.
 
-## What version 0.1.0 does
+## What version 0.2.0 does
 
 - Keeps a list of Forge Neo servers and switches between them; shows whether the link is connected, slow, reconnecting or offline.
 - Loads the server's checkpoints, VAE and text-encoder modules, samplers and schedulers, and detects
@@ -32,6 +32,9 @@ Forge's HTTP API. One user, no login.
   (every second during a job). It keeps only the latest 60 readings in memory and saves the sampled
   peak VRAM on each job. The gauge button in the top bar opens the resource panel (VRAM, RAM, CPU and GPU); CPU and GPU
   need the optional read-only stats extension described below.
+- New in 0.2.0: a model library with sorting, duplicate finder, own previews and optional Civitai lookup and browser;
+  default VAE and text encoders per family; settings presets; search and tags; selecting several images at once;
+  a Hires on/off switch with presets; trigger words that go into the prompt with a LoRA.
 
 ## Requirements
 

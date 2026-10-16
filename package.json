@@ -1,6 +1,6 @@
 {
   "name": "forge-neo-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Desktop client for the Forge Neo image-generation API",
   "main": "./out/main/index.js",
