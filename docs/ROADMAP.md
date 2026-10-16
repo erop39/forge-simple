@@ -24,6 +24,7 @@ Everything below is already in `[Unreleased]` in `CHANGELOG.md`:
 
 Exit criteria (the release pass):
 
+0. The Critical and Important findings of `docs/code-review-2026-10-16.md` are fixed (the minor ones are triaged into the backlog or fixed).
 1. One walk through the real window on the user's PC: archive and restore with real files, settings export and import with the native file dialogs, the Civitai browser on both sites, Download later, focused view, caption buttons clear of every dialog, the Slow connection state, animations.
 2. A whole-branch review of the changes since `v0.2.0` (same procedure as for 0.2.0), findings of Critical/Important fixed.
 3. `CHANGELOG.md` `[0.3.0]`, version bump, tag `v0.3.0`, pushed.

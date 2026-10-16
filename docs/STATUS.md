@@ -28,6 +28,10 @@ taken, or something starts waiting on the user. The plan for the coming versions
 | Local prompt assistant | proposal and plan outline only; waits for the user's answers |
 | Archive phases 2–3, instant start, installer | planned in `docs/ROADMAP.md` |
 
+## Open review findings
+
+The whole-project review of 2026-10-16 (`docs/code-review-2026-10-16.md`) found 1 Critical, 9 Important and about 30 Minor issues, none fixed yet. Fix the Critical and Important ones before the 0.3.0 release pass.
+
 ## Waiting on the user
 
 - Go-ahead for the 0.3.0 release pass (roadmap): a walk through the real window, then review and tag.
