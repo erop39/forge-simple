@@ -134,6 +134,8 @@ export interface LoraInfo {
   triggers?: string[]
   triggersEdited?: boolean
   favorite?: boolean; note?: string; previewUrl?: string
+  /** Where the trigger words came from: the user, Civitai, or the most frequent training tags of the file. */
+  triggersFrom?: 'own' | 'civitai' | 'file'
   civitai?: { url: string; name: string; baseModel: string } | null
   addedAt?: number | null; releasedAt?: number | null; uses?: number; lastUsedAt?: number | null
 }

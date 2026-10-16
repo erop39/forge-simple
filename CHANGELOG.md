@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Adding a LoRA from the gallery puts its trigger words into the prompt (your own and Civitai's lists whole; from a file's training tags only the most frequent word), skipping words already there.
 - Model galleries sort by name (favorites first), recently added, release date, most used and recently used; cards show the date or the count. "Added" is when the app first saw a file (files already there at the first scan have no date); the release date comes from Civitai; use is counted from finished jobs of the server.
 - Browse LoRA button next to the checkpoint gallery in the prompt bar, with the number of LoRA in use.
 - Update from Civitai on a single card (needs the same consent), and Civitai trigger words for checkpoints as well as LoRA; trigger words in the details panel are buttons that add the word to the prompt.
@@ -88,6 +89,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An upscale that Forge never answered kept its tile running forever (extras reports no progress, so nothing ended it). A request with no answer after ten minutes is now given up and the job is interrupted, with Retry available.
 - The preview in the model details panel is centred.
 - Hires fix answered Forge HTTP 500 (`TypeError`) on the user's Forge Neo: it needs `hr_additional_modules` in the request. The second pass now sends `["Use same choices"]`, as Forge's own UI does. Checked against the real server for sdxl, anima and krea2 with `Latent` and a real upscaler.
 - Hires fix failed ("missing on the server", and Forge HTTP 500 with a stale value) because Forge lists its latent second-pass modes (`Latent`, `Latent (nearest)`…) apart from its upscalers; the app now reads them too, defaults to `Latent`, and never offers `None` as a second-pass upscaler.

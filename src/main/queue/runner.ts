@@ -28,6 +28,8 @@ export interface RunnerDeps {
   events: RunnerEvents
   now(): number
   sleep(ms: number): Promise<void>
+  /** How long an upscale request may stay unanswered before it is given up; EXTRAS_TIMEOUT_MS by default. */
+  extrasTimeoutMs?: number
   /** Consumes the largest VRAM reading collected for this job, if any. */
   peakVram?(jobId: number): number | null
 }
@@ -38,6 +40,8 @@ export const PROGRESS_INTERVAL_MS = 1000
 export const PAUSE_INTERVAL_MS = 5000
 /** Consecutive failed progress polls after which a silent link drop ends the job. */
 export const PROGRESS_FAILURE_LIMIT = 15
+/** An extras (upscale) request that gets no answer in this long is given up: Forge shows no progress for it, so nothing else would end a hang. */
+export const EXTRAS_TIMEOUT_MS = 10 * 60_000
 export const MAX_COUNT = 8
 /** Consecutive generation 500s on one server after which Forge counts as unhealthy. */
 export const UNHEALTHY_AFTER = 2
@@ -379,6 +383,16 @@ export function createRunner(deps: RunnerDeps): {
       (value): Outcome => { settled = true; return { ok: true, value } },
       (error: unknown): Outcome => { settled = true; return { ok: false, error } },
     )
+
+    if (job.type === 'upscale') {
+      const stall = setTimeout(() => {
+        if (!settled) {
+          a.watchdog = true
+          a.controller.abort()
+        }
+      }, deps.extrasTimeoutMs ?? EXTRAS_TIMEOUT_MS)
+      void request.finally(() => clearTimeout(stall))
+    }
 
     // Polls /progress until the request settles. Never throws and is not awaited.
     void (async () => {

@@ -94,6 +94,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           triggers: own ?? words,
           civitai: civitaiOf(mark),
           triggersEdited: own !== null,
+          triggersFrom: own !== null ? 'own' as const : found && found.trainedWords.length > 0 ? 'civitai' as const : 'file' as const,
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
           previewUrl: deps.previewUrl?.('lora', l.path) ?? '',

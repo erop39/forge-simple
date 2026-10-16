@@ -46,7 +46,7 @@ const progressAt = (step: number, image: string | null = null): ProgressResponse
 let db: Db
 afterEach(() => { if (db?.open) db.close() })
 
-function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean; peakVram?: number } = {}) {
+function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?: boolean; peakVram?: number; extrasTimeoutMs?: number } = {}) {
   db = openDb(':memory:')
   let clock = 0
   const now = () => clock
@@ -125,6 +125,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
       forgeHealth: (unhealthy) => { health.push(unhealthy); events.push(`health:${unhealthy}`) },
     },
     now,
+    ...(opts.extrasTimeoutMs !== undefined ? { extrasTimeoutMs: opts.extrasTimeoutMs } : {}),
     sleep: (ms) => { const d = deferred<void>(); sleeps.push({ ms, d, used: false }); return d.promise },
     peakVram: () => opts.peakVram ?? null,
   })
@@ -957,6 +958,17 @@ describe('review fixes', () => {
     const t = h.runner.tick()
     await vi.waitFor(() => expect(h.client.txt2img).toHaveBeenCalled())
     await failProgressPolls(h, 15)
+    expect(await t).toBe('paused')
+    expect(h.signals[0]!.aborted).toBe(true)
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'network' } })
+  })
+
+  test('an upscale request that gets no answer in time is given up and the job is interrupted', async () => {
+    const h = setup({ extrasTimeoutMs: 30 })
+    const source = sourceFor(h)
+    const [job] = h.runner.enqueue(params({ prompt: '', upscale: { sourceImageId: source.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } })) as [Job]
+    const t = h.runner.tick()
+    await vi.waitFor(() => expect(h.client.upscale).toHaveBeenCalled())
     expect(await t).toBe('paused')
     expect(h.signals[0]!.aborted).toBe(true)
     expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'interrupted', error: { code: 'network' } })

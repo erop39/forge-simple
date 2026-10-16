@@ -180,3 +180,18 @@ test('a checkpoint shows Civitai trigger words that insert into the prompt, and 
   expect(updateModelFromCivitai).toHaveBeenCalledWith('checkpoint', String.raw`C:\m\sdxl\alpha.safetensors`)
   expect(await screen.findByText(en['civitai.one.found'])).toBeDefined()
 })
+
+test('adding a LoRA puts its trigger words into the prompt: the user\'s and Civitai\'s whole, from file tags only the first', async () => {
+  const withSources: Catalog = { ...models, loras: [
+    { ...models.loras[0]!, triggers: ['civi one', 'civi two'], triggersFrom: 'civitai' },
+    { name: 'tagged', alias: 'tagged', path: 'C:\m\lora\tagged.safetensors', baseFamily: 'sdxl', triggers: ['most common', '1girl', 'solo'], triggersFrom: 'file' },
+  ] }
+  const { store } = renderWithStore(<ModelGalleryDialog />, 'sdxl', { catalog: withSources, modelGallery: 'lora' })
+  act(() => store.getState().setParams({ prompt: 'a cat, civi one' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Select detail' }))
+  await userEvent.click(screen.getByRole('button', { name: en['models.add'] }))
+  expect(store.getState().params?.prompt).toBe('a cat, civi one, civi two')
+  await userEvent.click(screen.getByRole('button', { name: 'Select tagged' }))
+  await userEvent.click(screen.getByRole('button', { name: en['models.add'] }))
+  expect(store.getState().params?.prompt).toBe('a cat, civi one, civi two, most common')
+})

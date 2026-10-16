@@ -928,6 +928,11 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         const params = get().params
         if (!params || params.loras.length >= 16 || params.loras.some((l) => l.name === name)) return false
         get().setParams({ loras: [...params.loras, { name, weight: 1, enabled: true }] })
+        // The trigger words go into the prompt with the LoRA: the user's and Civitai's lists whole, but from a file's
+        // training tags only the most frequent one (the rest are ordinary tags such as "1girl").
+        const info = get().catalog?.loras.find((l) => l.name === name)
+        const words = info?.triggers ?? []
+        for (const word of info?.triggersFrom === 'file' ? words.slice(0, 1) : words) get().insertPromptWord(word)
         return true
       },
 
