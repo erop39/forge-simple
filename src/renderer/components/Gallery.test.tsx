@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job } from '@shared/types'
@@ -130,8 +130,8 @@ test('jobs and images are laid out in order, jobs first and the newest image aft
 
 test('Delete hides the tile at once, shows the toast, and commits after 5 s', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
-  const deleteImage = vi.fn(async () => {})
-  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImage })
+  const deleteImage = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] as number[] }))
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImages: deleteImage })
   await userEvent.click(deleteButtonOf(frame(2)))
   expect(screen.queryByRole('group', { name: frame(2) })).toBeNull()
   expect(screen.getByRole('status').textContent).toContain(en['image.deleted'])
@@ -139,14 +139,14 @@ test('Delete hides the tile at once, shows the toast, and commits after 5 s', as
   act(() => void vi.advanceTimersByTime(4900))
   expect(deleteImage).not.toHaveBeenCalled()
   await act(async () => void vi.advanceTimersByTime(200))
-  expect(deleteImage).toHaveBeenCalledWith(2)
+  expect(deleteImage).toHaveBeenCalledWith([2])
   expect(screen.getByRole('status').textContent).toBe('')
 })
 
 test('Undo cancels the deletion and shows the tile again', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
-  const deleteImage = vi.fn(async () => {})
-  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImage })
+  const deleteImage = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] as number[] }))
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImages: deleteImage })
   await userEvent.click(deleteButtonOf(frame(2)))
   await userEvent.click(screen.getByRole('button', { name: en['image.undo'] }))
   expect(screen.getByRole('group', { name: frame(2) })).toBeDefined()
@@ -156,22 +156,22 @@ test('Undo cancels the deletion and shows the tile again', async () => {
 
 test('deleting a second image commits the first one immediately', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
-  const deleteImage = vi.fn(async () => {})
-  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImage })
+  const deleteImage = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] as number[] }))
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(2), image(1)], deleteImages: deleteImage })
   await userEvent.click(deleteButtonOf(frame(2)))
   await userEvent.click(deleteButtonOf(frame(1)))
   expect(deleteImage).toHaveBeenCalledTimes(1)
-  expect(deleteImage).toHaveBeenCalledWith(2)
+  expect(deleteImage).toHaveBeenCalledWith([2])
   await act(async () => void vi.advanceTimersByTime(5100))
-  expect(deleteImage).toHaveBeenLastCalledWith(1)
+  expect(deleteImage).toHaveBeenLastCalledWith([1])
 })
 
 test('a pending deletion is committed when the gallery unmounts', async () => {
-  const deleteImage = vi.fn(async () => {})
-  const { unmount } = renderWithStore(<Gallery />, 'sdxl', { images: [image(2)], deleteImage })
+  const deleteImage = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] as number[] }))
+  const { unmount } = renderWithStore(<Gallery />, 'sdxl', { images: [image(2)], deleteImages: deleteImage })
   await userEvent.click(deleteButtonOf(frame(2)))
   unmount()
-  expect(deleteImage).toHaveBeenCalledWith(2)
+  expect(deleteImage).toHaveBeenCalledWith([2])
 })
 
 test('a queued job of a server that is not active shows "Waiting for <name>"', () => {
@@ -483,8 +483,8 @@ describe('keyboard', () => {
 
   test('Delete on a focused tile deletes it with Undo and moves the focus to the next tile', async () => {
     sizeGallery(900, 600)
-    const deleteImage = vi.fn(async () => {})
-    renderWithStore(<Gallery />, 'sdxl', { images: many(3), imagesExhausted: true, deleteImage })
+    const deleteImage = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] as number[] }))
+    renderWithStore(<Gallery />, 'sdxl', { images: many(3), imagesExhausted: true, deleteImages: deleteImage })
     openButton(3).focus()
     await userEvent.keyboard('{Delete}')
     expect(screen.queryByRole('group', { name: frame(3) })).toBeNull()
@@ -613,4 +613,78 @@ test('the viewer offers Reuse settings for a text-to-image result and warns when
   await userEvent.click(await screen.findByRole('button', { name: en['viewer.reuse'] }))
   expect(reuseSettings).toHaveBeenCalledWith(params)
   expect(await screen.findByText(en['viewer.reuseFailed'])).toBeDefined()
+})
+
+describe('selection and batch actions', () => {
+  const tagged = (id: number, tags: string[], hidden = false) => ({ ...image(id), tags, hidden })
+
+  test('Ctrl+click picks tiles, the bar counts them, Delete removes the whole batch with one Undo window, Esc clears', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const deleteImages = vi.fn(async (ids: number[]) => ({ deleted: ids, failed: [] }))
+      const { store } = renderWithStore(<Gallery />, 'sdxl', { images: [image(9), image(8), image(7)], deleteImages })
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 9' }), { ctrlKey: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 7' }), { shiftKey: true })
+      expect(store.getState().selection.sort()).toEqual([7, 8, 9])
+      expect(screen.getByRole('toolbar', { name: en['selection.label'] })).toBeDefined()
+      expect(screen.getByText('3 selected')).toBeDefined()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(store.getState().selection).toEqual([])
+      expect(screen.queryByRole('toolbar')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 9' }), { ctrlKey: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 8' }), { ctrlKey: true })
+      fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: en['selection.delete'] }))
+      expect(screen.getByText('2 images deleted')).toBeDefined()
+      expect(screen.queryByRole('button', { name: 'Open image 9' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Open image 7' })).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: en['image.undo'] }))
+      expect(screen.getByRole('button', { name: 'Open image 9' })).toBeDefined()
+      expect(deleteImages).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 9' }), { ctrlKey: true })
+      fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: en['selection.delete'] }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
+      expect(deleteImages).toHaveBeenCalledWith([9])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('images that could not be deleted come back with a notice', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const deleteImages = vi.fn(async () => ({ deleted: [], failed: [9] }))
+      renderWithStore(<Gallery />, 'sdxl', { images: [image(9)], deleteImages })
+      fireEvent.click(screen.getByRole('button', { name: 'Open image 9' }), { ctrlKey: true })
+      fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: en['selection.delete'] }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
+      expect(await screen.findByText('1 could not be deleted')).toBeDefined()
+      expect(screen.getByRole('button', { name: 'Open image 9' })).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('Hide / Unhide follows the selection; batch tags show the common ones apart from the partial ones and act on all', async () => {
+    const setHidden = vi.fn(async () => undefined)
+    const addImageTags = vi.fn(async () => undefined)
+    const removeImageTags = vi.fn(async () => undefined)
+    const { store } = renderWithStore(<Gallery />, 'sdxl', {
+      images: [tagged(9, ['sea', 'night']), tagged(8, ['sea'], true)], setHidden, addImageTags, removeImageTags,
+    })
+    store.getState().toggleSelect(9, 'add', [9, 8])
+    store.getState().toggleSelect(8, 'add', [9, 8])
+    await screen.findByRole('toolbar')
+    await userEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: en['selection.hide'] }))
+    expect(setHidden).toHaveBeenCalledWith([9, 8], true)
+    await userEvent.click(screen.getByRole('button', { name: en['selection.tags'] }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Remove tag sea' })).toBeDefined()
+    expect(within(dialog).getByText(en['selection.partial'])).toBeDefined()
+    await userEvent.type(within(dialog).getByRole('combobox'), 'fresh{Enter}')
+    expect(addImageTags).toHaveBeenCalledWith([9, 8], ['fresh'])
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove tag sea' }))
+    expect(removeImageTags).toHaveBeenCalledWith([9, 8], ['sea'])
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove tag night' }))
+    expect(removeImageTags).toHaveBeenCalledWith([9, 8], ['night'])
+  })
 })

@@ -1,4 +1,4 @@
-import { ArrowsOut, Eye, EyeSlash, LockSimple, Trash } from '@phosphor-icons/react'
+import { ArrowsOut, Check, Eye, EyeSlash, LockSimple, Trash } from '@phosphor-icons/react'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import type { ImageRecord } from '@shared/types'
 import { frameCaption } from '../format'
@@ -14,6 +14,9 @@ type ImageTileProps = {
   onDelete(id: number): void
   /** Opens the Send to hires dialog for this image. */
   onHires(id: number): void
+  /** Ctrl/Cmd+click (`add`), Shift+click (`range`) and Space (`add`) pick the image instead of opening it. */
+  onSelect?(image: ImageRecord, mode: 'add' | 'range'): void
+  selected?: boolean
   /** Hide or unhide (the button, or `H` on the focused tile). */
   onToggleHidden(image: ImageRecord): void
   /** A locked tile asks for the password instead of opening. */
@@ -35,7 +38,7 @@ export const REVEAL_MS = 260
  * The open (or unlock) button is the tile's focus target (`data-primary`) for the gallery's keyboard navigation.
  */
 export function ImageTile({
-  image, onOpen, onDelete, onHires, onToggleHidden, onUnlock, now, tabStop = true, revealFrom = null, onRevealed,
+  image, onOpen, onDelete, onHires, onSelect, selected = false, onToggleHidden, onUnlock, now, tabStop = true, revealFrom = null, onRevealed,
 }: ImageTileProps) {
   const caption = frameCaption(image, now)
   const ratio = { aspectRatio: `${image.width} / ${image.height}` }
@@ -79,7 +82,7 @@ export function ImageTile({
   const revealClass = !revealing ? '' : loaded ? ` ${styles.reveal}` : ` ${styles.revealWaiting}`
 
   return (
-    <div role="group" aria-label={caption} className={styles.tile} style={ratio} onKeyDown={onKeyDown}>
+    <div role="group" aria-label={caption} className={`${styles.tile} ${selected ? styles.selected : ''}`} style={ratio} onKeyDown={onKeyDown}>
       {revealing && <img src={revealFrom} alt="" className={styles.preview} />}
       <button
         type="button"
@@ -89,7 +92,15 @@ export function ImageTile({
         data-primary
         tabIndex={tabIndex}
         aria-label={t('image.open', { n: image.id })}
-        onClick={(event) => onOpen(image, event.currentTarget)}
+        aria-pressed={onSelect ? selected : undefined}
+        onClick={(event) => {
+          if (onSelect && (event.ctrlKey || event.metaKey)) onSelect(image, 'add')
+          else if (onSelect && event.shiftKey) onSelect(image, 'range')
+          else onOpen(image, event.currentTarget)
+        }}
+        onKeyDown={(event) => {
+          if (onSelect && event.key === ' ') { event.preventDefault(); event.stopPropagation(); onSelect(image, 'add') }
+        }}
       >
         <img
           src={image.thumbUrl}
@@ -101,6 +112,7 @@ export function ImageTile({
           onError={() => setLoaded(true)}
         />
       </button>
+      {selected && <span className={styles.check} aria-hidden="true"><Check size={14} weight="bold" /></span>}
       {image.enhanced && (
         <span className={`mono ${styles.hd}`} title={t('image.hdTitle')}>{t('image.hd')}</span>
       )}

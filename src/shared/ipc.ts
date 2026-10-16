@@ -172,6 +172,8 @@ export interface Api {
     query(q: ImageQuery): Promise<ImageRecord[]>
     details(id: number): Promise<ImageDetails>
     delete(id: number): Promise<void>
+    /** Removes several images; the ones that were gone or hidden behind the closed lock come back in `failed`. */
+    deleteMany(ids: number[]): Promise<{ deleted: number[]; failed: number[] }>
     /** Shows the saved file in the system file manager; a hidden image while locked is error.notFound. */
     reveal(id: number): Promise<void>
     /**
@@ -231,7 +233,7 @@ export const CHANNELS = [
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
   'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'tags:suggest', 'tags:add', 'tags:remove', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
-  'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
+  'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',
   'connection:get',
   'forge:capabilities', 'forge:health', 'forge:restart', 'forge:unload',

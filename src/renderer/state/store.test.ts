@@ -1188,3 +1188,39 @@ test('reuseSettings puts a saved job into the prompt bar (prompt, negative, seed
   expect(store.getState().reuseSettings({ ...saved, checkpoint: 'not on this server' })).toBe(false)
   expect(store.getState().params?.prompt).toBe('saved prompt')
 })
+
+describe('selection', () => {
+  const order = [9, 8, 7, 6, 5]
+
+  test('add toggles, single replaces, range runs from the last pick in gallery order, either direction', async () => {
+    const { store } = await ready()
+    const s = () => store.getState()
+    s().toggleSelect(8, 'add', order)
+    s().toggleSelect(6, 'add', order)
+    expect(s().selection).toEqual([8, 6])
+    s().toggleSelect(8, 'add', order)
+    expect(s().selection).toEqual([6])
+    s().toggleSelect(9, 'range', order)
+    expect(s().selection.sort()).toEqual([6, 7, 8, 9])
+    s().toggleSelect(5, 'single', order)
+    expect(s().selection).toEqual([5])
+    s().toggleSelect(7, 'range', order)
+    expect(s().selection.sort()).toEqual([5, 6, 7])
+    s().clearSelection()
+    expect(s().selection).toEqual([])
+    s().toggleSelect(7, 'range', order)
+    expect(s().selection).toEqual([7])
+  })
+
+  test('a removed image leaves the selection; deleteImages reports what main could not remove', async () => {
+    const { api, store } = await ready()
+    store.getState().toggleSelect(5, 'add', order)
+    store.getState().toggleSelect(4, 'add', order)
+    ;(api.on as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'image:removed')![1]({ id: 5 })
+    expect(store.getState().selection).toEqual([4])
+    api.images.deleteMany = vi.fn(async () => ({ deleted: [4], failed: [3] }))
+    expect(await store.getState().deleteImages([4, 3])).toEqual({ deleted: [4], failed: [3] })
+    api.images.deleteMany = vi.fn(async () => { throw new Error('error.unexpected') })
+    expect(await store.getState().deleteImages([4, 3])).toEqual({ deleted: [], failed: [4, 3] })
+  })
+})

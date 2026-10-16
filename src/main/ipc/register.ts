@@ -930,11 +930,12 @@ export function registerIpc(
     deps.revealFile(row.filePath)
   })
 
-  handle('images:delete', async (id) => {
-    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+  /** Removes one saved image and its files; false when it is gone or hidden behind a closed lock. */
+  async function removeImage(id: number): Promise<boolean> {
     // Like unhiding: a hidden image cannot be removed without the password.
-    if (!lock.isOpen() && repos.images.get(id)?.hidden) return fail('error.notFound')
-    const row = repos.images.delete(id) ?? fail('error.notFound')
+    if (!lock.isOpen() && repos.images.get(id)?.hidden) return false
+    const row = repos.images.delete(id)
+    if (!row) return false
     try {
       await deps.images.remove(row.filePath, row.thumbPath)
     } catch (err) {
@@ -948,6 +949,22 @@ export function registerIpc(
       level: 'info', category: 'storage', messageKey: 'log.storage.imageDeleted',
       jobId: row.jobId, details: { imageId: id },
     })
+    return true
+  }
+
+  handle('images:delete', async (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    if (!(await removeImage(id))) return fail('error.notFound')
+  })
+
+  handle('images:deleteMany', async (ids) => {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_IMAGE_BATCH || !ids.every((id: unknown) => isInt(id, 1, MAX_ID))) {
+      return fail('error.invalidParams')
+    }
+    const deleted: number[] = []
+    const failed: number[] = []
+    for (const id of new Set(ids as number[])) (await removeImage(id) ? deleted : failed).push(id)
+    return { deleted, failed }
   })
 
   handle('connection:get', () => deps.monitor.current())

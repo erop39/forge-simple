@@ -111,6 +111,13 @@ export interface AppState {
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
   deleteImage(id: number): Promise<void>
+  /** Several at once; resolves with the ids that were removed and those that could not be. */
+  deleteImages(ids: number[]): Promise<{ deleted: number[]; failed: number[] }>
+  /** Image ids selected in the gallery (in the order they were picked). */
+  selection: number[]
+  /** `add` toggles one; `range` selects from the last picked one to `id` in `order`; `single` selects only it. */
+  toggleSelect(id: number, mode: 'single' | 'add' | 'range', order: number[]): void
+  clearSelection(): void
   /** Removes a failed or interrupted job from the list; there is nothing to tell the main process. */
   dismissJob(id: number): void
   /** Removes every failed and interrupted job for good (not only from this session). */
@@ -407,7 +414,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         // While a search is on the new image is not known to match; it shows when the search is cleared.
         set((s) => (isSearching(s.query) || s.images.some((i) => i.id === image.id) ? s : { images: [image, ...s.images] })),
       )
-      api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id) })))
+      api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id), selection: s.selection.filter((x) => x !== id) })))
       api.on('connection', (connection) => set({ connection }))
       api.on('resources', (resources) => set({ resources }))
       api.on('job:removed', ({ id }) => forgetJob(id))
@@ -746,6 +753,33 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       async deleteImage(id) {
         await attempt(() => api.images.delete(id))
+      },
+
+      async deleteImages(ids) {
+        const result = await attempt(() => api.images.deleteMany(ids))
+        return result ?? { deleted: [], failed: ids }
+      },
+
+      selection: [],
+
+      toggleSelect(id, mode, order) {
+        const current = get().selection
+        if (mode === 'single') { set({ selection: [id] }); return }
+        if (mode === 'add') {
+          set({ selection: current.includes(id) ? current.filter((x) => x !== id) : [...current, id] })
+          return
+        }
+        const anchor = current[current.length - 1]
+        const from = anchor === undefined ? -1 : order.indexOf(anchor)
+        const to = order.indexOf(id)
+        if (from < 0 || to < 0) { set({ selection: current.includes(id) ? current : [...current, id] }); return }
+        const [lo, hi] = from < to ? [from, to] : [to, from]
+        const range = order.slice(lo, hi + 1)
+        set({ selection: [...current.filter((x) => !range.includes(x)), ...(from < to ? range : [...range].reverse())] })
+      },
+
+      clearSelection() {
+        if (get().selection.length > 0) set({ selection: [] })
       },
 
       dismissJob(id) {

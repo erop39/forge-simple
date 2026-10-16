@@ -78,6 +78,7 @@ const api: Api = {
     query: (q) => invoke('images:query', q),
     details: (id) => invoke('images:details', id),
     delete: (id) => invoke('images:delete', id),
+    deleteMany: (ids) => invoke('images:deleteMany', ids),
     reveal: (id) => invoke('images:reveal', id),
     setHidden: (ids, hidden) => invoke('images:setHidden', ids, hidden),
   },

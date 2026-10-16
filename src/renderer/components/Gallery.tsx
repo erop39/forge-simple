@@ -10,6 +10,7 @@ import { ImageTile } from './ImageTile'
 import { ImageViewer } from './ImageViewer'
 import { JobTile } from './JobTile'
 import { Button } from './ui/Button'
+import { SelectionBar } from './SelectionBar'
 import { usePendingDelete } from './use-pending-delete'
 import { useReveals } from './use-reveals'
 import styles from './Gallery.module.css'
@@ -67,7 +68,11 @@ export function Gallery() {
   const query = useAppStore((s) => s.query)
   const clearQuery = useAppStore((s) => s.clearQuery)
   const searching = isSearching(query)
-  const deleteImage = useAppStore((s) => s.deleteImage)
+  const deleteImages = useAppStore((s) => s.deleteImages)
+  const selection = useAppStore((s) => s.selection)
+  const toggleSelect = useAppStore((s) => s.toggleSelect)
+  const clearSelection = useAppStore((s) => s.clearSelection)
+  const [failedCount, setFailedCount] = useState(0)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
   const viewRequest = useAppStore((s) => s.viewRequest)
   const today = useToday()
@@ -89,7 +94,10 @@ export function Gallery() {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const focusRequest = useRef<string | null>(null)
   const pointerDown = useRef(false)
-  const { hidden, toastOpen, request, undo } = usePendingDelete(deleteImage)
+  const { hidden, toastOpen, toastCount, request, undo } = usePendingDelete(async (ids) => {
+    const { failed } = await deleteImages(ids)
+    if (failed.length > 0) setFailedCount(failed.length)
+  })
   const [viewerImage, setViewerImage] = useState<ImageRecord | null>(null)
   const opener = useRef<HTMLButtonElement | null>(null)
   const [pendingNextId, setPendingNextId] = useState<number | null>(null)
@@ -112,6 +120,22 @@ export function Gallery() {
     () => items.flatMap((item) => item.kind === 'image' && !item.image.locked ? [item.image] : []),
     [items],
   )
+  // Only images still on screen count as selected (a search or a delete may have taken some away).
+  const selectedIds = useMemo(() => {
+    const shown = new Set(visibleImages.map((image) => image.id))
+    return selection.filter((id) => shown.has(id))
+  }, [selection, visibleImages])
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const orderIds = useMemo(() => visibleImages.map((image) => image.id), [visibleImages])
+  useEffect(() => {
+    if (selectedIds.length === 0 || viewerImage) return undefined
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
+      clearSelection()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [selectedIds.length, viewerImage, clearSelection])
   const viewerIndex = visibleImages.findIndex((image) => image.id === viewerImage?.id)
   const hasPrevious = viewerIndex > 0
   const hasNext = viewerIndex >= 0 && (viewerIndex < visibleImages.length - 1 || (!exhausted && !loadingOlder))
@@ -261,6 +285,8 @@ export function Gallery() {
         onOpen={openViewer}
         onDelete={deleteTile}
         onHires={openHires}
+        onSelect={(image, mode) => toggleSelect(image.id, mode, orderIds)}
+        selected={selectedSet.has(item.image.id)}
         onToggleHidden={toggleHidden}
         onUnlock={unlock}
         now={today}
@@ -321,10 +347,17 @@ export function Gallery() {
         position={viewerIndex + 1}
         loadedCount={visibleImages.length}
       />
+      {selectedIds.length > 0 && <SelectionBar ids={selectedIds} onDelete={request} />}
       <div role="status" aria-live="polite" className={styles.toastHost}>
+        {failedCount > 0 && (
+          <div className={styles.toast}>
+            <span className={styles.toastText}>{t('image.deleteFailed', { n: failedCount })}</span>
+            <Button onClick={() => setFailedCount(0)}>{t('image.dismiss')}</Button>
+          </div>
+        )}
         {toastOpen && (
           <div className={styles.toast}>
-            <span className={styles.toastText}>{t('image.deleted')}</span>
+            <span className={styles.toastText}>{toastCount > 1 ? t('image.deletedMany', { n: toastCount }) : t('image.deleted')}</span>
             <Button onClick={undo}>{t('image.undo')}</Button>
           </div>
         )}

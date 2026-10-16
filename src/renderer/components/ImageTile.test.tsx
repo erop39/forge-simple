@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ImageRecord } from '@shared/types'
 import { frameCaption } from '../format'
@@ -100,4 +100,24 @@ test('an enhanced image shows the HD mark and the hires action reports the image
 test('a plain image has no HD mark', () => {
   render(<ImageTile image={image()} onOpen={() => {}} onDelete={() => {}} onHires={() => {}} onToggleHidden={() => {}} onUnlock={() => {}} />)
   expect(screen.queryByText(en['image.hd'])).toBeNull()
+})
+
+test('Ctrl+click, Shift+click and Space pick the image instead of opening it; a plain click opens; a picked tile shows a check', async () => {
+  const onOpen = vi.fn()
+  const onSelect = vi.fn()
+  const { rerender, container } = render(<ImageTile image={image()} onOpen={onOpen} onDelete={() => {}} onHires={() => {}} onSelect={onSelect} onToggleHidden={() => {}} onUnlock={() => {}} />)
+  const open = screen.getByRole('button', { name: 'Open image 412' })
+  fireEvent.click(open, { ctrlKey: true })
+  fireEvent.click(open, { shiftKey: true })
+  expect(onSelect.mock.calls.map((c) => c[1])).toEqual(['add', 'range'])
+  expect(onOpen).not.toHaveBeenCalled()
+  open.focus()
+  await userEvent.keyboard(' ')
+  expect(onSelect).toHaveBeenCalledTimes(3)
+  expect(onOpen).not.toHaveBeenCalled()
+  await userEvent.click(open)
+  expect(onOpen).toHaveBeenCalledOnce()
+  expect(container.querySelector('svg[weight="bold"]')).toBeNull()
+  rerender(<ImageTile image={image()} onOpen={onOpen} onDelete={() => {}} onHires={() => {}} onSelect={onSelect} selected onToggleHidden={() => {}} onUnlock={() => {}} />)
+  expect(screen.getByRole('button', { name: 'Open image 412' }).getAttribute('aria-pressed')).toBe('true')
 })

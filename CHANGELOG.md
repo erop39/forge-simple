@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Select several images: Ctrl/Cmd+click toggles, Shift+click selects a range in gallery order, Space on a focused tile toggles, Esc clears. Selected tiles get a signal border and a check mark. A bar above the prompt bar counts them and offers Tags (the tags every selected image has are editable, the partial ones are shown apart and can be removed from all), Hide / Unhide, Delete (one Undo window for the whole batch, then `images:deleteMany`; images that could not be removed come back with a notice) and Clear.
 - Gallery search in the top bar: free text (prompt, model, LoRA, tags) plus tag chips with suggestions (all tags must match); `/` focuses it, Esc clears the text, then the chips. While a search is on only saved images show, with a results line, Clear search and its own text when nothing matches.
 - Tags on images: a tag editor in the viewer (`T` focuses it) and Tags for results in the parameters panel, so every image of a job is tagged when it is saved. Tag IPC (`tags:suggest/add/remove`).
 - Reuse settings in the viewer puts the saved job (model, prompt, negative, size, steps, LoRA, seed, hires, tags) into the prompt bar.

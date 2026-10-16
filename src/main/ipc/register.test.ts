@@ -1296,3 +1296,17 @@ test('job tags are cleaned on the way in and refused when malformed', async () =
   await expect(call('jobs:enqueue', goodParams({ tags: 'sea' } as never))).rejects.toThrow('error.invalidParams')
   await expect(call('jobs:enqueue', goodParams({ tags: Array.from({ length: 21 }, (_, i) => `t${i}`) } as never))).rejects.toThrow('error.invalidParams')
 })
+
+test('images:deleteMany removes what it can and reports the rest; hidden images stay while locked', async () => {
+  const a = seedImage()
+  const b = seedImage()
+  const c = seedImage()
+  repos.images.setHidden([c.row.id], true)
+  const result = (await call('images:deleteMany', [a.row.id, b.row.id, c.row.id, 9999, a.row.id])) as { deleted: number[]; failed: number[] }
+  expect(result.deleted.sort()).toEqual([a.row.id, b.row.id].sort())
+  expect(result.failed.sort()).toEqual([c.row.id, 9999].sort())
+  expect(repos.images.get(c.row.id)).not.toBeNull()
+  expect(sent.filter((s) => s.e === 'image:removed')).toHaveLength(2)
+  await expect(call('images:deleteMany', [])).rejects.toThrow('error.invalidParams')
+  await expect(call('images:deleteMany', ['a'])).rejects.toThrow('error.invalidParams')
+})
