@@ -106,6 +106,13 @@ export interface CivitaiInfo {
   trainedWords: string[]; imageUrl: string | null; checkedAt: number
   /** When the version was published on Civitai (ms); null when it did not say. Absent in answers stored before 2026-10-16. */
   publishedAt?: number | null
+  /** The newest version of the same model on Civitai; null when it has no other; absent until looked up (answers stored before 2026-10-16). */
+  latest?: { versionId: number; name: string; publishedAt: number | null } | null
+}
+/** What the catalog shows of a file's Civitai page; `newer` is set when the model has a later version. */
+export interface CivitaiLink {
+  url: string; name: string; baseModel: string; versionId: number
+  newer?: { name: string; url: string; publishedAt: number | null } | null
 }
 export interface CivitaiProgress { running: boolean; done: number; total: number; found: number; paused: boolean }
 export type ModelKind = 'checkpoint' | 'lora'
@@ -117,11 +124,13 @@ export interface CheckpointInfo {
   familyOverridden?: boolean
   favorite?: boolean; note?: string
   /** Page of this file on Civitai once it was looked up and found. */
-  civitai?: { url: string; name: string; baseModel: string } | null
+  civitai?: CivitaiLink | null
   /** fnc-model://… ; answers 404 when Forge has no preview for it. */
   previewUrl?: string
   /** For sorting: when the app first saw the file (ms; null: it was there before the app looked), the Civitai release date, and how often it was used. */
   addedAt?: number | null; releasedAt?: number | null; uses?: number; lastUsedAt?: number | null
+  /** Files of this library that are the same model: other copies with the same hash or the same Civitai version (paths). */
+  duplicates?: string[]
   /** Trigger words: the user's own list, else Civitai's (checkpoints have none in the file). */
   triggers?: string[]; triggersEdited?: boolean
 }
@@ -136,8 +145,9 @@ export interface LoraInfo {
   favorite?: boolean; note?: string; previewUrl?: string
   /** Where the trigger words came from: the user, Civitai, or the most frequent training tags of the file. */
   triggersFrom?: 'own' | 'civitai' | 'file'
-  civitai?: { url: string; name: string; baseModel: string } | null
+  civitai?: CivitaiLink | null
   addedAt?: number | null; releasedAt?: number | null; uses?: number; lastUsedAt?: number | null
+  duplicates?: string[]
 }
 export interface ModuleInfo { name: string; filename: string }
 export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: LoraInfo[];

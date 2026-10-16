@@ -1,4 +1,4 @@
-import { CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseVersion } from './civitai'
+import { CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseLatest, parseVersion } from './civitai'
 import { createCivitaiUpdater, type UpdaterItem } from './civitai-updater'
 
 const HASH = 'a'.repeat(64)
@@ -28,16 +28,34 @@ test('lookup sends the hash only, maps 404 to null and busy answers to CivitaiBu
   const urls: string[] = []
   const answers = [
     new Response(JSON.stringify(version), { status: 200 }),
+    new Response(JSON.stringify({ modelVersions: [{ id: 11, name: 'v2', publishedAt: '2026-01-01T00:00:00Z' }, { id: 15, name: 'v3', publishedAt: '2026-05-01T00:00:00Z' }] }), { status: 200 }),
     new Response('', { status: 404 }),
     new Response('', { status: 429, headers: { 'retry-after': '7' } }),
   ]
   const client = createCivitaiClient({ now: () => 1, fetch: (async (url: string) => { urls.push(url); return answers.shift()! }) as never })
-  expect((await client.lookup(HASH))?.name).toBe('Detail Tweaker')
+  const found = await client.lookup(HASH)
+  expect(found?.name).toBe('Detail Tweaker')
+  expect(found?.latest).toEqual({ versionId: 15, name: 'v3', publishedAt: Date.parse('2026-05-01T00:00:00Z') })
   expect(await client.lookup(HASH)).toBeNull()
   await expect(client.lookup(HASH)).rejects.toMatchObject({ status: 429, retryAfterMs: 7000 })
   expect(await client.lookup('not a hash')).toBeNull()
   expect(urls[0]).toBe(`https://civitai.com/api/v1/model-versions/by-hash/${HASH}`)
-  expect(urls).toHaveLength(3)
+  expect(urls[1]).toBe('https://civitai.com/api/v1/models/5')
+  expect(urls).toHaveLength(4)
+})
+
+test('the newest version is chosen by publish date; a model without versions has none', () => {
+  expect(parseLatest({ modelVersions: [{ id: 3, name: 'a', publishedAt: '2026-02-01T00:00:00Z' }, { id: 2, name: 'b', publishedAt: '2026-03-01T00:00:00Z' }] })?.versionId).toBe(2)
+  expect(parseLatest({ modelVersions: [] })).toBeNull()
+  expect(parseLatest({})).toBeNull()
+})
+
+test('when the model request fails the version is still returned, without the newest-version field', async () => {
+  const answers = [new Response(JSON.stringify(version), { status: 200 }), new Response('', { status: 429 })]
+  const client = createCivitaiClient({ now: () => 1, fetch: (async () => answers.shift()!) as never })
+  const found = await client.lookup(HASH)
+  expect(found?.name).toBe('Detail Tweaker')
+  expect(found).not.toHaveProperty('latest')
 })
 
 function setup(items: UpdaterItem[], lookup: (hash: string) => Promise<unknown>) {

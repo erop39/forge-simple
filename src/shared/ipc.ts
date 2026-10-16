@@ -122,7 +122,7 @@ export interface Api {
     cancel(): Promise<void>
     state(): Promise<CivitaiProgress>
     /** Opens the file's Civitai page in the system browser; error.notFound when it was not found there. */
-    open(kind: ModelKind, id: string): Promise<void>
+    open(kind: ModelKind, id: string, which?: 'current' | 'newer'): Promise<void>
     /** Looks one file up now (needs the same consent): found, unknown to Civitai, no hash to ask with, or Civitai busy. */
     updateOne(kind: ModelKind, id: string): Promise<'found' | 'missing' | 'noHash' | 'busy'>
   }

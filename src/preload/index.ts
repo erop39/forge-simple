@@ -37,7 +37,7 @@ const api: Api = {
     update: (opts) => invoke('civitai:update', opts),
     cancel: () => invoke('civitai:cancel'),
     state: () => invoke('civitai:state'),
-    open: (kind, id) => invoke('civitai:open', kind, id),
+    open: (kind, id, which) => invoke('civitai:open', kind, id, which),
     updateOne: (kind, id) => invoke('civitai:updateOne', kind, id),
   },
   hiresPresets: {

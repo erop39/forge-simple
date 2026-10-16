@@ -267,6 +267,7 @@
 
 .detailActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
 }
@@ -319,6 +320,20 @@
   background: none;
   color: var(--text-2);
   cursor: pointer;
+}
+
+.copies {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  list-style: none;
+}
+
+.copies li {
+  overflow-wrap: anywhere;
 }
 
 .facts {

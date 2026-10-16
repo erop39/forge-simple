@@ -130,7 +130,7 @@ export interface AppState {
   setCivitaiEnabled(enabled: boolean): Promise<void>
   updateFromCivitai(force?: boolean): Promise<void>
   cancelCivitai(): Promise<void>
-  openOnCivitai(kind: ModelKind, id: string): Promise<void>
+  openOnCivitai(kind: ModelKind, id: string, which?: 'current' | 'newer'): Promise<void>
   /** Rejects with error.presetNameTaken when the name exists. */
   saveHiresPreset(name: string, settings: HiresSettings): Promise<void>
   deleteHiresPreset(id: number): Promise<void>
@@ -869,8 +869,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         await attempt(() => api.civitai.cancel())
       },
 
-      async openOnCivitai(kind, id) {
-        await attempt(() => api.civitai.open(kind, id))
+      async openOnCivitai(kind, id, which) {
+        await attempt(() => api.civitai.open(kind, id, which))
       },
 
       async saveHiresPreset(name, settings) {

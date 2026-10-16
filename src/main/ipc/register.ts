@@ -606,7 +606,7 @@ export function registerIpc(
       if (serverId === undefined || !lastCatalog) return []
       const stored = (kind: ModelKind) => repos.modelMeta.list(serverId, kind)
       const checkedAt = (row: ReturnType<typeof stored> extends Map<string, infer R> ? R | undefined : never): number | null =>
-        row?.civitai && (row.civitai.missing || row.civitai.publishedAt !== undefined) ? row.civitai.checkedAt : null
+        row?.civitai && (row.civitai.missing || row.civitai.latest !== undefined) ? row.civitai.checkedAt : null
       const checkpoints = stored('checkpoint')
       const loras = stored('lora')
       return [
@@ -665,11 +665,12 @@ export function registerIpc(
   handle('civitai:cancel', () => { civitaiUpdater.cancel() })
   handle('civitai:state', () => civitaiUpdater.state())
 
-  handle('civitai:open', async (kind, id) => {
+  handle('civitai:open', async (kind, id, which) => {
     if ((kind !== 'checkpoint' && kind !== 'lora') || typeof id !== 'string') return fail('error.invalidParams')
     const catalog = await loadCatalog()
-    const url = (kind === 'checkpoint' ? catalog.checkpoints.find((c) => c.filename === id) : catalog.loras.find((l) => l.path === id))
-      ?.civitai?.url
+    const link = (kind === 'checkpoint' ? catalog.checkpoints.find((c) => c.filename === id) : catalog.loras.find((l) => l.path === id))
+      ?.civitai
+    const url = which === 'newer' ? link?.newer?.url : link?.url
     if (!url || !url.startsWith('https://civitai.com/models/')) return fail('error.notFound')
     deps.openExternal?.(url)
   })

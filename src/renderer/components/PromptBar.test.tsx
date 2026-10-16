@@ -227,3 +227,37 @@ test('the LoRA library opens from the prompt bar and shows how many LoRA are in 
   act(() => store.getState().setParams({ loras: [{ name: 'a', weight: 1, enabled: true }, { name: 'b', weight: 1, enabled: false }] }))
   expect(screen.getByRole('button', { name: 'Browse LoRA (1 in use)' })).toBeDefined()
 })
+
+const preset = (id: number, name: string, scale: 1.5 | 2 | 4) => ({ id, name, createdAt: 1,
+  settings: { scale, upscaler: 'Latent', secondPassSteps: 9, denoisingStrength: 0.3 } })
+
+test('without a hires preset the switch only warns that one must be created first', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { hiresPresets: [] })
+  const toggle = () => screen.getByRole('switch', { name: en['prompt.hires'] })
+  await userEvent.click(toggle())
+  expect(screen.getByRole('alert').textContent).toBe(en['prompt.hiresNeedsPreset'])
+  expect(store.getState().params?.hires?.scale).toBe(1)
+  expect(toggle().getAttribute('aria-checked')).toBe('false')
+})
+
+test('with presets, switching on asks which one; picking applies it, and the switch then turns it off', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { hiresPresets: [preset(1, 'Soft', 2), preset(2, 'Big', 4)] })
+  const toggle = () => screen.getByRole('switch', { name: en['prompt.hires'] })
+  await userEvent.click(toggle())
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Soft' }))
+  expect(store.getState().params?.hires).toEqual({ scale: 2, upscaler: 'Latent', secondPassSteps: 9, denoisingStrength: 0.3 })
+  expect(toggle().getAttribute('aria-checked')).toBe('true')
+  expect(screen.queryByText('1.5×')).toBeNull()
+  await userEvent.click(toggle())
+  expect(store.getState().params?.hires?.scale).toBe(1)
+  expect(toggle().getAttribute('aria-checked')).toBe('false')
+})
+
+test('a preset whose scale would pass 4096 px is not selectable; the switch is absent in img2img mode', async () => {
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { hiresPresets: [preset(1, 'Soft', 2), preset(2, 'Big', 4)] })
+  await userEvent.click(screen.getByRole('switch', { name: en['prompt.hires'] }))
+  expect(await screen.findByRole('menuitem', { name: 'Big' })).toHaveProperty('dataset.disabled', '')
+  await userEvent.keyboard('{Escape}')
+  act(() => store.getState().setParams({ img2img: { sourceImageId: 1, denoisingStrength: 0.5, resizeMode: 0 } }))
+  expect(screen.queryByRole('switch', { name: en['prompt.hires'] })).toBeNull()
+})

@@ -170,6 +170,94 @@
   pointer-events: none;
 }
 
+/* Sliders share the free room evenly, so no gap is left between them and the fixed controls. */
+.grow {
+  flex: 1 1 140px;
+  min-width: 140px;
+}
+
+.grow > * {
+  width: 100%;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-control);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.switch[aria-checked='true'] {
+  color: var(--text);
+}
+
+.switch:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.switchTrack {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--line-strong);
+}
+
+.switchTrack[data-on='true'] {
+  background: var(--signal);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper);
+  transition: transform var(--dur-hover) ease-out;
+}
+
+.switchTrack[data-on='true'] .switchThumb {
+  transform: translateX(12px);
+}
+
+.switchWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.switchWarn {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 0;
+  width: 240px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--signal);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow-float);
+}
+
+.switchMenuLabel {
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
 .pending {
   color: var(--text-3);
   font-size: 12px;
@@ -184,6 +272,8 @@
 .controls {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--sp-2);
   margin-left: auto;
@@ -195,7 +285,13 @@
 }
 
 .controls > * {
+  flex-grow: 1;
   flex-shrink: 0;
+}
+
+/* Icon buttons and Generate keep their size; everything else shares the free room of its line. */
+.controls > button[aria-label] {
+  flex-grow: 0;
 }
 
 /* The guidance slider takes the room left in the row, so nothing is left empty under the model menu. */

@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Newer-version check: the Civitai lookup also asks for the model's newest version (one more request per model, cached). A card shows a "Newer version" chip, the details panel names it with Open newer version, and the filter menu lists those models.
+- Duplicate finder: models that share a file hash or a Civitai version are marked "Duplicate ×N" and listed under the Duplicates filter (copies side by side); the details panel lists the other files.
+- A Hires on/off switch in the prompt bar. Switching on asks which saved hires preset to use (presets whose scale would pass 4096 px are greyed out); with no preset it warns to create one first (Parameters → Hires fix → Save as preset). Switching off sets the scale to Off.
 - Adding a LoRA from the gallery puts its trigger words into the prompt (your own and Civitai's lists whole; from a file's training tags only the most frequent word), skipping words already there.
 - Model galleries sort by name (favorites first), recently added, release date, most used and recently used; cards show the date or the count. "Added" is when the app first saw a file (files already there at the first scan have no date); the release date comes from Civitai; use is counted from finished jobs of the server.
 - Browse LoRA button next to the checkpoint gallery in the prompt bar, with the number of LoRA in use.
@@ -89,6 +92,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Buttons never wrap their text (the Open on Civitai and Update from Civitai buttons overflowed in the details panel); button rows wrap whole buttons instead.
+- The bottom row of the prompt bar fills every line: sliders and the other controls share the free room, and a narrow window wraps whole controls instead of clipping them.
 - The loading bar at start spans the whole row up to the Generate button instead of two thirds of it, and its text wraps instead of being cut.
 - An upscale that Forge never answered kept its tile running forever (extras reports no progress, so nothing ended it). A request with no answer after ten minutes is now given up and the job is interrupted, with Retry available.
 - The preview in the model details panel is centred.

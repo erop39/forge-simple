@@ -1,7 +1,8 @@
+import * as Menu from '@radix-ui/react-dropdown-menu'
 import { ArrowUp, SlidersHorizontal, SquaresFour, Stack, X } from '@phosphor-icons/react'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
-import type { GenerationParams } from '@shared/types'
+import type { GenerationParams, HiresPreset } from '@shared/types'
 import { t } from '../i18n/t'
 import { checkpointOptions } from '../state/checkpoint-options'
 import { useAppStore } from '../state/StoreProvider'
@@ -11,6 +12,7 @@ import { NegativePresetMenu } from './NegativePresetMenu'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { Select } from './ui/Select'
+import selectStyles from './ui/Select.module.css'
 import { Slider } from './ui/Slider'
 import { PARAMS_PANEL_ID, PARAMS_TOGGLE_ID } from './params-ids'
 import styles from './PromptBar.module.css'
@@ -94,6 +96,65 @@ function GrowingField({ id, value, label, placeholder, className, onChange, onKe
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
     />
+  )
+}
+
+/**
+ * On/off for the hires second pass (scale 1 is off). Switching on asks for a saved hires preset, so the pass always
+ * runs with settings the user chose; with no preset a short warning says to create one first.
+ */
+function HiresSwitch() {
+  const params = useAppStore((s) => s.params)
+  const presets = useAppStore((s) => s.hiresPresets)
+  const setParams = useAppStore((s) => s.setParams)
+  const [warn, setWarn] = useState(false)
+  useEffect(() => {
+    if (!warn) return undefined
+    const timer = setTimeout(() => setWarn(false), 6000)
+    return () => clearTimeout(timer)
+  }, [warn])
+  if (!params) return null
+  const on = (params.hires?.scale ?? 1) > 1
+  const fits = (preset: HiresPreset): boolean =>
+    params.width * preset.settings.scale <= 4096 && params.height * preset.settings.scale <= 4096
+  const off = (): void => { if (params.hires) setParams({ hires: { ...params.hires, scale: 1 } }) }
+
+  const face = (
+    <>
+      <span>{t('prompt.hires')}</span>
+      <span className={styles.switchTrack} data-on={on}><span className={styles.switchThumb} /></span>
+    </>
+  )
+  const common = { type: 'button' as const, role: 'switch', 'aria-checked': on, 'aria-label': t('prompt.hires'), className: styles.switch }
+
+  let control
+  if (on) {
+    control = <button {...common} onClick={off}>{face}</button>
+  } else if (presets.length === 0) {
+    control = <button {...common} onClick={() => setWarn(true)}>{face}</button>
+  } else {
+    control = (
+      <Menu.Root>
+        <Menu.Trigger asChild><button {...common}>{face}</button></Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Content className={selectStyles.content} align="start" sideOffset={4} collisionPadding={8}>
+            <Menu.Label className={styles.switchMenuLabel}>{t('prompt.hiresPick')}</Menu.Label>
+            {presets.map((preset) => (
+              <Menu.Item key={preset.id} className={selectStyles.item} disabled={!fits(preset)}
+                onSelect={() => setParams({ hires: { ...preset.settings } })}>
+                {preset.name}
+              </Menu.Item>
+            ))}
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu.Root>
+    )
+  }
+  return (
+    <span className={styles.switchWrap}>
+      {control}
+      {warn && <span role="alert" className={styles.switchWarn}>{t('prompt.hiresNeedsPreset')}</span>}
+    </span>
   )
 }
 
@@ -295,6 +356,7 @@ export function PromptBar() {
                 />
                 </div>
               )}
+              <div className={styles.grow}>
               <Slider
                 inline
                 label={t('prompt.steps')}
@@ -304,6 +366,7 @@ export function PromptBar() {
                 step={1}
                 onCommit={(steps) => setParams({ steps })}
               />
+              </div>
               <Select
                 label={t('prompt.ratio')}
                 value={ratio}
@@ -321,6 +384,7 @@ export function PromptBar() {
                 max={8}
                 onCommit={(count) => setParams({ count })}
               />
+              {!model.params.img2img && <HiresSwitch />}
               {model.profile.negative && (
                 <>
                   <Button

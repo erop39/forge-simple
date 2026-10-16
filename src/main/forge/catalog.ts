@@ -1,5 +1,5 @@
 import { detectFamily } from '@shared/profiles'
-import type { Catalog, Family, GenerationParams, ModelKind, ModuleInfo, PartStatus } from '@shared/types'
+import type { Catalog, CivitaiLink, Family, GenerationParams, ModelKind, ModuleInfo, PartStatus } from '@shared/types'
 import type { ModelMetaRow } from '../storage/repos'
 import { baseFamilyFromText } from './lora-meta'
 import { baseFamilyFromMetadata, triggersFromMetadata } from './lora-meta'
@@ -49,17 +49,48 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
   const releasedOf = (mark: ModelMetaRow | undefined): number | null =>
     mark?.civitai && !mark.civitai.missing ? mark.civitai.publishedAt ?? null : null
 
-  const civitaiOf = (mark: ModelMetaRow | undefined): { url: string; name: string; baseModel: string } | null =>
-    mark?.civitai && !mark.civitai.missing
-      ? { url: `https://civitai.com/models/${mark.civitai.modelId}?modelVersionId=${mark.civitai.versionId}`,
-        name: mark.civitai.name, baseModel: mark.civitai.baseModel }
-      : null
+  const civitaiOf = (mark: ModelMetaRow | undefined): CivitaiLink | null => {
+    const c = mark?.civitai
+    if (!c || c.missing) return null
+    const newest = c.latest && c.latest.versionId > c.versionId ? c.latest : null
+    return {
+      url: `https://civitai.com/models/${c.modelId}?modelVersionId=${c.versionId}`,
+      name: c.name, baseModel: c.baseModel, versionId: c.versionId,
+      newer: newest ? { name: newest.name, publishedAt: newest.publishedAt,
+        url: `https://civitai.com/models/${c.modelId}?modelVersionId=${newest.versionId}` } : null,
+    }
+  }
+
+  /** Other files that are the same model: the same hash, or the same Civitai version. Keys are lower-case. */
+  function duplicatesOf(entries: { id: string; keys: string[] }[]): Map<string, string[]> {
+    const groups = new Map<string, Set<string>>()
+    for (const entry of entries) {
+      for (const key of entry.keys) {
+        const set = groups.get(key) ?? new Set<string>()
+        set.add(entry.id)
+        groups.set(key, set)
+      }
+    }
+    const out = new Map<string, string[]>()
+    for (const entry of entries) {
+      const others = new Set<string>()
+      for (const key of entry.keys) for (const id of groups.get(key) ?? []) if (id !== entry.id) others.add(id)
+      if (others.size > 0) out.set(entry.id, [...others].sort())
+    }
+    return out
+  }
 
   /** The fetched catalog with the user's marks applied; cheap, so it runs at every `get`. */
   function withMarks(base: Catalog): Catalog {
     const checkpointMeta = deps.modelMeta?.('checkpoint') ?? new Map<string, ModelMetaRow>()
     const loraMeta = deps.modelMeta?.('lora') ?? new Map<string, ModelMetaRow>()
     const used = deps.usage?.()
+    const keysOf = (hash: string | null | undefined, mark: ModelMetaRow | undefined): string[] => [
+      ...(hash ? [`h:${hash.toLowerCase()}`] : []),
+      ...(mark?.civitai && !mark.civitai.missing ? [`v:${mark.civitai.versionId}`] : []),
+    ]
+    const checkpointDupes = duplicatesOf(base.checkpoints.map((c) => ({ id: c.filename, keys: keysOf(c.sha256 ?? c.hash, checkpointMeta.get(c.filename)) })))
+    const loraDupes = duplicatesOf(base.loras.map((l) => ({ id: l.path, keys: keysOf(loraHashes.get(l.path), loraMeta.get(l.path)) })))
     return {
       ...base,
       checkpoints: base.checkpoints.map((c) => {
@@ -79,6 +110,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           releasedAt: releasedOf(mark),
           uses: used?.checkpoints.get(c.title)?.uses ?? 0,
           lastUsedAt: used?.checkpoints.get(c.title)?.last ?? null,
+          duplicates: checkpointDupes.get(c.filename) ?? [],
         }
       }),
       loras: base.loras.map((l) => {
@@ -102,6 +134,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           releasedAt: releasedOf(mark),
           uses: used?.loras.get(l.name)?.uses ?? 0,
           lastUsedAt: used?.loras.get(l.name)?.last ?? null,
+          duplicates: loraDupes.get(l.path) ?? [],
         }
       }),
     }

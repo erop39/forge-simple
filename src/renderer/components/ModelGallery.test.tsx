@@ -125,7 +125,7 @@ test('with consent given the button starts at once; progress and Stop show while
   const cancelCivitai = vi.fn(async () => undefined)
   const openOnCivitai = vi.fn(async () => undefined)
   const withLink: Catalog = { ...models, loras: [{ ...models.loras[0]!,
-    civitai: { url: 'https://civitai.com/models/7?modelVersionId=70', name: 'Detail Tweaker', baseModel: 'Illustrious' } },
+    civitai: { url: 'https://civitai.com/models/7?modelVersionId=70', name: 'Detail Tweaker', baseModel: 'Illustrious', versionId: 70 } },
   models.loras[1]!] }
   const { store } = renderWithStore(<ModelGalleryDialog />, 'sdxl', {
     catalog: withLink, modelGallery: 'lora', updateFromCivitai, cancelCivitai, openOnCivitai,

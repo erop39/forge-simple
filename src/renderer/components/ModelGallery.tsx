@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { CloudArrowDown, Star, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
-import type { Family, ModelKind } from '@shared/types'
+import type { CivitaiLink, Family, ModelKind } from '@shared/types'
 import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
@@ -13,6 +13,8 @@ import styles from './ModelGallery.module.css'
 const FAMILIES = Object.keys(PROFILES) as Family[]
 const ALL = 'all'
 const FAVORITES = 'favorites'
+const NEWER = 'newer'
+const DUPLICATES = 'duplicates'
 
 interface Item {
   id: string
@@ -29,7 +31,8 @@ interface Item {
   /** The checkpoint's title (what Forge selects it by) or the LoRA's name (what the prompt tag uses). */
   key: string
   familyOverridden: boolean
-  civitai: { url: string; name: string; baseModel: string } | null
+  civitai: CivitaiLink | null
+  duplicates: string[]
   addedAt: number | null
   releasedAt: number | null
   uses: number
@@ -48,6 +51,8 @@ function sortKey(item: Item, sort: Sort): number | null {
   if (sort === 'lastUsed') return item.lastUsedAt
   return null
 }
+
+const groupKey = (item: Item): string => [item.id, ...item.duplicates].sort()[0]!
 
 /** What the active sort is about, shown on the card: a date or a count. */
 function cardStat(item: Item, sort: Sort): string | null {
@@ -128,14 +133,14 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
         id: c.filename, key: c.title, name: c.name,
         folder: folderOf(c.filename), family: c.family, favorite: c.favorite ?? false, note: c.note ?? '',
         previewUrl: c.previewUrl ?? '', hash: c.sha256 ?? c.hash ?? null, loaded: catalog.loadedCheckpoint === c.title,
-        triggers: c.triggers ?? [], triggersEdited: c.triggersEdited ?? false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null,
+        triggers: c.triggers ?? [], triggersEdited: c.triggersEdited ?? false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null, duplicates: c.duplicates ?? [],
         addedAt: c.addedAt ?? null, releasedAt: c.releasedAt ?? null, uses: c.uses ?? 0, lastUsedAt: c.lastUsedAt ?? null,
       }))
     }
     return catalog.loras.map((l) => ({
       id: l.path, key: l.name, name: l.alias || l.name, folder: folderOf(l.path), family: l.baseFamily ?? null,
       favorite: l.favorite ?? false, note: l.note ?? '', previewUrl: l.previewUrl ?? '', hash: l.hash ?? null, loaded: false,
-      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null,
+      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null, duplicates: l.duplicates ?? [],
       addedAt: l.addedAt ?? null, releasedAt: l.releasedAt ?? null, uses: l.uses ?? 0, lastUsedAt: l.lastUsedAt ?? null,
     }))
   }, [catalog, kind])
@@ -148,10 +153,13 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   }, [items])
   const needle = query.trim().toLowerCase()
   const shown = useMemo(() => items
-    .filter((i) => (filter === ALL ? true : filter === FAVORITES ? i.favorite : i.family === filter))
+    .filter((i) => (filter === ALL ? true : filter === FAVORITES ? i.favorite : filter === NEWER ? i.civitai?.newer != null
+      : filter === DUPLICATES ? i.duplicates.length > 0 : i.family === filter))
     .filter((i) => folder === ALL || i.folder === folder)
     .filter((i) => needle === '' || `${i.folder}/${i.name}`.toLowerCase().includes(needle))
     .sort((a, b) => {
+      // Copies of one model sit side by side: groups are ordered by their first member.
+      if (filter === DUPLICATES) return groupKey(a).localeCompare(groupKey(b)) || a.id.localeCompare(b.id)
       if (sort === 'name') return Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name)
       const ka = sortKey(a, sort)
       const kb = sortKey(b, sort)
@@ -181,6 +189,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const filterOptions = [
     { value: ALL, label: `${t('models.filterAll')} (${items.length})` },
     { value: FAVORITES, label: `${t('models.filterFavorites')} (${items.filter((i) => i.favorite).length})` },
+    ...(items.some((i) => i.civitai?.newer) ? [{ value: NEWER, label: `${t('models.filterNewer')} (${items.filter((i) => i.civitai?.newer).length})` }] : []),
+    ...(items.some((i) => i.duplicates.length > 0) ? [{ value: DUPLICATES, label: `${t('models.filterDuplicates')} (${items.filter((i) => i.duplicates.length > 0).length})` }] : []),
     ...FAMILIES.filter((f) => counts.has(f)).map((f) => ({ value: f, label: `${t(`family.${f}`)} (${counts.get(f)})` })),
   ]
 
@@ -255,6 +265,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
                   <span className={styles.cardMeta}>
                     {item.family && <span className={styles.chip}>{t(`family.${item.family}`)}</span>}
                     {cardStat(item, sort) && <span className={styles.chip}>{cardStat(item, sort)}</span>}
+                    {item.civitai?.newer && <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.newer')}</span>}
+                    {item.duplicates.length > 0 && <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.duplicate', { n: item.duplicates.length + 1 })}</span>}
                     {item.loaded && <span className={`${styles.chip} ${styles.chipLoaded}`}>{t('models.loaded')}</span>}
                     {kind === 'lora' && item.family && params && item.family !== params.family && (
                       <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.otherFamily', { family: t(`family.${item.family}`) })}</span>
@@ -284,6 +296,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onTriggers={(triggers) => void setTriggers(kind, current.id, triggers)}
             onOpenCivitai={() => void openOnCivitai(kind, current.id)}
             onInsertWord={insertWord}
+            onOpenNewer={() => void openOnCivitai(kind, current.id, 'newer')}
             updateResult={oneResult?.id === current.id ? oneResult.result : null}
             onUpdateOne={() => (consent ? void runOne({ kind, id: current.id }) : setAskFor({ kind, id: current.id }))}
           />
@@ -315,11 +328,12 @@ type DetailsProps = {
   onTriggers(triggers: string[] | null): void
   onOpenCivitai(): void
   onInsertWord(word: string): void
+  onOpenNewer(): void
   onUpdateOne(): void
   updateResult: string | null
 }
 
-function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai, onInsertWord, onUpdateOne, updateResult }: DetailsProps) {
+function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai, onInsertWord, onOpenNewer, onUpdateOne, updateResult }: DetailsProps) {
   const [noteDraft, setNoteDraft] = useState(item.note)
   const [word, setWord] = useState('')
   const detected = item.familyOverridden ? null : item.family
@@ -413,6 +427,21 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
         {updateResult && updateResult !== 'running' && <span role="status" className={styles.hint}>{t(`civitai.one.${updateResult}` as MessageKey)}</span>}
         {!item.hash && <span className={styles.hint}>{t('civitai.one.noHash')}</span>}
       </div>
+      {item.civitai?.newer && (
+        <div className={styles.field}>
+          <span className={styles.label}>{t('models.newerTitle')}</span>
+          <span className={styles.hint}>{item.civitai.newer.name}{item.civitai.newer.publishedAt ? ` · ${day.format(item.civitai.newer.publishedAt)}` : ''}</span>
+          <div className={styles.detailActions}><Button onClick={onOpenNewer}>{t('models.openNewer')}</Button></div>
+        </div>
+      )}
+      {item.duplicates.length > 0 && (
+        <div className={styles.field}>
+          <span className={styles.label}>{t('models.duplicatesTitle')}</span>
+          <ul className={styles.copies}>
+            {item.duplicates.map((copy) => <li key={copy} className="mono" title={copy}>{copy}</li>)}
+          </ul>
+        </div>
+      )}
       <dl className={styles.facts}>
         <dt>{t('models.path')}</dt>
         <dd className="mono" title={item.id}>{item.id}</dd>
