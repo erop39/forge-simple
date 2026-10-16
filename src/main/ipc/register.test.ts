@@ -169,7 +169,7 @@ describe('servers', () => {
     expect(res.errorKey).toBeNull()
     expect(repos.servers.active()).toMatchObject({ name: 'Home', url: mock.url })
     expect(await call('settings:get')).toEqual({ serverUrl: mock.url, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false })
+      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false, familyModules: {} })
     expect(forgeRef.address()).toBe(mock.url)
     expect(kicks).toBe(1)
     expect(serverChanges).toBe(1)
@@ -346,7 +346,7 @@ describe('servers', () => {
     expect(sentOf('job:removed')).toEqual([{ id: q.id }])
     expect(sentOf('servers').at(-1)).toEqual([])
     expect(await call('settings:get')).toEqual({ serverUrl: null, imagesDir: dir, localUrl: mock.url,
-      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false })
+      upscalers: { hires: null, finished: null }, familyNegatives: {}, civitaiEnabled: false, familyModules: {} })
     expect(serverChanges).toBe(1)
     expect(oplog.list({ category: 'server' })[0]).toMatchObject({
       messageKey: 'log.server.removed', details: { name: '127.0.0.1', url: mock.url, deletedJobs: 1 },
@@ -1346,4 +1346,20 @@ test('settings presets: saved without prompt, negative, seed and count; names ar
   const keys = oplog.list().map((e) => e.messageKey)
   expect(keys).toEqual(expect.arrayContaining(['log.preset.settingsCreated', 'log.preset.settingsApplied', 'log.preset.settingsRenamed', 'log.preset.settingsDeleted']))
   expect(JSON.stringify(oplog.list())).not.toContain('secret')
+})
+
+test('family module defaults: saved per family, validated against the server, used by catalog:defaults, reset with null', async () => {
+  repos.servers.setActiveUrl(mock.url)
+  const catalog = (await call('catalog:get')) as Catalog
+  const mods = catalog.modules.map((m) => m.filename)
+  const sdxl = catalog.checkpoints.find((c) => c.family === 'sdxl')!
+  const before = (await call('catalog:defaults', sdxl.title)) as { modules: string[] }
+  await call('settings:setFamilyModules', 'sdxl', [mods[1]])
+  expect(((await call('settings:get')) as { familyModules: Record<string, string[]> }).familyModules).toEqual({ sdxl: [mods[1]] })
+  expect(((await call('catalog:defaults', sdxl.title)) as { modules: string[] }).modules).toEqual([mods[1]])
+  await expect(call('settings:setFamilyModules', 'sdxl', ['C:' + String.fromCharCode(92) + 'gone.safetensors'])).rejects.toThrow('error.notFound')
+  await expect(call('settings:setFamilyModules', 'nope', [])).rejects.toThrow('error.invalidParams')
+  await expect(call('settings:setFamilyModules', 'sdxl', 'x')).rejects.toThrow('error.invalidParams')
+  await call('settings:setFamilyModules', 'sdxl', null)
+  expect(((await call('catalog:defaults', sdxl.title)) as { modules: string[] }).modules).toEqual(before.modules)
 })

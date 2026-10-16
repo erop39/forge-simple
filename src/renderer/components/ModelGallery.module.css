@@ -10,11 +10,11 @@
   composes: fadeIn from '../styles/motion.module.css';
   position: fixed;
   z-index: var(--z-dialog);
-  top: 50%;
+  top: var(--dialog-top);
   left: 50%;
   display: flex;
   width: min(1180px, calc(100vw - var(--sp-8)));
-  height: min(760px, calc(100vh - var(--sp-8)));
+  height: min(760px, var(--dialog-max-h));
   transform: translate(-50%, -50%);
   overflow: hidden;
   border-radius: var(--r-panel);
@@ -248,6 +248,12 @@
 
 .empty {
   padding: var(--sp-6) var(--sp-4);
+}
+
+.sideHead {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--sp-2);
 }
 
 .side {

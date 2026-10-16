@@ -55,6 +55,9 @@
   /* A select list opens above the dialog it can sit in (the viewer's upscaler choice). */
   --z-popup: 45;
   --scroll-thumb: rgba(255, 255, 255, 0.22);
+  /* Dialogs are centred below the top band, where the native window buttons sit over the page. */
+  --dialog-top: calc(var(--h-topbar) + (100vh - var(--h-topbar)) / 2);
+  --dialog-max-h: calc(100vh - var(--h-topbar) - var(--sp-8));
   --z-tooltip: 50;
 
   --scrim: rgba(0, 0, 0, 0.5);

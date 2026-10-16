@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Default VAE and text encoders per family: in the parameters panel, Use as default for <family> saves the current modules; every checkpoint of that family then starts with them (while the files are on the server), and Back to Forge's choice returns to what Forge lists.
+- The LoRA gallery opens on the family of the selected model (LoRA of unknown family included); the Family filter's All shows everything.
+- The side panel of the model galleries appears only when a card is selected and has its own close button.
 - Settings presets: a floppy-disk menu left of the model menu applies a saved set of settings (model, modules, LoRA, size, steps, CFG, sampler, scheduler, hires, tags) while keeping the prompt, negative, seed and image count; Save current as preset… names the current settings and Manage presets… renames or deletes them (with confirmation). A preset whose model is missing on the server still applies and the model card says so. Creating, applying, renaming and deleting are logged by name.
 - Select several images: Ctrl/Cmd+click toggles, Shift+click selects a range in gallery order, Space on a focused tile toggles, Esc clears. Selected tiles get a signal border and a check mark. A bar above the prompt bar counts them and offers Tags (the tags every selected image has are editable, the partial ones are shown apart and can be removed from all), Hide / Unhide, Delete (one Undo window for the whole batch, then `images:deleteMany`; images that could not be removed come back with a notice) and Clear.
 - Gallery search in the top bar: free text (prompt, model, LoRA, tags) plus tag chips with suggestions (all tags must match); `/` focuses it, Esc clears the text, then the chips. While a search is on only saved images show, with a results line, Clear search and its own text when nothing matches.
@@ -98,6 +101,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Dialogs are centred below the top band, so the window buttons no longer sit on top of them (the model gallery reached the top edge).
 - The window buttons could cover the content: the 44 px title-bar overlay no longer matched a zoomed page, so page zoom is switched off (Ctrl+wheel, Ctrl+plus/minus/0 do nothing, and a zoom Chromium had remembered is reset at start). The viewer has its own zoom for pictures.
 - A new image arrives in the gallery with the tags of its job (they showed only after a reload).
 - Checkpoints without a full sha256 (Forge computes it lazily, 156 of 480 on the real server) are looked up on Civitai by Forge's short hash, which Civitai also accepts.

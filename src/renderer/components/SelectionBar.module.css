@@ -33,7 +33,7 @@
 .dialog {
   position: fixed;
   z-index: var(--z-dialog);
-  top: 50%;
+  top: var(--dialog-top);
   left: 50%;
   display: flex;
   flex-direction: column;

@@ -79,7 +79,15 @@
 /* A button that belongs to the row above it, on its own line so the panel never overflows. */
 .rowAction {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
 }
 
 .presetName {

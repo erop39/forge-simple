@@ -109,6 +109,8 @@ export interface AppState {
   setDefaultUpscaler(kind: 'hires' | 'finished', name: string): Promise<boolean>
   /** The preset a family starts with when a checkpoint of it is loaded (null = none). */
   setFamilyNegative(family: Family, presetId: number | null): Promise<void>
+  /** The VAE/text-encoder files a family starts with (null = Forge's own); needs the files on the server. */
+  setFamilyModules(family: Family, modules: string[] | null): Promise<void>
   chooseImagesDir(): Promise<string | null>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
@@ -734,6 +736,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (!(await attempt(async () => { await api.settings.setUpscalers(next); return true }))) return false
         set((s) => ({ settings: s.settings ? { ...s.settings, upscalers: next } : null }))
         return true
+      },
+
+      async setFamilyModules(family, modules) {
+        if (await attempt(async () => { await api.settings.setFamilyModules(family, modules); return true }) === undefined) return
+        set((s) => {
+          const next = { ...s.settings?.familyModules }
+          if (modules === null) delete next[family]
+          else next[family] = modules
+          return { settings: s.settings ? { ...s.settings, familyModules: next } : null }
+        })
       },
 
       async setFamilyNegative(family, presetId) {

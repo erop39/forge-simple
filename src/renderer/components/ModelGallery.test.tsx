@@ -70,6 +70,8 @@ test('the details panel marks a favorite, sets the family and saves a note on bl
 test('LoRA: Add puts it into the stack once; other-family LoRA is flagged; trigger words are editable', async () => {
   const setModelTriggers = vi.fn(async () => undefined)
   const { store } = withGallery('lora', { setModelTriggers })
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['models.family']) }))
+  await userEvent.click(await screen.findByRole('menuitemradio', { name: /^All/ }))
   expect(screen.getByText('Made for Anima')).toBeDefined()
   await userEvent.click(screen.getByRole('button', { name: 'Select detail' }))
   await userEvent.click(screen.getByRole('button', { name: en['models.add'] }))
@@ -222,4 +224,29 @@ test('a model without generations says so', async () => {
   renderWithStore(<ModelGalleryDialog />, 'sdxl', { catalog: models, modelGallery: 'checkpoint', modelGenerations: vi.fn(async () => []) })
   await userEvent.click(screen.getByRole('button', { name: 'Select alpha' }))
   expect(await screen.findByText(en['models.generationsNone'])).toBeDefined()
+})
+
+test('the LoRA gallery opens on the family of the selected model (unknown families included); All shows every LoRA; checkpoints open on All', async () => {
+  const mixed: Catalog = { ...models, loras: [
+    ...models.loras,
+    { name: 'mystery', alias: 'mystery', path: 'C:\m\lora\mystery.safetensors', baseFamily: null },
+  ] }
+  const first = renderWithStore(<ModelGalleryDialog />, 'sdxl', { catalog: mixed, modelGallery: 'lora' })
+  expect(screen.getByText('2 of 3')).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'Select style_a' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Select detail' })).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Select mystery' })).toBeDefined()
+  first.unmount()
+  renderWithStore(<ModelGalleryDialog />, 'anima', { catalog: mixed, modelGallery: 'lora' })
+  expect(screen.getByRole('button', { name: 'Select style_a' })).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'Select detail' })).toBeNull()
+})
+
+test('the side panel appears only for a selected card and closes again', async () => {
+  withGallery('checkpoint')
+  expect(screen.queryByRole('complementary')).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: 'Select gamma' }))
+  expect(screen.getByRole('complementary')).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['models.closeDetails'] }))
+  expect(screen.queryByRole('complementary')).toBeNull()
 })

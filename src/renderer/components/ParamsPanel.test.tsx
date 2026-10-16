@@ -174,3 +174,18 @@ test('hires presets: a saved one applies all values at once, shows as selected, 
   expect(saveHiresPreset).toHaveBeenCalledWith('Soft', saved.settings)
   expect(await screen.findByText(en['hiresPreset.taken'])).toBeDefined()
 })
+
+test('Use as default for the family saves the current modules; Back to Forge resets; the saved state is stated', async () => {
+  const setFamilyModules = vi.fn(async () => undefined)
+  const { store } = renderWithStore(<ParamsPanel />, 'sdxl', { ...open, setFamilyModules })
+  const modules = [store.getState().catalog!.modules[0]!.filename]
+  act(() => store.getState().setParams({ modules }))
+  await userEvent.click(screen.getByRole('button', { name: 'Use as default for SDXL' }))
+  expect(setFamilyModules).toHaveBeenCalledWith('sdxl', modules)
+  expect(screen.queryByRole('button', { name: en['params.modulesReset'] })).toBeNull()
+  act(() => store.setState((s) => ({ settings: { ...(s.settings ?? { serverUrl: 'http://x', imagesDir: '', localUrl: '' }), familyModules: { sdxl: modules } } })))
+  expect((screen.getByRole('button', { name: 'Use as default for SDXL' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByText('Every SDXL model starts with your saved VAE and text encoders.')).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['params.modulesReset'] }))
+  expect(setFamilyModules).toHaveBeenLastCalledWith('sdxl', null)
+})

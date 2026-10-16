@@ -14,6 +14,7 @@ const FAMILIES = Object.keys(PROFILES) as Family[]
 const ALL = 'all'
 const FAVORITES = 'favorites'
 const NEWER = 'newer'
+const CURRENT = 'current'
 const DUPLICATES = 'duplicates'
 
 interface Item {
@@ -109,7 +110,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const requestView = useAppStore((s) => s.requestView)
   const [generations, setGenerations] = useState<{ id: string; images: ImageRecord[] } | null>(null)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState(ALL)
+  // The LoRA gallery opens on the family of the selected model: a LoRA of another family does not suit it.
+  const [filter, setFilter] = useState(kind === 'lora' && params ? CURRENT : ALL)
   const [folder, setFolder] = useState(ALL)
   const [sort, setSort] = useState<Sort>('name')
   const [selected, setSelected] = useState<string | null>(null)
@@ -159,7 +161,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   }, [items])
   const needle = query.trim().toLowerCase()
   const shown = useMemo(() => items
-    .filter((i) => (filter === ALL ? true : filter === FAVORITES ? i.favorite : filter === NEWER ? i.civitai?.newer != null
+    .filter((i) => (filter === ALL ? true : filter === CURRENT ? (i.family === null || i.family === params?.family)
+      : filter === FAVORITES ? i.favorite : filter === NEWER ? i.civitai?.newer != null
       : filter === DUPLICATES ? i.duplicates.length > 0 : i.family === filter))
     .filter((i) => folder === ALL || i.folder === folder)
     .filter((i) => needle === '' || `${i.folder}/${i.name}`.toLowerCase().includes(needle))
@@ -173,7 +176,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
       if (ka === null) return 1
       if (kb === null) return -1
       return kb - ka || a.name.localeCompare(b.name)
-    }), [items, filter, folder, needle, sort])
+    }), [items, filter, folder, needle, sort, params?.family])
 
   const current = items.find((i) => i.id === selected) ?? null
   const currentId = current?.id ?? null
@@ -200,6 +203,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
 
   const title = kind === 'checkpoint' ? t('models.checkpointsTitle') : t('models.lorasTitle')
   const filterOptions = [
+    ...(kind === 'lora' && params ? [{ value: CURRENT, label: `${t('models.filterCurrent', { family: t(`family.${params.family}`) })} (${items.filter((i) => i.family === null || i.family === params.family).length})` }] : []),
     { value: ALL, label: `${t('models.filterAll')} (${items.length})` },
     { value: FAVORITES, label: `${t('models.filterFavorites')} (${items.filter((i) => i.favorite).length})` },
     ...(items.some((i) => i.civitai?.newer) ? [{ value: NEWER, label: `${t('models.filterNewer')} (${items.filter((i) => i.civitai?.newer).length})` }] : []),
@@ -292,8 +296,11 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
           </ul>
         )}
       </div>
+      {current && (
       <aside className={styles.side} aria-label={t('models.path')}>
-        {current ? (
+        <div className={styles.sideHead}>
+          <IconButton label={t('models.closeDetails')} icon={<X size={16} />} onClick={() => setSelected(null)} />
+        </div>
           <Details
             key={current.id}
             kind={kind}
@@ -317,10 +324,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onViewImage={(imageId) => { onClose(); requestView(imageId) }}
             onUpdateOne={() => (consent ? void runOne({ kind, id: current.id }) : setAskFor({ kind, id: current.id }))}
           />
-        ) : (
-          <p className={styles.hint}>{t('models.select', { name: title })}</p>
-        )}
       </aside>
+      )}
     </div>
   )
 }

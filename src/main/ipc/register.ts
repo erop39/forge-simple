@@ -9,7 +9,7 @@ import {
   type Catalog, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
-import { checkParts, type createCatalog } from '../forge/catalog'
+import { checkParts, moduleValue, type createCatalog } from '../forge/catalog'
 import { CivitaiBusyError, createCivitaiClient, type CivitaiClient } from '../forge/civitai'
 import { createCivitaiUpdater } from '../forge/civitai-updater'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
@@ -299,6 +299,17 @@ export function registerIpc(
   const FINISHED_UPSCALER_KEY = 'upscaler.finished'
 
   const familyNegativeKey = (family: string): string => `negative.family.${family}`
+  const familyModulesKey = (family: string): string => `modules.family.${family}`
+  const familyModuleDefaults = (): Partial<Record<Family, string[]>> => {
+    const out: Partial<Record<Family, string[]>> = {}
+    for (const family of Object.keys(PROFILES) as Family[]) {
+      try {
+        const parsed: unknown = JSON.parse(repos.settings.get(familyModulesKey(family)) || 'null')
+        if (Array.isArray(parsed) && parsed.every((m): m is string => typeof m === 'string')) out[family] = parsed
+      } catch { /* a damaged value counts as not set */ }
+    }
+    return out
+  }
   const familyNegatives = (): Partial<Record<Family, number>> => {
     const out: Partial<Record<Family, number>> = {}
     for (const family of Object.keys(PROFILES) as Family[]) {
@@ -313,7 +324,22 @@ export function registerIpc(
     upscalers: { hires: repos.settings.get(HIRES_UPSCALER_KEY), finished: repos.settings.get(FINISHED_UPSCALER_KEY) },
     familyNegatives: familyNegatives(),
     civitaiEnabled: repos.settings.get(CIVITAI_KEY) === '1',
+    familyModules: familyModuleDefaults(),
   }))
+
+  handle('settings:setFamilyModules', async (family, modules) => {
+    if (typeof family !== 'string' || !Object.hasOwn(PROFILES, family)) return fail('error.invalidParams')
+    if (modules === null) {
+      repos.settings.set(familyModulesKey(family), '')
+      return
+    }
+    if (!Array.isArray(modules) || modules.length > 8 || !modules.every((m) => typeof m === 'string' && m !== '' && m.length <= 500)) {
+      return fail('error.invalidParams')
+    }
+    const known = new Set((await loadCatalog()).modules.map((m) => moduleValue(m, FINDINGS)))
+    if (!modules.every((m) => known.has(m as string))) return fail('error.notFound')
+    repos.settings.set(familyModulesKey(family), JSON.stringify([...new Set(modules as string[])]))
+  })
 
   handle('settings:setFamilyNegative', (family, presetId) => {
     if (typeof family !== 'string' || !Object.hasOwn(PROFILES, family)) return fail('error.invalidParams')
@@ -830,8 +856,12 @@ export function registerIpc(
     if (typeof title !== 'string') return fail('error.invalidParams')
     const catalog = await loadCatalog()
     const ckpt = catalog.checkpoints.find((c) => c.title === title) ?? fail('error.notFound')
+    // The user's own choice for the family wins while every file of it is still on the server.
+    const known = new Set(catalog.modules.map((m) => moduleValue(m, FINDINGS)))
+    const own = familyModuleDefaults()[ckpt.family]
+    const modules = own && own.every((m) => known.has(m)) ? own : catalog.familyModules[ckpt.family] ?? []
     const params = defaultParams(ckpt.family, title, { samplers: catalog.samplers, schedulers: catalog.schedulers, upscalers: catalog.upscalers },
-      catalog.familyModules[ckpt.family] ?? [])
+      modules)
     const preferred = repos.settings.get(HIRES_UPSCALER_KEY)
     if (preferred && catalog.upscalers.includes(preferred) && params.hires) params.hires.upscaler = preferred
     return params

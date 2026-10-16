@@ -9,7 +9,7 @@
 .content {
   position: fixed;
   z-index: var(--z-dialog);
-  top: 50%;
+  top: var(--dialog-top);
   left: 50%;
   width: min(520px, calc(100vw - var(--sp-8)));
   transform: translate(-50%, -50%);

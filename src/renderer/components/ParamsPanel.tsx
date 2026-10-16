@@ -73,6 +73,10 @@ function Modules() {
   const available = useAppStore((s) => s.catalog?.modules ?? [])
   const setParams = useAppStore((s) => s.setParams)
   const addable = available.filter((m) => !modules.includes(m.filename))
+  const family = useAppStore((s) => s.params?.family ?? null)
+  const saved = useAppStore((s) => (s.params ? s.settings?.familyModules?.[s.params.family] : undefined))
+  const setFamilyModules = useAppStore((s) => s.setFamilyModules)
+  const same = saved !== undefined && saved.length === modules.length && saved.every((m, i) => modules[i] === m)
   return (
     <section className={styles.section}>
       <h3 className={styles.heading}>{t('params.modules')}</h3>
@@ -100,6 +104,13 @@ function Modules() {
           />
         </div>
       )}
+      {family && (
+        <div className={styles.rowAction}>
+          {saved !== undefined && <Button onClick={() => void setFamilyModules(family, null)}>{t('params.modulesReset')}</Button>}
+          <Button disabled={same} onClick={() => void setFamilyModules(family, modules)}>{t('params.modulesDefault', { family: t(`family.${family}`) })}</Button>
+        </div>
+      )}
+      {saved !== undefined && <p className={styles.hint}>{t('params.modulesSaved', { family: t(`family.${family!}`) })}</p>}
     </section>
   )
 }
