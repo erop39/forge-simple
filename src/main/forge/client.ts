@@ -5,7 +5,7 @@ import { parseStats } from './stats'
 
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
-export const DEFAULT_LORAS_TIMEOUT_MS = 180_000
+export const DEFAULT_LORAS_TIMEOUT_MS = 600_000
 export const DEFAULT_CONTROL_TIMEOUT_MS = 60_000
 
 export type ForgeErrorKind = 'network' | 'timeout' | 'http' | 'invalid'

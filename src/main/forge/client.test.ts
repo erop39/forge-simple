@@ -89,7 +89,7 @@ describe('defaults', () => {
   test('timeouts default to 10 s for lists and 5 s for ping', () => {
     expect(DEFAULT_LIST_TIMEOUT_MS).toBe(10_000)
     expect(DEFAULT_PING_TIMEOUT_MS).toBe(5_000)
-    expect(DEFAULT_LORAS_TIMEOUT_MS).toBe(180_000)
+    expect(DEFAULT_LORAS_TIMEOUT_MS).toBe(600_000)
   })
 })
 

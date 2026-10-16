@@ -17,9 +17,16 @@ export interface CatalogDeps {
   usage?(): { checkpoints: Map<string, { uses: number; last: number | null }>; loras: Map<string, { uses: number; last: number | null }> }
   /** Told which files a fresh fetch listed, so the first appearance of a new one can be recorded. */
   noteSeen?(kind: ModelKind, files: string[]): void
+  /** Called when the LoRA list arrived after the catalog was handed out. */
+  onUpdated?(): void
+  /** How long a fetch waits for the LoRA list before handing the catalog out without it (default 8 s). */
+  lorasWaitMs?: number
   oplog: Oplog
   now(): number
 }
+
+/** A big library can take minutes to list its LoRA; the rest of the catalog must not wait for them for longer than this. */
+const LORAS_WAIT_MS = 8000
 
 const FAMILY_MODULE_OPTIONS: readonly (readonly [Family, string])[] = [
   ['sdxl', 'forge_additional_modules_xl'],
@@ -144,12 +151,39 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
     }
   }
 
+  let fetchSeq = 0
+  let late: { seq: number; list: LoraItem[] } | null = null
+
+  function rememberLoras(loras: LoraItem[]): void {
+    loraMetadata = new Map(loras.map((l) => [l.path, l.metadata]))
+    deps.noteSeen?.('lora', loras.map((l) => l.path))
+    loraHashes = new Map(loras.flatMap((l): [string, string][] => {
+      const hash = l.metadata.sshs_model_hash
+      return typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash) ? [[l.path, hash]] : []
+    }))
+  }
+
+  /** Puts a LoRA list that arrived after the catalog was handed out into the cached catalog (if it is still the current fetch). */
+  function applyLate(): void {
+    if (!late || !cached || late.seq !== fetchSeq) return
+    const { list } = late
+    late = null
+    rememberLoras(list)
+    const { lorasLoading: _done, ...rest } = cached
+    cached = { ...rest, loras: list.map((l) => ({ name: l.name, alias: l.alias, path: l.path })) }
+    deps.oplog.write({
+      level: 'info', category: 'catalog', messageKey: 'log.catalog.lorasArrived', details: { loras: list.length },
+    })
+    deps.onUpdated?.()
+  }
+
   async function fetchAll(): Promise<Catalog> {
     const started = deps.now()
     try {
       const client = deps.client()
       // The LoRA list can be slow on big libraries; its failure must not take the catalog down.
-      const lorasOrEmpty = client.loras().catch((err: unknown): LoraItem[] => {
+      const seq = ++fetchSeq
+      const lorasAnswer = client.loras().then((list): LoraItem[] => list, (err: unknown): LoraItem[] => {
         deps.oplog.write({
           level: 'warn', category: 'catalog', messageKey: 'log.catalog.lorasFailed',
           details: err instanceof ForgeError
@@ -158,14 +192,22 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         })
         return []
       })
+      // The catalog does not wait for a slow LoRA list: after the budget it is handed out without it and updated later.
+      const waited = new Promise<null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), deps.lorasWaitMs ?? LORAS_WAIT_MS)
+        void lorasAnswer.finally(() => clearTimeout(timer))
+      })
+      const lorasOrEmpty = Promise.race([lorasAnswer, waited])
       // The latent modes are a separate list in Forge; without them a hires pass could only name "None".
       const latentModes = client.latentUpscaleModes().catch((): string[] => [
         'Latent', 'Latent (antialiased)', 'Latent (bicubic)', 'Latent (bicubic antialiased)', 'Latent (nearest)', 'Latent (nearest-exact)',
       ])
-      const [models, modules, loras, samplers, schedulers, realUpscalers, latent, options] = await Promise.all([
+      const [models, modules, lorasResult, samplers, schedulers, realUpscalers, latent, options] = await Promise.all([
         client.models(), client.modules(), lorasOrEmpty, client.samplers(),
         client.schedulers(), client.upscalers(), latentModes, client.options(),
       ])
+      const lorasPending = lorasResult === null
+      const loras = lorasResult ?? []
       const upscalers = [...new Set([...latent, ...realUpscalers])]
       const loaded = options['sd_model_checkpoint']
       const catalog: Catalog = {
@@ -185,14 +227,16 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         loadedCheckpoint: typeof loaded === 'string' && loaded !== '' ? loaded : null,
         fetchedAt: deps.now(),
         familyModules: familyModules(options),
+        ...(lorasPending ? { lorasLoading: true } : {}),
       }
-      loraMetadata = new Map(loras.map((l) => [l.path, l.metadata]))
       deps.noteSeen?.('checkpoint', models.map((m) => m.filename))
-      deps.noteSeen?.('lora', loras.map((l) => l.path))
-      loraHashes = new Map(loras.flatMap((l): [string, string][] => {
-        const hash = l.metadata.sshs_model_hash
-        return typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash) ? [[l.path, hash]] : []
-      }))
+      if (lorasPending) {
+        loraMetadata = new Map()
+        loraHashes = new Map()
+        void lorasAnswer.then((list) => { late = { seq, list }; applyLate() })
+      } else {
+        rememberLoras(loras)
+      }
       deps.oplog.write({
         level: 'info', category: 'catalog', messageKey: 'log.catalog.loaded',
         durationMs: deps.now() - started,
@@ -217,7 +261,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
       if (inFlight) return inFlight.then(withMarks)
       if (cached && !refresh) return Promise.resolve(withMarks(cached))
       const p = fetchAll().then(
-        (c) => { cached = c; inFlight = null; return c },
+        (c) => { cached = c; inFlight = null; applyLate(); return c },
         (e: unknown) => { inFlight = null; throw e },
       )
       inFlight = p

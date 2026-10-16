@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Start-up no longer hangs on a slow LoRA list: Forge can take minutes to list LoRA (it reads new files), so the catalog is now handed out after at most 8 s without them, the prompt bar becomes usable, the LoRA gallery says Forge is still listing, and the LoRA appear by themselves when the list arrives (the wait for it is 10 minutes instead of 3).
 - A generation that Forge silently dropped no longer runs forever: when Forge has been seen running the job and then reports nothing running for 45 s while the answer never arrives, the job fails as stalled (Retry is offered). The running tile also says "no progress for N s" once neither the step nor the pass has moved for 30 s.
 - Archiving and Delete all generations write one log entry for the whole operation instead of one "Image N deleted" line per image.
 - Civitai browser previews: the image CDN redirects to its blob host, which the downloader refused; redirects are followed again, and the final address must still be on civitai.com.

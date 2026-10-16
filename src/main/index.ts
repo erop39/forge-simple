@@ -143,6 +143,7 @@ async function boot(): Promise<void> {
       const serverId = repos.servers.active()?.id
       if (serverId !== undefined) repos.modelMeta.noteSeen(serverId, kind, files, now())
     },
+    onCatalogUpdated: () => send('catalog:updated', {}),
     oplog,
     now,
   })

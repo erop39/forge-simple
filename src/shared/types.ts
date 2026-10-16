@@ -160,7 +160,9 @@ export interface ModuleInfo { name: string; filename: string }
 export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: LoraInfo[];
   samplers: string[]; schedulers: string[]; upscalers: string[]; loadedCheckpoint: string | null; fetchedAt: number
   /** Per-preset default module lists from the server's options (full paths). */
-  familyModules: Partial<Record<Family, string[]>> }
+  familyModules: Partial<Record<Family, string[]>>
+  /** True while Forge is still listing LoRA (the list can take minutes on a big library); they arrive on their own. */
+  lorasLoading?: boolean }
 export interface PartStatus { role: 'model' | 'module' | 'upscaler' | 'lora'; value: string; found: boolean }
 /** A saved Forge server as the renderer sees it. Exactly one (or none) is active. */
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }

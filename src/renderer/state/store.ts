@@ -487,6 +487,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       })
       api.on('servers', (servers) => set({ servers }))
       api.on('wishlist:changed', () => { void loadWishlist() })
+      // The LoRA list arrived after the catalog was handed out: take the updated catalog without touching the selection.
+      api.on('catalog:updated', () => { void markModel(async () => undefined) })
       api.on('forge:capabilities', (capabilities) => {
         capabilitiesSeq++
         set({ capabilities })

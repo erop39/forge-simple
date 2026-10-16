@@ -250,3 +250,13 @@ test('the side panel appears only for a selected card and closes again', async (
   await userEvent.click(screen.getByRole('button', { name: en['models.closeDetails'] }))
   expect(screen.queryByRole('complementary')).toBeNull()
 })
+
+test('while Forge is still listing LoRA the LoRA gallery says so; the checkpoint gallery does not', () => {
+  withGallery('lora', { catalog: { ...models, loras: [], lorasLoading: true } })
+  expect(screen.getByText(en['models.lorasLoading'])).toBeDefined()
+})
+
+test('the checkpoint gallery stays quiet about the LoRA list', () => {
+  withGallery('checkpoint', { catalog: { ...models, lorasLoading: true } })
+  expect(screen.queryByText(en['models.lorasLoading'])).toBeNull()
+})

@@ -67,6 +67,8 @@ export interface AppEvents {
   /** These images were hidden or unhidden. */
   'images:changed': { ids: number[] }
   'wishlist:changed': { removed: number }
+  /** The model catalog changed after it was handed out (the LoRA list arrived late): ask for it again. */
+  'catalog:updated': Record<string, never>
 }
 
 export interface Api {
@@ -309,7 +311,7 @@ export type Channel = (typeof CHANNELS)[number]
 
 export const EVENT_NAMES = [
   'job:update', 'job:progress', 'job:removed', 'image:added', 'image:removed', 'connection', 'resources', 'servers',
-  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed', 'wishlist:changed', 'civitai:progress',
+  'forge:capabilities', 'forge:health', 'oplog:added', 'lock', 'images:changed', 'wishlist:changed', 'catalog:updated', 'civitai:progress',
 ] as const satisfies readonly (keyof AppEvents)[]
 export const isEventName = (e: string): e is keyof AppEvents => (EVENT_NAMES as readonly string[]).includes(e)
 export const eventChannel = (e: keyof AppEvents): string => `event:${e}`

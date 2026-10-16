@@ -16,6 +16,8 @@ export function createActiveForge(deps: {
   previewUrl?(kind: ModelKind, filename: string, stamp?: string | null): string
   usage?: NonNullable<Parameters<typeof createCatalog>[0]['usage']>
   noteSeen?(kind: ModelKind, files: string[]): void
+  /** The catalog got its LoRA list after it was handed out. */
+  onCatalogUpdated?(): void
   oplog: Oplog
   now(): number
   create?: (url: string) => ForgeClient
@@ -49,6 +51,7 @@ export function createActiveForge(deps: {
         ...(deps.previewUrl ? { previewUrl: deps.previewUrl } : {}),
         ...(deps.usage ? { usage: deps.usage } : {}),
         ...(deps.noteSeen ? { noteSeen: deps.noteSeen } : {}),
+        ...(deps.onCatalogUpdated ? { onUpdated: deps.onCatalogUpdated } : {}),
       })
       return catalog
     },

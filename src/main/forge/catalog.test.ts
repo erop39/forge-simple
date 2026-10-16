@@ -213,3 +213,39 @@ test('checkParts flags an enabled LoRA the server does not list and skips a swit
     { role: 'lora', value: 'ghost', found: false },
   ])
 })
+
+test('a slow LoRA list does not hold the catalog back: it is handed out at once and updated when the list arrives', async () => {
+  mock.respond('/sdapi/v1/loras', { delayMs: 300, json: [
+    { name: 'detail_tweaker', alias: 'detail_tweaker', path: String.raw`C:\forge\models\Lora\detail_tweaker.safetensors`, metadata: {} },
+  ] })
+  const updated = vi.fn()
+  const cat = createCatalog({
+    client: () => createForgeClient(mock.url), familyOverride: () => null, oplog: log, now: () => 1234,
+    lorasWaitMs: 30, onUpdated: updated,
+  })
+  const first = await cat.get()
+  expect(first.lorasLoading).toBe(true)
+  expect(first.loras).toEqual([])
+  expect(first.checkpoints).toHaveLength(2)
+  expect(updated).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(updated).toHaveBeenCalledOnce())
+  const later = await cat.get()
+  expect(later.lorasLoading).toBeUndefined()
+  expect(later.loras.map((l) => l.name)).toEqual(['detail_tweaker'])
+  expect(log.list({ category: 'catalog' }).map((e) => e.messageKey)).toContain('log.catalog.lorasArrived')
+})
+
+test('a LoRA list that arrives after a newer fetch started is ignored', async () => {
+  mock.respond('/sdapi/v1/loras', { delayMs: 200, json: [{ name: 'old', alias: 'old', path: 'C:/old.safetensors', metadata: {} }] })
+  const updated = vi.fn()
+  const cat = createCatalog({
+    client: () => createForgeClient(mock.url), familyOverride: () => null, oplog: log, now: () => 1234, lorasWaitMs: 20, onUpdated: updated,
+  })
+  await cat.get()
+  mock.respond('/sdapi/v1/loras', { json: [{ name: 'fresh', alias: 'fresh', path: 'C:/fresh.safetensors', metadata: {} }] })
+  const refreshed = await cat.get(true)
+  expect(refreshed.loras.map((l) => l.name)).toEqual(['fresh'])
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  expect((await cat.get()).loras.map((l) => l.name)).toEqual(['fresh'])
+  expect(updated).not.toHaveBeenCalled()
+})

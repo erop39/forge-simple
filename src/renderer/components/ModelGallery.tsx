@@ -243,6 +243,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             </div>
           </div>
         )}
+        {kind === 'lora' && catalog?.lorasLoading && <p className={styles.result} role="status">{t('models.lorasLoading')}</p>}
         {!civitai.running && civitai.total > 0 && (
           <p className={styles.result}>{t('civitai.result', { found: civitai.found, total: civitai.total })}</p>
         )}
