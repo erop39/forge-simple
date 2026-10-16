@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The Civitai browser's base-model filter now lists the families of this app first (SDXL, Z-Image Turbo and Base, Krea 2 and Krea 2 Turbo, Qwen, Lumina, Anima) and then the other common ones (Illustrious, Pony, NoobAI, SD 1.5, Flux.1/2/3 variants, Chroma, HiDream); every name was checked against Civitai's own filter.
+- The Download later cards use icons (open on Civitai, mark as downloaded) instead of text buttons.
 - Choose what goes into a settings backup: Export settings now shows a checklist (servers, settings presets, hires presets, negative presets, model marks, family defaults/upscalers/log retention, Download later list), and Import settings shows a checklist of the parts found in the file with how many each would add, so only the ticked parts are imported. The Download later list is now part of the backup (without previews).
 - Download later in the Civitai browser: a bookmark on each model card marks it, the Download later view lists the marked models (preview, base model, creator, Open on Civitai, Mark as downloaded), and a model leaves the list by itself once its file shows up in the library. That check is a comparison in memory of file names and of the Civitai answers the app already holds; it makes no request and runs whenever the model list loads.
 - The base-model filter of the Civitai browser takes several base models at once (tick any number, or clear them).

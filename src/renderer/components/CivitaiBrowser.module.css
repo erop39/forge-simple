@@ -134,6 +134,7 @@
 
 .cardActions {
   display: flex;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--sp-1);
   padding: var(--sp-1);

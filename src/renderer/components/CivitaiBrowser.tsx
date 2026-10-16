@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ArrowLeft, ArrowSquareOut, BookmarkSimple, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowSquareOut, BookmarkSimple, CheckCircle, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import type { CivitaiBrowseItem, CivitaiBrowseQuery, ModelKind } from '@shared/types'
 import { errorText } from '../i18n/error-text'
@@ -14,7 +14,13 @@ import styles from './CivitaiBrowser.module.css'
 const PERIODS = ['day', 'week', 'month'] as const
 const SORTS = ['newest', 'downloads', 'rating'] as const
 /** Civitai's own names for the base models. */
-const BASES = ['SD 1.5', 'SDXL 1.0', 'Pony', 'Illustrious', 'Flux.1 D', 'Flux.1 S', 'SD 3.5', 'Qwen', 'Anima'] as const
+const BASES = [
+  // The families this app knows first, then the other common ones (each name was checked against Civitai's filter).
+  'SDXL 1.0', 'ZImageTurbo', 'ZImageBase', 'Krea 2', 'Krea 2 Turbo', 'Qwen', 'Lumina', 'Anima',
+  'Illustrious', 'Pony', 'NoobAI', 'SD 1.5', 'Flux.1 D', 'Flux.1 S', 'Flux.1 Krea', 'Flux.2 D', 'Flux.2 Klein 9B', 'Flux.3 Klein', 'Chroma', 'HiDream',
+] as const
+/** A friendlier name for a few of Civitai's; the filter still sends Civitai's own. */
+const BASE_LABELS: Record<string, string> = { ZImageTurbo: 'Z-Image Turbo', ZImageBase: 'Z-Image Base' }
 const SITE_KEY = 'fnc.civitaiSite'
 const readSite = (): 'com' | 'red' => {
   try { return localStorage.getItem(SITE_KEY) === 'red' ? 'red' : 'com' } catch { return 'com' }
@@ -136,8 +142,8 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
                   <span className={styles.meta}>{[w.baseModel, w.versionName].filter((x) => x !== '').join(' · ')}</span>
                   <span className={styles.meta}>{[w.kind === 'lora' ? t('browser.loras') : t('browser.checkpoints'), w.creator].filter((x) => x !== '').join(' · ')}</span>
                   <div className={styles.cardActions}>
-                    <Button onClick={() => void openModel(w.modelId, w.versionId, w.site)}>{t('browser.open')}</Button>
-                    <Button onClick={() => void removeFromWishlist(w.id)}>{t('later.markDownloaded')}</Button>
+                    <IconButton label={t('browser.open')} icon={<ArrowSquareOut size={20} />} onClick={() => void openModel(w.modelId, w.versionId, w.site)} />
+                    <IconButton label={t('later.markDownloaded')} icon={<CheckCircle size={20} />} onClick={() => void removeFromWishlist(w.id)} />
                   </div>
                 </div>
               </li>
@@ -160,8 +166,8 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
             <Select label={t('browser.sort')} value={sort} onChange={(v) => setSort(v as typeof sort)}
               options={SORTS.map((s) => ({ value: s, label: t(`browser.sort.${s}` as MessageKey) }))} />
             <MultiSelect label={t('browser.base')} values={bases} onChange={setBases} clearLabel={t('browser.baseClear')}
-              summary={bases.length === 0 ? t('browser.baseAny') : bases.length === 1 ? bases[0]! : t('browser.baseMany', { n: bases.length })}
-              options={BASES.map((b) => ({ value: b, label: b }))} />
+              summary={bases.length === 0 ? t('browser.baseAny') : bases.length === 1 ? (BASE_LABELS[bases[0]!] ?? bases[0]!) : t('browser.baseMany', { n: bases.length })}
+              options={BASES.map((b) => ({ value: b, label: BASE_LABELS[b] ?? b }))} />
             <input className={styles.search} type="search" aria-label={t('browser.search')} placeholder={t('browser.search')}
               value={text} maxLength={100} onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') setSubmitted(text.trim()) }} />

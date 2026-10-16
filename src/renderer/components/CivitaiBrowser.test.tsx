@@ -139,3 +139,18 @@ test('a refused bookmark shows the reason', async () => {
   await userEvent.click(await screen.findByRole('button', { name: en['later.add'] }))
   expect((await screen.findByRole('alert')).textContent).toBe(en['error.wishlistUnknown'])
 })
+
+test('the base-model menu offers the families of this app, Krea 2 and the Z-Image ones included, under readable names', async () => {
+  localStorage.clear()
+  const browseCivitai = vi.fn(async (): Promise<CivitaiBrowsePage> => ({ items: [], next: null }))
+  renderWithStore(<CivitaiBrowserDialog />, 'sdxl', {
+    civitaiBrowser: 'checkpoint', browseCivitai,
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
+  })
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['browser.base']) }))
+  for (const name of ['Krea 2', 'Krea 2 Turbo', 'Lumina', 'Qwen', 'Anima', 'Illustrious', 'Flux.2 Klein 9B']) {
+    expect(screen.getByRole('menuitemcheckbox', { name })).toBeDefined()
+  }
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Z-Image Turbo' }))
+  expect(browseCivitai).toHaveBeenLastCalledWith(expect.objectContaining({ baseModels: ['ZImageTurbo'] }))
+})
