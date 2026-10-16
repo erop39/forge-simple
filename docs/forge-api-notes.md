@@ -38,6 +38,14 @@ Titles are relative paths with folders, optionally followed by ` [hash]`, for ex
 identifiable only by the folder, so the family is detected from the title: base name first, then
 folders from the innermost out.
 
+## Hires needs hr_additional_modules
+
+A txt2img with `enable_hr` and no `hr_additional_modules` answers 500 `{"error":"TypeError"}`, whatever the upscaler or
+resize fields are (found 2026-10-16). `["Use same choices"]` works for every family tried (sdxl, anima, krea2); `[]` also
+works but would load no VAE or text encoder for the second pass. `hr_checkpoint_name`, `hr_sampler_name` and
+`hr_scheduler` can stay unset; `"Use same checkpoint"` for the checkpoint caused an AssertionError. Latent second-pass
+modes are listed by `GET /sdapi/v1/latent-upscale-modes`, not by `/upscalers`.
+
 ## LoRA list is slow
 
 `GET /sdapi/v1/loras` timed out at the 10 s list timeout. It has its own 60 s timeout, and a

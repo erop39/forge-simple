@@ -51,6 +51,7 @@ export interface Txt2ImgBody {
   hr_upscaler?: string
   hr_second_pass_steps?: number
   hr_cfg?: number
+  hr_additional_modules?: string[]
   hr_distilled_cfg?: number
   denoising_strength?: number
   sampler_name: string
@@ -66,7 +67,7 @@ export interface Txt2ImgBody {
   override_settings_restore_afterwards: false
 }
 
-export interface Img2ImgBody extends Omit<Txt2ImgBody, 'enable_hr' | 'hr_scale' | 'hr_upscaler' | 'hr_second_pass_steps' | 'hr_cfg' | 'hr_distilled_cfg'> {
+export interface Img2ImgBody extends Omit<Txt2ImgBody, 'enable_hr' | 'hr_scale' | 'hr_upscaler' | 'hr_second_pass_steps' | 'hr_cfg' | 'hr_distilled_cfg' | 'hr_additional_modules'> {
   init_images: string[]
   denoising_strength: number
   resize_mode: 0 | 1 | 2 | 3

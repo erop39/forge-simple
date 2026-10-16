@@ -108,6 +108,12 @@ test('hires fix adds Forge second-pass fields only when enabled', () => {
   expect(buildTxt2ImgBody(base, F)).not.toHaveProperty('enable_hr') // older saved jobs have no hires settings
 })
 
+test('a second pass always names its modules: Forge Neo answers 500 TypeError when hr_additional_modules is absent', () => {
+  const hires = { scale: 1.5 as const, upscaler: 'Latent', secondPassSteps: 6, denoisingStrength: 0.5 }
+  expect(buildTxt2ImgBody({ ...base, hires }, F).hr_additional_modules).toEqual(['Use same choices'])
+  expect(buildTxt2ImgBody({ ...base, hires: { ...hires, scale: 1 } }, F)).not.toHaveProperty('hr_additional_modules')
+})
+
 test('the input params are not mutated', () => {
   const p: GenerationParams = {
     ...base, prompt: 'a cat', modules: ['m'], loras: [{ name: 'film', weight: 0.8, enabled: true }],

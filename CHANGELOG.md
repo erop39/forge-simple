@@ -85,6 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Hires fix answered Forge HTTP 500 (`TypeError`) on the user's Forge Neo: it needs `hr_additional_modules` in the request. The second pass now sends `["Use same choices"]`, as Forge's own UI does. Checked against the real server for sdxl, anima and krea2 with `Latent` and a real upscaler.
 - Hires fix failed ("missing on the server", and Forge HTTP 500 with a stale value) because Forge lists its latent second-pass modes (`Latent`, `Latent (nearest)`…) apart from its upscalers; the app now reads them too, defaults to `Latent`, and never offers `None` as a second-pass upscaler.
 - Steps follow CFG in the prompt bar's bottom row, before the ratio.
 - CFG (or Distilled CFG) is a slider in the bottom row of the prompt bar that takes the free room, so nothing is left empty under the model menu; it is no longer in the parameters panel.

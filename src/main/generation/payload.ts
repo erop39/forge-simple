@@ -44,6 +44,8 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
     body.hr_upscaler = p.hires.upscaler
     body.hr_second_pass_steps = p.hires.secondPassSteps
     body.denoising_strength = p.hires.denoisingStrength
+    // Without this field Forge Neo answers HTTP 500 (TypeError); its own UI sends this choice by default.
+    body.hr_additional_modules = ['Use same choices']
     if (p.hires.cfgScale !== undefined) {
       if (profile.cfg) body.hr_cfg = p.hires.cfgScale
       else if (profile.distilledCfg) body.hr_distilled_cfg = p.hires.cfgScale
@@ -56,7 +58,7 @@ export function buildTxt2ImgBody(p: GenerationParams, findings: ProbeFindings): 
 export function buildImg2ImgBody(p: GenerationParams, sourceBase64: string, findings: ProbeFindings): Img2ImgBody {
   if (!p.img2img) throw new Error('Missing img2img settings')
   const { enable_hr: _enabled, hr_scale: _scale, hr_upscaler: _upscaler,
-    hr_second_pass_steps: _steps, denoising_strength: _denoise, hr_cfg: _hrCfg, hr_distilled_cfg: _hrDistilled, ...base } = buildTxt2ImgBody(p, findings)
+    hr_second_pass_steps: _steps, denoising_strength: _denoise, hr_cfg: _hrCfg, hr_distilled_cfg: _hrDistilled, hr_additional_modules: _hrModules, ...base } = buildTxt2ImgBody(p, findings)
   return { ...base, init_images: [sourceBase64], denoising_strength: p.img2img.denoisingStrength,
     resize_mode: p.img2img.resizeMode }
 }
