@@ -4,6 +4,7 @@ import { useAppStore } from './state/StoreProvider'
 import { EmptyState, NoModelsState } from './components/EmptyState'
 import { RestartDialog } from './components/ForgeRestart'
 import { HiresDialog } from './components/HiresDialog'
+import { ArchiveDialog } from './components/ArchiveDialog'
 import { CivitaiBrowserDialog } from './components/CivitaiBrowser'
 import { ModelGalleryDialog } from './components/ModelGallery'
 import { LockDialog } from './components/LockDialog'
@@ -53,6 +54,7 @@ export function App() {
       <HiresDialog />
       <ModelGalleryDialog />
       <CivitaiBrowserDialog />
+      <ArchiveDialog />
       <LockDialog />
     </div>
   )

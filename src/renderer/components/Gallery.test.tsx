@@ -5,6 +5,7 @@ import type { ImageRecord, Job } from '@shared/types'
 import { en } from '../locales/en'
 import { frameCaption, fullTime } from '../format'
 import { lockedCopy } from '../state/store'
+import { ArchiveDialog } from './ArchiveDialog'
 import { Gallery, columnCountFor } from './Gallery'
 import { catalog, renderWithStore } from './test-store'
 
@@ -617,6 +618,23 @@ test('the viewer offers Reuse settings for a text-to-image result and warns when
 
 describe('selection and batch actions', () => {
   const tagged = (id: number, tags: string[], hidden = false) => ({ ...image(id), tags, hidden })
+
+test('the archive dialog stays open and shows its result after the archived images leave the selection', async () => {
+    const createArchive = vi.fn(async () => {
+      // Main removes each archived image while it works: the selection empties before the call answers.
+      act(() => store.setState({ selection: [], images: [] }))
+      return { name: '2026-10-16-set', archived: 2, skippedHidden: 0, unreadable: 0, notRemoved: 0 }
+    })
+    const { store } = renderWithStore(<><Gallery /><ArchiveDialog /></>, 'sdxl', {
+      images: [image(9), image(8)], createArchive, archiveState: vi.fn(async () => ({ dir: 'D:/a', archives: [] })),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Open image 9' }), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Open image 8' }), { ctrlKey: true })
+    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: en['selection.archive'] }))
+    fireEvent.click(await screen.findByRole('button', { name: en['archive.confirm'] }))
+    expect(await screen.findByText('Archived 2 images to 2026-10-16-set.')).toBeDefined()
+  })
+
 
   test('Ctrl+click picks tiles, the bar counts them, Delete removes the whole batch with one Undo window, Esc clears', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })

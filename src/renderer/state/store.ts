@@ -175,6 +175,10 @@ export interface AppState {
   openHires(id: number): void
   openModelGallery(kind: ModelKind): void
   civitaiBrowser: ModelKind | null
+  /** The images the archive dialog was opened for (a copy: the selection changes while it works); null = closed. */
+  archiveFor: number[] | null
+  openArchive(ids: number[]): void
+  closeArchive(): void
   /** Models marked to download later (a model leaves it by itself when its file shows up in the library). */
   wishlist: WishlistItem[]
   /** Marks a model version of the listing the browser just showed; rejects with error.wishlistUnknown. */
@@ -668,6 +672,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       batchJobIds: [],
       modelGallery: null,
       civitaiBrowser: null,
+      archiveFor: null,
       wishlist: [],
       civitai: { running: false, done: 0, total: 0, found: 0, paused: false },
       logOpen: false,
@@ -1178,6 +1183,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         await attempt(() => api.hiresPresets.remove(id))
         const list = await attempt(() => api.hiresPresets.list())
         if (list) set({ hiresPresets: list })
+      },
+
+      openArchive(ids) {
+        set({ archiveFor: [...ids] })
+      },
+
+      closeArchive() {
+        set({ archiveFor: null })
       },
 
       openCivitaiBrowser(kind) {

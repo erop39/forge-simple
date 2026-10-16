@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ImageRecord } from '@shared/types'
 import { en } from '../locales/en'
+import { ArchiveDialog } from './ArchiveDialog'
 import { SelectionBar } from './SelectionBar'
 import { renderWithStore } from './test-store'
 
@@ -13,7 +14,7 @@ const image = (id: number, over: Partial<ImageRecord> = {}): ImageRecord => ({
 test('Archive names the folder, says hidden images are skipped, and reports what was archived', async () => {
   const archiveState = vi.fn(async () => ({ dir: 'D:/fnc-archives', archives: [] }))
   const createArchive = vi.fn(async () => ({ name: '2026-10-16-autumn', archived: 2, skippedHidden: 1, unreadable: 0, notRemoved: 0 }))
-  renderWithStore(<SelectionBar ids={[1, 2, 3]} onDelete={() => undefined} />, 'sdxl', {
+  renderWithStore(<><SelectionBar ids={[1, 2, 3]} onDelete={() => undefined} /><ArchiveDialog /></>, 'sdxl', {
     images: [image(1), image(2), image(3, { hidden: true })], archiveState, createArchive,
   })
   await userEvent.click(screen.getByRole('button', { name: en['selection.archive'] }))
@@ -29,7 +30,7 @@ test('Archive names the folder, says hidden images are skipped, and reports what
 
 test('a refused archive shows the reason and keeps the dialog open', async () => {
   const createArchive = vi.fn(async () => { throw new Error('error.archiveNoSpace') })
-  renderWithStore(<SelectionBar ids={[1]} onDelete={() => undefined} />, 'sdxl', {
+  renderWithStore(<><SelectionBar ids={[1]} onDelete={() => undefined} /><ArchiveDialog /></>, 'sdxl', {
     images: [image(1)], archiveState: vi.fn(async () => ({ dir: 'D:/a', archives: [] })), createArchive,
   })
   await userEvent.click(screen.getByRole('button', { name: en['selection.archive'] }))
