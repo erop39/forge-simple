@@ -577,3 +577,14 @@ test('viewer zooms by buttons, keys and Fit, and shows the file in its folder', 
   await userEvent.click(screen.getByRole('button', { name: en['viewer.openFolder'] }))
   expect(reveal).toHaveBeenCalledWith(7)
 })
+
+test('the viewer sets the model preview from a text-to-image result and reports it', async () => {
+  vi.stubGlobal('api', { images: { details: vi.fn(async () => ({ image: image(7), params, jobType: 'txt2img' })) } })
+  const setModelPreviewFromImage = vi.fn(async () => true)
+  renderWithStore(<Gallery />, 'sdxl', { images: [image(7)], setModelPreviewFromImage,
+    catalog: { ...catalog, checkpoints: [{ title: params.checkpoint, name: 'm', filename: 'C:\m\m.safetensors', family: 'sdxl' }] } })
+  await userEvent.click(screen.getByRole('button', { name: 'Open image 7' }))
+  await userEvent.click(await screen.findByRole('button', { name: en['viewer.setModelPreview'] }))
+  expect(setModelPreviewFromImage).toHaveBeenCalledWith('checkpoint', 'C:\m\m.safetensors', 7)
+  expect(await screen.findByText(en['viewer.modelPreviewSet'])).toBeDefined()
+})

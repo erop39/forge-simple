@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A model's own preview: the card lists the images generated with that checkpoint or LoRA (newest 24, visible ones only); click one to use it as the preview, the magnifier opens it in the viewer, and Remove my preview returns to Forge's or Civitai's. The viewer has Use as model preview for text-to-image results. The picture you chose survives a catalog refresh.
 - Newer-version check: the Civitai lookup also asks for the model's newest version (one more request per model, cached). A card shows a "Newer version" chip, the details panel names it with Open newer version, and the filter menu lists those models.
 - Duplicate finder: models that share a file hash or a Civitai version are marked "Duplicate ×N" and listed under the Duplicates filter (copies side by side); the details panel lists the other files.
 - A Hires on/off switch in the prompt bar. Switching on asks which saved hires preset to use (presets whose scale would pass 4096 px are greyed out); with no preset it warns to create one first (Parameters → Hires fix → Save as preset). Switching off sets the scale to Off.

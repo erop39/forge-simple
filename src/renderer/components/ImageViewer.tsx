@@ -51,6 +51,9 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [zoom, setZoom] = useState(1)
   const [revealFailed, setRevealFailed] = useState(false)
+  const [modelPreviewState, setModelPreviewState] = useState<'set' | 'failed' | null>(null)
+  const catalogCheckpoints = useAppStore((s) => s.catalog?.checkpoints)
+  const usePreviewFromImage = useAppStore((s) => s.setModelPreviewFromImage)
   const stage = useRef<HTMLDivElement>(null)
   const id = image?.id
   // The image on screen now: a copy that settles after navigation or close must not mark another image.
@@ -63,6 +66,7 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     setCopyState('idle')
     setZoom(1)
     setRevealFailed(false)
+    setModelPreviewState(null)
     setUpscaleOpen(false)
     setUpscaleFailed(false)
     setDefaultSaved(false)
@@ -169,6 +173,13 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     if (shownId.current === copiedId) setCopyState(state)
   }
 
+  async function setModelPreview(): Promise<void> {
+    const file = catalogCheckpoints?.find((c) => c.title === params?.checkpoint)?.filename
+    setModelPreviewState(null)
+    if (!file) { setModelPreviewState('failed'); return }
+    setModelPreviewState((await usePreviewFromImage('checkpoint', file, image!.id)) ? 'set' : 'failed')
+  }
+
   async function reveal(): Promise<void> {
     setRevealFailed(false)
     try { await window.api.images.reveal(image!.id) } catch { setRevealFailed(true) }
@@ -271,6 +282,9 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                     )}
                     {methods.length > 0 && allowedScales.length === 0 && <span className={styles.state}>{t('viewer.upscaleLimit')}</span>}
                     <Button icon={<FolderOpen size={16} />} onClick={() => void reveal()}>{t('viewer.openFolder')}</Button>
+                    {details?.jobType === 'txt2img' && (
+                      <Button onClick={() => void setModelPreview()}>{t('viewer.setModelPreview')}</Button>
+                    )}
                     <Button icon={copyState === 'copied' ? <Check size={16} /> : <Copy size={16} />} onClick={() => void copyPrompt()}>
                       {copyState === 'copied' ? t('viewer.copied') : t('viewer.copyPrompt')}
                     </Button>
@@ -301,6 +315,8 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
                 </div>
                 {copyState === 'failed' && <p role="alert" className={styles.error}>{t('viewer.copyFailed')}</p>}
                 {revealFailed && <p role="alert" className={styles.error}>{t('viewer.revealFailed')}</p>}
+                {modelPreviewState === 'set' && <p role="status" className={styles.state}>{t('viewer.modelPreviewSet')}</p>}
+                {modelPreviewState === 'failed' && <p role="alert" className={styles.error}>{t('viewer.modelPreviewFailed')}</p>}
                 <dl className={styles.metadata}>
                   {metadata.map(([label, value]) => (
                     <div className={styles.fact} key={label}>

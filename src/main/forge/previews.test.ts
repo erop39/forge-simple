@@ -92,3 +92,23 @@ test('an unreachable Forge answers 404 and records nothing', async () => {
   expect((await service.serve(url)).status).toBe(404)
   expect(repos.modelMeta.get(server.id, 'lora', WITH_PREVIEW)?.preview ?? null).toBeNull()
 })
+
+test('a custom preview is served from its own file, wins over Forge, gets a versioned URL and can be removed again', async () => {
+  const { service, repos, server } = make()
+  const file = WITH_PREVIEW
+  const marker = await service.setCustom('checkpoint', file, Buffer.from('jpeg-bytes'))
+  expect(marker).toMatch(/^custom-\d+$/)
+  expect(repos.modelMeta.get(server.id, 'checkpoint', file)?.preview).toBe(marker)
+  const url = service.urlFor('checkpoint', file, marker)
+  expect(url).toMatch(/\?v=custom-\d+$/)
+  const res = await service.serve(url)
+  expect(res.status).toBe(200)
+  expect(res.headers.get('content-type')).toBe('image/jpeg')
+  expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('jpeg-bytes')
+  expect(thumbRequests()).toHaveLength(0)
+  service.clearCustom('checkpoint', file)
+  expect(repos.modelMeta.get(server.id, 'checkpoint', file)?.preview).toBeNull()
+  const again = await service.serve(service.urlFor('checkpoint', file))
+  expect(again.status).toBe(200)
+  expect(again.headers.get('content-type')).toBe('image/png') // Forge's own preview is looked up again
+})

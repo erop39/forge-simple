@@ -40,6 +40,8 @@ export interface IpcDeps {
   /** Builds a throwaway client for a candidate address. */
   createClient(url: string, opts?: { pingTimeoutMs?: number }): ForgeClient
   copyToClipboard(text: string): void
+  /** Stores a model's own preview picture and drops it again. */
+  previews?: { setCustom(kind: ModelKind, filename: string, bytes: Buffer): Promise<string>; clearCustom(kind: ModelKind, filename: string): void }
   /** Looks a file hash up on Civitai; injectable for tests. */
   civitai?: CivitaiClient
   /** Opens a web address in the system browser. */
@@ -708,6 +710,38 @@ export function registerIpc(
       level: 'info', category: 'checkpoint', messageKey: 'log.checkpoint.familyChanged',
       details: { file: target.id.split(/[\\/]/).pop() ?? '', from: was ?? 'auto', to: family ?? 'auto' },
     })
+  })
+
+  /** The catalog key of a checked model file: a checkpoint's title, a LoRA's name. */
+  async function modelKey(kind: ModelKind, id: string): Promise<string> {
+    const catalog = await loadCatalog()
+    return (kind === 'checkpoint' ? catalog.checkpoints.find((c) => c.filename === id)?.title : catalog.loras.find((l) => l.path === id)?.name)
+      ?? fail('error.notFound')
+  }
+
+  handle('models:generations', async (kind, id) => {
+    const target = await modelTarget(kind, id)
+    return toRecords(repos.images.forModel(target.serverId, target.kind, await modelKey(target.kind, target.id), 24))
+  })
+
+  handle('models:setPreviewFromImage', async (kind, id, imageId) => {
+    if (!isInt(imageId, 1, MAX_ID)) return fail('error.invalidParams')
+    const target = await modelTarget(kind, id)
+    const row = repos.images.get(imageId) ?? fail('error.notFound')
+    if (row.hidden) return fail('error.notFound')
+    if (!deps.previews) return fail('error.unexpected')
+    let bytes: Buffer
+    try {
+      bytes = await fs.readFile(row.thumbPath)
+    } catch {
+      return fail('error.notFound')
+    }
+    await deps.previews.setCustom(target.kind, target.id, bytes)
+  })
+
+  handle('models:clearPreview', async (kind, id) => {
+    const target = await modelTarget(kind, id)
+    deps.previews?.clearCustom(target.kind, target.id)
   })
 
   handle('models:setTriggers', async (kind, id, triggers) => {

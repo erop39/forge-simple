@@ -367,6 +367,16 @@ export function createRepos(db: Db, now: () => number) {
       ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs, row.sourceImageId ?? null, row.hidden ? 1 : 0)
       return toImage(imageById.get(Number(res.lastInsertRowid)) as ImageSql)
     },
+    /** The newest visible images made with a checkpoint (by title) or an enabled LoRA (by name) on one server. */
+    forModel(serverId: number, kind: ModelKind, key: string, limit: number): ImageRow[] {
+      const where = kind === 'checkpoint'
+        ? "json_extract(j.params, '$.checkpoint') = ?"
+        : "EXISTS (SELECT 1 FROM json_each(j.params, '$.loras') e WHERE json_extract(e.value, '$.name') = ? AND json_extract(e.value, '$.enabled') = 1)"
+      const rows = db.prepare(`SELECT images.*, ${ENHANCED_SQL} FROM images JOIN jobs j ON j.id = images.job_id
+        WHERE j.server_id = ? AND j.type != 'upscale' AND images.hidden = 0 AND ${where} ORDER BY images.id DESC LIMIT ?`)
+        .all(serverId, key, limit) as ImageSql[]
+      return rows.map(toImage)
+    },
     list(opts: { limit: number; beforeId?: number }): ImageRow[] {
       const rows = (opts.beforeId === undefined
         ? db.prepare(`SELECT images.*, ${ENHANCED_SQL} FROM images ORDER BY id DESC LIMIT ?`).all(opts.limit)
@@ -614,11 +624,12 @@ export function createRepos(db: Db, now: () => number) {
       })()
     },
     clearPreview(serverId: number, kind: ModelKind, filename: string): void {
-      db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ? AND kind = ? AND filename = ?').run(serverId, kind, filename)
+      db.prepare("UPDATE model_meta SET preview = NULL WHERE server_id = ? AND kind = ? AND filename = ? AND (preview IS NULL OR preview NOT LIKE 'custom-%')").run(serverId, kind, filename)
     },
     /** Forgets looked-up previews (a refreshed catalog may have new ones); the user's own marks stay. */
     clearPreviews(serverId: number): void {
-      db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ?').run(serverId)
+      // A preview the user picked from a generation (`custom-<ms>`) is theirs and stays.
+      db.prepare("UPDATE model_meta SET preview = NULL WHERE server_id = ? AND (preview IS NULL OR preview NOT LIKE 'custom-%')").run(serverId)
     },
   }
 

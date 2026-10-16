@@ -195,3 +195,31 @@ test('adding a LoRA puts its trigger words into the prompt: the user\'s and Civi
   await userEvent.click(screen.getByRole('button', { name: en['models.add'] }))
   expect(store.getState().params?.prompt).toBe('a cat, civi one, civi two, most common')
 })
+
+test('the card lists generations made with the model; a click uses one as the preview, the magnifier views it, and a custom preview can be removed', async () => {
+  const gen = (id: number) => ({ id, jobId: id, url: `fnc-img://local/image/${id}`, thumbUrl: `fnc-img://local/thumb/${id}`, width: 64, height: 64,
+    seed: 1, infotext: '', createdAt: id, durationMs: 1, hidden: false, sourceImageId: null, tags: [], locked: false })
+  const modelGenerations = vi.fn(async () => [gen(11), gen(12)])
+  const setModelPreviewFromImage = vi.fn(async () => true)
+  const clearModelPreview = vi.fn(async () => undefined)
+  const requestView = vi.fn()
+  const custom: Catalog = { ...models, checkpoints: [{ ...models.checkpoints[0]!, previewCustom: true }, ...models.checkpoints.slice(1)] }
+  const { store } = renderWithStore(<ModelGalleryDialog />, 'sdxl', {
+    catalog: custom, modelGallery: 'checkpoint', modelGenerations, setModelPreviewFromImage, clearModelPreview, requestView,
+  })
+  await userEvent.click(screen.getByRole('button', { name: 'Select alpha' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Use image 12 as the preview' }))
+  expect(modelGenerations).toHaveBeenCalledWith('checkpoint', String.raw`C:\m\sdxl\alpha.safetensors`)
+  expect(setModelPreviewFromImage).toHaveBeenCalledWith('checkpoint', String.raw`C:\m\sdxl\alpha.safetensors`, 12)
+  await userEvent.click(screen.getByRole('button', { name: en['models.removePreview'] }))
+  expect(clearModelPreview).toHaveBeenCalledWith('checkpoint', String.raw`C:\m\sdxl\alpha.safetensors`)
+  await userEvent.click(screen.getByRole('button', { name: 'View image 11' }))
+  expect(requestView).toHaveBeenCalledWith(11)
+  expect(store.getState().modelGallery).toBeNull()
+})
+
+test('a model without generations says so', async () => {
+  renderWithStore(<ModelGalleryDialog />, 'sdxl', { catalog: models, modelGallery: 'checkpoint', modelGenerations: vi.fn(async () => []) })
+  await userEvent.click(screen.getByRole('button', { name: 'Select alpha' }))
+  expect(await screen.findByText(en['models.generationsNone'])).toBeDefined()
+})

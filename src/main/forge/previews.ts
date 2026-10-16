@@ -29,12 +29,18 @@ export interface PreviewDeps {
   meta: {
     get(serverId: number, kind: ModelKind, filename: string): ModelMetaRow | null
     setPreview(serverId: number, kind: ModelKind, filename: string, preview: string): void
+    clearPreview?(serverId: number, kind: ModelKind, filename: string): void
   }
+  now?(): number
 }
 
 export interface PreviewService {
-  /** Registers a model file and returns the URL the renderer uses for its preview. */
-  urlFor(kind: ModelKind, filename: string): string
+  /** Registers a model file and returns the URL the renderer uses for its preview (`stamp` changes it when the picture does). */
+  urlFor(kind: ModelKind, filename: string, stamp?: string | null): string
+  /** Makes these JPEG bytes the model's own preview; returns the stored marker (`custom-<ms>`). */
+  setCustom(kind: ModelKind, filename: string, bytes: Buffer): Promise<string>
+  /** Drops the user's own preview so Forge's (or Civitai's) is looked up again. */
+  clearCustom(kind: ModelKind, filename: string): void
   /** Serves `fnc-model://local/<kind>/<key>`: bytes from the cache, or fetched from Forge once. */
   serve(url: string): Promise<Response>
 }
@@ -69,6 +75,13 @@ export function createPreviewService(deps: PreviewDeps): PreviewService {
     if (serverId === null) return null
     const row = deps.meta.get(serverId, kind, filename)
     const remote = deps.remoteImage?.(kind, filename) ?? null
+    if (row?.preview?.startsWith('custom-')) {
+      const custom = cachePath(serverId, filename, 'custom.jpg')
+      try {
+        await fs.access(custom)
+        return { file: custom, type: 'image/jpeg' }
+      } catch { /* the file is gone: fall back to the usual lookup */ }
+    }
     if (row?.preview === '' && remote === null) return null
     if (row?.preview) {
       const file = cachePath(serverId, filename, row.preview)
@@ -115,13 +128,32 @@ export function createPreviewService(deps: PreviewDeps): PreviewService {
   }
 
   return {
-    urlFor(kind, filename) {
+    urlFor(kind, filename, stamp) {
       const key = keyOf(filename)
       known.set(`${kind}/${key}`, { kind, filename })
-      return `fnc-model://local/${kind}/${key}`
+      return `fnc-model://local/${kind}/${key}${stamp ? `?v=${encodeURIComponent(stamp)}` : ''}`
+    },
+    async setCustom(kind, filename, bytes) {
+      const serverId = deps.serverId()
+      if (serverId === null) throw new Error('no server')
+      const file = cachePath(serverId, filename, 'custom.jpg')
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      await fs.writeFile(file, bytes)
+      const marker = `custom-${(deps.now ?? Date.now)()}`
+      deps.meta.setPreview(serverId, kind, filename, marker)
+      return marker
+    },
+    clearCustom(kind, filename) {
+      const serverId = deps.serverId()
+      if (serverId === null) return
+      const row = deps.meta.get(serverId, kind, filename)
+      if (!row?.preview?.startsWith('custom-')) return
+      deps.meta.setPreview(serverId, kind, filename, '')
+      deps.meta.clearPreview?.(serverId, kind, filename)
+      void fs.rm(cachePath(serverId, filename, 'custom.jpg'), { force: true })
     },
     async serve(url) {
-      const match = /^fnc-model:\/\/local\/(checkpoint|lora)\/([0-9a-f]+)$/.exec(url)
+      const match = /^fnc-model:\/\/local\/(checkpoint|lora)\/([0-9a-f]+)(?:\?v=[\w%.-]+)?$/.exec(url)
       if (!match || !KEY.test(match[2]!)) return new Response(null, { status: 404 })
       const entry = known.get(`${match[1]}/${match[2]}`)
       if (!entry) return new Response(null, { status: 404 })

@@ -12,7 +12,7 @@ export interface CatalogDeps {
   familyOverride(filename: string): Family | null
   /** Marks the user made on files of the active server; read at every `get`, so they apply without a refetch. */
   modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
-  previewUrl?(kind: ModelKind, filename: string): string
+  previewUrl?(kind: ModelKind, filename: string, stamp?: string | null): string
   /** How often each checkpoint (title) and LoRA (name) was used by finished jobs of the active server. */
   usage?(): { checkpoints: Map<string, { uses: number; last: number | null }>; loras: Map<string, { uses: number; last: number | null }> }
   /** Told which files a fresh fetch listed, so the first appearance of a new one can be recorded. */
@@ -45,6 +45,8 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
   // Raw LoRA metadata is kept apart from the catalog: it is large and only the derived words and family are sent.
   let loraMetadata = new Map<string, Record<string, unknown>>()
   let loraHashes = new Map<string, string>()
+
+  const customStamp = (mark: ModelMetaRow | undefined): string | null => (mark?.preview?.startsWith('custom-') ? mark.preview : null)
 
   const releasedOf = (mark: ModelMetaRow | undefined): number | null =>
     mark?.civitai && !mark.civitai.missing ? mark.civitai.publishedAt ?? null : null
@@ -102,7 +104,8 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           familyOverridden: (mark?.family ?? null) !== null,
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
-          previewUrl: deps.previewUrl?.('checkpoint', c.filename) ?? '',
+          previewUrl: deps.previewUrl?.('checkpoint', c.filename, customStamp(mark)) ?? '',
+          previewCustom: customStamp(mark) !== null,
           civitai: civitaiOf(mark),
           triggers: mark?.triggers ?? (mark?.civitai && !mark.civitai.missing ? mark.civitai.trainedWords : []),
           triggersEdited: (mark?.triggers ?? null) !== null,
@@ -129,7 +132,8 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           triggersFrom: own !== null ? 'own' as const : found && found.trainedWords.length > 0 ? 'civitai' as const : 'file' as const,
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
-          previewUrl: deps.previewUrl?.('lora', l.path) ?? '',
+          previewUrl: deps.previewUrl?.('lora', l.path, customStamp(mark)) ?? '',
+          previewCustom: customStamp(mark) !== null,
           addedAt: mark?.firstSeen ?? null,
           releasedAt: releasedOf(mark),
           uses: used?.loras.get(l.name)?.uses ?? 0,

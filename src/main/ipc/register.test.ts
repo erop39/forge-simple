@@ -40,6 +40,8 @@ let forgeRef: ReturnType<typeof createActiveForge>
 let copiedText: string | null
 let revealed: string | null
 let civitaiAsked: string[]
+let customPreviews: { kind: string; file: string; bytes: string }[]
+let clearedPreviews: string[]
 let civitaiAnswers: Map<string, object>
 let openedUrls: string[]
 let exportPath: string | null
@@ -88,6 +90,8 @@ beforeEach(async () => {
   copiedText = null
   revealed = null
   civitaiAsked = []
+  customPreviews = []
+  clearedPreviews = []
   civitaiAnswers = new Map()
   openedUrls = []
   exportPath = null
@@ -108,6 +112,10 @@ beforeEach(async () => {
       revealFile: (path) => { revealed = path },
       civitai: { lookup: async (hash: string) => { civitaiAsked.push(hash); return (civitaiAnswers.get(hash) ?? null) as never } },
       openExternal: (url: string) => { openedUrls.push(url) },
+      previews: {
+        setCustom: async (kind: string, file: string, bytes: Buffer) => { customPreviews.push({ kind, file, bytes: bytes.toString() }); return 'custom-1' },
+        clearCustom: (_kind: string, file: string) => { clearedPreviews.push(file) },
+      },
       civitaiGapMs: 1,
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       lock,
@@ -1164,8 +1172,40 @@ test('hires presets: add, list ordered, duplicate name refused, rename, remove; 
   expect(JSON.stringify(oplog.list())).toContain('log.preset.hiresCreated')
 })
 
+describe('model previews from generations', () => {
+  const CKPT_FILE = ['C:', 'forge', 'models', 'Stable-diffusion', 'sd_xl_base.safetensors'].join(String.fromCharCode(92))
+  beforeEach(() => { repos.servers.setActiveUrl(mock.url) })
+
+  test('the generations of a checkpoint are its visible images, and one can become its preview (thumbnail bytes)', async () => {
+    const catalog = (await call('catalog:get')) as Catalog
+    const title = catalog.checkpoints.find((c) => c.filename === CKPT_FILE)!.title
+    const server = repos.servers.active()!
+    const job = repos.jobs.insert(server.id, 'txt2img', { ...goodParams(), checkpoint: title })
+    repos.jobs.setStatus(job.id, 'done')
+    mkdirSync(path.join(dir, 'thumbs'), { recursive: true })
+    const thumbPath = path.join(dir, 'thumbs', 'gen.jpg')
+    writeFileSync(thumbPath, 'jpg-thumb')
+    const row = repos.images.insert({ jobId: job.id, filePath: path.join(dir, 'x.png'), thumbPath, width: 8, height: 8, seed: 1, infotext: '', durationMs: 1 })
+    const hiddenRow = repos.images.insert({ jobId: job.id, filePath: path.join(dir, 'y.png'), thumbPath, width: 8, height: 8, seed: 2, infotext: '', durationMs: 1, hidden: true })
+    const list = (await call('models:generations', 'checkpoint', CKPT_FILE)) as { id: number; url: string }[]
+    expect(list.map((i) => i.id)).toEqual([row.id])
+    expect(list[0]!.url).toContain('fnc-img://')
+    await call('models:setPreviewFromImage', 'checkpoint', CKPT_FILE, row.id)
+    expect(customPreviews).toHaveLength(1)
+    expect(customPreviews[0]).toMatchObject({ kind: 'checkpoint', file: CKPT_FILE, bytes: 'jpg-thumb' })
+    await expect(call('models:setPreviewFromImage', 'checkpoint', CKPT_FILE, hiddenRow.id)).rejects.toThrow('error.notFound')
+    await expect(call('models:setPreviewFromImage', 'checkpoint', CKPT_FILE, 9999)).rejects.toThrow('error.notFound')
+    await expect(call('models:setPreviewFromImage', 'checkpoint', 'C:\nope', row.id)).rejects.toThrow('error.notFound')
+    await expect(call('models:setPreviewFromImage', 'checkpoint', CKPT_FILE, 'x')).rejects.toThrow('error.invalidParams')
+    await call('models:clearPreview', 'checkpoint', CKPT_FILE)
+    expect(clearedPreviews).toEqual([CKPT_FILE])
+  })
+})
+
 describe('civitai lookup', () => {
-  const LORA_PATH = String.raw`C:orgemodelsLoradetail_tweaker.safetensors`
+  const LORA_PATH = ['C:', 'forge', 'models', 'Lora', 'detail_tweaker.safetensors'].join(String.fromCharCode(92))
+  const LORA_STYLE = ['C:', 'forge', 'models', 'Lora', 'style_anima.safetensors'].join(String.fromCharCode(92))
+  const LORA_NOHASH = ['C:', 'forge', 'models', 'Lora', 'nohash.safetensors'].join(String.fromCharCode(92))
   const LORA_HASH = 'b'.repeat(64)
   const answer = {
     modelId: 7, versionId: 70, name: 'Detail Tweaker', versionName: 'v2', baseModel: 'Illustrious',
@@ -1203,19 +1243,17 @@ describe('civitai lookup', () => {
   test('one file can be updated on its own: needs consent, reports found / unknown / no hash', async () => {
     mock.respond('/sdapi/v1/loras', { json: [
       { name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH, metadata: { sshs_model_hash: LORA_HASH } },
-      { name: 'style_anima', alias: 'style_anima', path: String.raw`C:orgemodelsLorastyle_anima.safetensors`, metadata: { sshs_model_hash: 'c'.repeat(64) } },
-      { name: 'nohash', alias: 'nohash', path: String.raw`C:orgemodelsLora
-ohash.safetensors`, metadata: {} },
+      { name: 'style_anima', alias: 'style_anima', path: LORA_STYLE, metadata: { sshs_model_hash: 'c'.repeat(64) } },
+      { name: 'nohash', alias: 'nohash', path: LORA_NOHASH, metadata: {} },
     ] })
     civitaiAnswers.set(LORA_HASH, answer)
     await call('catalog:get', true)
     await expect(call('civitai:updateOne', 'lora', LORA_PATH)).rejects.toThrow('error.invalidParams')
     await call('civitai:setEnabled', true)
     expect(await call('civitai:updateOne', 'lora', LORA_PATH)).toBe('found')
-    expect(await call('civitai:updateOne', 'lora', String.raw`C:orgemodelsLorastyle_anima.safetensors`)).toBe('missing')
-    expect(await call('civitai:updateOne', 'lora', String.raw`C:orgemodelsLora
-ohash.safetensors`)).toBe('noHash')
-    await expect(call('civitai:updateOne', 'lora', 'C:\nope')).rejects.toThrow('error.notFound')
+    expect(await call('civitai:updateOne', 'lora', LORA_STYLE)).toBe('missing')
+    expect(await call('civitai:updateOne', 'lora', LORA_NOHASH)).toBe('noHash')
+    await expect(call('civitai:updateOne', 'lora', 'C:' + String.fromCharCode(92) + 'nope')).rejects.toThrow('error.notFound')
     expect(civitaiAsked).toEqual([LORA_HASH, 'c'.repeat(64)])
     const lora = ((await call('catalog:get')) as Catalog).loras.find((l) => l.path === LORA_PATH)!
     expect(lora.triggers).toEqual(['civi word'])

@@ -125,7 +125,7 @@ async function boot(): Promise<void> {
       const serverId = repos.servers.active()?.id
       return serverId === undefined ? new Map() : repos.modelMeta.list(serverId, kind)
     },
-    previewUrl: (kind, filename) => previews?.urlFor(kind, filename) ?? '',
+    previewUrl: (kind, filename, stamp) => previews?.urlFor(kind, filename, stamp) ?? '',
     usage: () => {
       const serverId = repos.servers.active()?.id
       return serverId === undefined ? { checkpoints: new Map(), loras: new Map() } : repos.jobs.usage(serverId)
@@ -213,6 +213,7 @@ async function boot(): Promise<void> {
     localUrl: !app.isPackaged ? process.env['FNC_LOCAL_SERVER'] || undefined : undefined,
     copyToClipboard: (value) => clipboard.writeText(value),
     revealFile: (path) => shell.showItemInFolder(path),
+    previews: { setCustom: (kind, filename, bytes) => previews!.setCustom(kind, filename, bytes), clearCustom: (kind, filename) => previews!.clearCustom(kind, filename) },
     openExternal: (url) => { void shell.openExternal(url) },
     onServerChanged: syncMonitor,
     capabilities,

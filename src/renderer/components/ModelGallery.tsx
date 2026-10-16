@@ -1,8 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { CloudArrowDown, Star, X } from '@phosphor-icons/react'
+import { CloudArrowDown, MagnifyingGlassPlus, Star, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
-import type { CivitaiLink, Family, ModelKind } from '@shared/types'
+import type { CivitaiLink, Family, ImageRecord, ModelKind } from '@shared/types'
 import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
@@ -33,6 +33,7 @@ interface Item {
   familyOverridden: boolean
   civitai: CivitaiLink | null
   duplicates: string[]
+  previewCustom: boolean
   addedAt: number | null
   releasedAt: number | null
   uses: number
@@ -102,6 +103,11 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const updateOne = useAppStore((s) => s.updateModelFromCivitai)
   const insertWord = useAppStore((s) => s.insertPromptWord)
   const [oneResult, setOneResult] = useState<{ id: string; result: string } | null>(null)
+  const loadGenerations = useAppStore((s) => s.modelGenerations)
+  const usePreview = useAppStore((s) => s.setModelPreviewFromImage)
+  const clearPreview = useAppStore((s) => s.clearModelPreview)
+  const requestView = useAppStore((s) => s.requestView)
+  const [generations, setGenerations] = useState<{ id: string; images: ImageRecord[] } | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState(ALL)
   const [folder, setFolder] = useState(ALL)
@@ -133,14 +139,14 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
         id: c.filename, key: c.title, name: c.name,
         folder: folderOf(c.filename), family: c.family, favorite: c.favorite ?? false, note: c.note ?? '',
         previewUrl: c.previewUrl ?? '', hash: c.sha256 ?? c.hash ?? null, loaded: catalog.loadedCheckpoint === c.title,
-        triggers: c.triggers ?? [], triggersEdited: c.triggersEdited ?? false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null, duplicates: c.duplicates ?? [],
+        triggers: c.triggers ?? [], triggersEdited: c.triggersEdited ?? false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null, duplicates: c.duplicates ?? [], previewCustom: c.previewCustom ?? false,
         addedAt: c.addedAt ?? null, releasedAt: c.releasedAt ?? null, uses: c.uses ?? 0, lastUsedAt: c.lastUsedAt ?? null,
       }))
     }
     return catalog.loras.map((l) => ({
       id: l.path, key: l.name, name: l.alias || l.name, folder: folderOf(l.path), family: l.baseFamily ?? null,
       favorite: l.favorite ?? false, note: l.note ?? '', previewUrl: l.previewUrl ?? '', hash: l.hash ?? null, loaded: false,
-      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null, duplicates: l.duplicates ?? [],
+      triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null, duplicates: l.duplicates ?? [], previewCustom: l.previewCustom ?? false,
       addedAt: l.addedAt ?? null, releasedAt: l.releasedAt ?? null, uses: l.uses ?? 0, lastUsedAt: l.lastUsedAt ?? null,
     }))
   }, [catalog, kind])
@@ -170,6 +176,13 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
     }), [items, filter, folder, needle, sort])
 
   const current = items.find((i) => i.id === selected) ?? null
+  const currentId = current?.id ?? null
+  useEffect(() => {
+    if (currentId === null) return undefined
+    let live = true
+    void loadGenerations(kind, currentId).then((images) => { if (live) setGenerations({ id: currentId, images }) })
+    return () => { live = false }
+  }, [kind, currentId, loadGenerations])
   useEffect(() => { search.current?.focus() }, [])
 
   const inStack = (name: string): boolean => params?.loras.some((l) => l.name === name) ?? false
@@ -298,6 +311,10 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onInsertWord={insertWord}
             onOpenNewer={() => void openOnCivitai(kind, current.id, 'newer')}
             updateResult={oneResult?.id === current.id ? oneResult.result : null}
+            generations={generations?.id === current.id ? generations.images : null}
+            onUsePreview={(imageId) => void usePreview(kind, current.id, imageId)}
+            onClearPreview={() => void clearPreview(kind, current.id)}
+            onViewImage={(imageId) => { onClose(); requestView(imageId) }}
             onUpdateOne={() => (consent ? void runOne({ kind, id: current.id }) : setAskFor({ kind, id: current.id }))}
           />
         ) : (
@@ -331,9 +348,13 @@ type DetailsProps = {
   onOpenNewer(): void
   onUpdateOne(): void
   updateResult: string | null
+  generations: ImageRecord[] | null
+  onUsePreview(imageId: number): void
+  onClearPreview(): void
+  onViewImage(imageId: number): void
 }
 
-function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai, onInsertWord, onOpenNewer, onUpdateOne, updateResult }: DetailsProps) {
+function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai, onInsertWord, onOpenNewer, onUpdateOne, updateResult, generations, onUsePreview, onClearPreview, onViewImage }: DetailsProps) {
   const [noteDraft, setNoteDraft] = useState(item.note)
   const [word, setWord] = useState('')
   const detected = item.familyOverridden ? null : item.family
@@ -405,6 +426,31 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
           {item.triggersEdited && <Button onClick={() => onTriggers(null)}>{t('models.triggersReset')}</Button>}
         </section>
       )}
+      <section className={styles.field}>
+        <span className={styles.label}>{t('models.generations')}</span>
+        {generations === null ? null : generations.length === 0 ? (
+          <span className={styles.hint}>{t('models.generationsNone')}</span>
+        ) : (
+          <>
+            <ul className={styles.thumbs}>
+              {generations.map((image) => (
+                <li key={image.id} className={styles.thumbCell}>
+                  <button type="button" className={styles.thumb} aria-label={t('models.usePreview', { n: image.id })}
+                    title={t('models.usePreview', { n: image.id })} onClick={() => onUsePreview(image.id)}>
+                    <img src={image.thumbUrl} alt="" loading="lazy" decoding="async" />
+                  </button>
+                  <button type="button" className={styles.thumbView} aria-label={t('models.viewImage', { n: image.id })}
+                    title={t('models.viewImage', { n: image.id })} onClick={() => onViewImage(image.id)}>
+                    <MagnifyingGlassPlus size={14} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <span className={styles.hint}>{t('models.generationsHint')}</span>
+          </>
+        )}
+        {item.previewCustom && <div className={styles.detailActions}><Button onClick={onClearPreview}>{t('models.removePreview')}</Button></div>}
+      </section>
       <label className={styles.field}>
         <span className={styles.label}>{t('models.note')}</span>
         <textarea

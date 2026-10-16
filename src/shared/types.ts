@@ -123,6 +123,8 @@ export interface CheckpointInfo {
   /** The family was set by hand rather than detected from the name. */
   familyOverridden?: boolean
   favorite?: boolean; note?: string
+  /** The preview is a generated image the user picked. */
+  previewCustom?: boolean
   /** Page of this file on Civitai once it was looked up and found. */
   civitai?: CivitaiLink | null
   /** fnc-model://… ; answers 404 when Forge has no preview for it. */
@@ -143,6 +145,7 @@ export interface LoraInfo {
   triggers?: string[]
   triggersEdited?: boolean
   favorite?: boolean; note?: string; previewUrl?: string
+  previewCustom?: boolean
   /** Where the trigger words came from: the user, Civitai, or the most frequent training tags of the file. */
   triggersFrom?: 'own' | 'civitai' | 'file'
   civitai?: CivitaiLink | null

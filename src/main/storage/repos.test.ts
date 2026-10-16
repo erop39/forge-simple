@@ -623,3 +623,30 @@ test('usage counts finished jobs per checkpoint and per enabled LoRA of one serv
   expect(usage.loras.get('detail')).toEqual({ uses: 1, last: 100 })
   expect(usage.loras.has('off')).toBe(false)
 })
+
+test('forModel lists the newest visible images of a checkpoint or an enabled LoRA on one server; custom previews survive clearPreviews', () => {
+  const { repos } = setup()
+  const a = repos.servers.setActiveUrl('http://a:7860')
+  const b = repos.servers.setActiveUrl('http://b:7860')
+  const make = (serverId: number, checkpoint: string, loras: { name: string; weight: number; enabled: boolean }[], hidden = false) => {
+    const job = repos.jobs.insert(serverId, 'txt2img', params({ checkpoint, loras }))
+    repos.jobs.setStatus(job.id, 'done')
+    const row = repos.images.insert({ ...imageRow(job.id), hidden })
+    return row.id
+  }
+  const first = make(a.id, 'ckptA', [{ name: 'detail', weight: 1, enabled: true }])
+  const second = make(a.id, 'ckptA', [{ name: 'detail', weight: 1, enabled: false }])
+  make(a.id, 'ckptA', [], true)
+  make(a.id, 'ckptB', [])
+  make(b.id, 'ckptA', [])
+  expect(repos.images.forModel(a.id, 'checkpoint', 'ckptA', 10).map((i) => i.id)).toEqual([second, first])
+  expect(repos.images.forModel(a.id, 'checkpoint', 'ckptA', 1).map((i) => i.id)).toEqual([second])
+  expect(repos.images.forModel(a.id, 'lora', 'detail', 10).map((i) => i.id)).toEqual([first])
+  repos.modelMeta.setPreview(a.id, 'checkpoint', 'f1', 'custom-123')
+  repos.modelMeta.setPreview(a.id, 'checkpoint', 'f2', 'png')
+  repos.modelMeta.clearPreviews(a.id)
+  expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')?.preview).toBe('custom-123')
+  expect(repos.modelMeta.get(a.id, 'checkpoint', 'f2')?.preview).toBeNull()
+  repos.modelMeta.clearPreview(a.id, 'checkpoint', 'f1')
+  expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')?.preview).toBe('custom-123')
+})

@@ -13,7 +13,7 @@ export function createActiveForge(deps: {
   familyOverride(filename: string): Family | null
   /** What the user marked on the active server's files (favorite, note, family, own trigger words). */
   modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
-  previewUrl?(kind: ModelKind, filename: string): string
+  previewUrl?(kind: ModelKind, filename: string, stamp?: string | null): string
   usage?: NonNullable<Parameters<typeof createCatalog>[0]['usage']>
   noteSeen?(kind: ModelKind, files: string[]): void
   oplog: Oplog

@@ -111,6 +111,12 @@ export interface Api {
     setFamily(checkpointFile: string, family: Family | null): Promise<void>
     /** null returns to the words found in the file's metadata. */
     setTriggers(kind: ModelKind, id: string, triggers: string[] | null): Promise<void>
+    /** The newest visible images made with this checkpoint or LoRA (up to 24). */
+    generations(kind: ModelKind, id: string): Promise<ImageRecord[]>
+    /** Uses a saved image (its thumbnail) as the model's own preview; error.notFound for a hidden or unknown image. */
+    setPreviewFromImage(kind: ModelKind, id: string, imageId: number): Promise<void>
+    /** Drops the model's own preview. */
+    clearPreview(kind: ModelKind, id: string): Promise<void>
   }
   /**
    * Optional lookup of the library on civitai.com: only file SHA-256 hashes are sent, one request a second.
@@ -216,7 +222,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

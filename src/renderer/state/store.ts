@@ -168,6 +168,11 @@ export interface AppState {
   /** Any stored job; rejects with the error key (error.notFound when it is gone). */
   getJob(id: number): Promise<Job>
   requestView(imageId: number): void
+  /** The newest visible images made with this checkpoint or LoRA; empty when none or on failure. */
+  modelGenerations(kind: ModelKind, id: string): Promise<ImageRecord[]>
+  /** Uses a saved image as the model's own preview; false on failure. */
+  setModelPreviewFromImage(kind: ModelKind, id: string, imageId: number): Promise<boolean>
+  clearModelPreview(kind: ModelKind, id: string): Promise<void>
   clearViewRequest(): void
   /** Opens a lock dialog; a hide waiting for a first password is dropped. */
   openLockDialog(mode: LockDialogMode): void
@@ -796,6 +801,21 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       getJob(id) {
         return api.jobs.get(id)
+      },
+
+      async modelGenerations(kind, id) {
+        return (await attempt(() => api.models.generations(kind, id))) ?? []
+      },
+
+      async setModelPreviewFromImage(kind, id, imageId) {
+        const ok = await attempt(async () => { await api.models.setPreviewFromImage(kind, id, imageId); return true })
+        if (!ok) return false
+        await markModel(async () => undefined)
+        return true
+      },
+
+      async clearModelPreview(kind, id) {
+        await markModel(() => api.models.clearPreview(kind, id))
       },
 
       requestView(imageId) {

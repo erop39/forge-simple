@@ -51,6 +51,9 @@ const api: Api = {
     setNote: (kind, id, note) => invoke('models:setNote', kind, id, note),
     setFamily: (file, family) => invoke('models:setFamily', file, family),
     setTriggers: (kind, id, triggers) => invoke('models:setTriggers', kind, id, triggers),
+    generations: (kind, id) => invoke('models:generations', kind, id),
+    setPreviewFromImage: (kind, id, imageId) => invoke('models:setPreviewFromImage', kind, id, imageId),
+    clearPreview: (kind, id) => invoke('models:clearPreview', kind, id),
   },
   catalog: {
     get: (refresh) => invoke('catalog:get', refresh),

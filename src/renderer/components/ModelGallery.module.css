@@ -322,6 +322,54 @@
   cursor: pointer;
 }
 
+.thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumbCell {
+  position: relative;
+}
+
+.thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tag);
+  background: var(--surface-1);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.thumb:hover {
+  border-color: var(--signal);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+}
+
+.thumbView {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-tag);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .copies {
   display: flex;
   flex-direction: column;
