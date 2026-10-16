@@ -1098,7 +1098,10 @@ export function registerIpc(
     // open: otherwise it would show hidden images without the password.
     if (hidden && !lock.state().hasPassword) return fail('error.noPassword')
     if (!hidden && !lock.isOpen()) return fail('error.notFound')
-    const existing = [...new Set(ids as number[])].filter((id) => repos.images.get(id) !== null)
+    const asked = [...new Set(ids as number[])].filter((id) => repos.images.get(id) !== null)
+    // Hiding an image also hides what was made from it (upscaled copies and img2img results show the same picture and
+    // prompt); unhiding stays a choice per image.
+    const existing = hidden ? repos.images.descendantsOf(asked) : asked
     repos.images.setHidden(existing, hidden)
     if (hidden) for (const id of existing) dropPreviewsMadeFrom(id)
     oplog.write({

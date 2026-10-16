@@ -1507,6 +1507,26 @@ test('generations:deleteAll empties the gallery and finished jobs, but not while
   expect(repos.servers.list().length).toBeGreaterThan(0)
 })
 
+test('hiding an image also hides its upscaled copies and img2img results, but unhiding is per image', async () => {
+  const server = repos.servers.setActiveUrl(mock.url)
+  const make = (over: Record<string, unknown> = {}, source?: number) => {
+    const job = repos.jobs.insert(server.id, 'txt2img', goodParams(over as never))
+    repos.jobs.setStatus(job.id, 'done')
+    return repos.images.insert({ jobId: job.id, filePath: path.join(dir, `h${job.id}.png`), thumbPath: path.join(dir, `h${job.id}.jpg`), width: 8, height: 8, seed: job.id, infotext: 'i', durationMs: 1, ...(source ? { sourceImageId: source } : {}) })
+  }
+  const original = make()
+  const upscaled = make({ upscale: { sourceImageId: original.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }, original.id)
+  const edited = make({ img2img: { sourceImageId: original.id, denoisingStrength: 0.5, resizeMode: 0 } })
+  const other = make()
+  await call('lock:setPassword', null, 'secret-pass')
+  await call('lock:open', 'secret-pass')
+  await call('images:setHidden', [original.id], true)
+  expect([original, upscaled, edited, other].map((i) => repos.images.get(i.id)!.hidden)).toEqual([true, true, true, false])
+  expect(sent.filter((s) => s.e === 'images:changed').at(-1)?.p).toEqual({ ids: expect.arrayContaining([original.id, upscaled.id, edited.id]) })
+  await call('images:setHidden', [upscaled.id], false)
+  expect([original, upscaled, edited].map((i) => repos.images.get(i.id)!.hidden)).toEqual([true, false, true])
+})
+
 test('settings presets: saved without prompt, negative, seed and count; names are unique; every change is logged by name', async () => {
   const saved = (await call('presets:save', ' My look ', goodParams({ prompt: 'a secret prompt', negativePrompt: 'secret negative', seed: 99, count: 4, steps: 31 }))) as {
     id: number; name: string; params: Record<string, unknown>

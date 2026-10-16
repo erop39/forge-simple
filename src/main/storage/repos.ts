@@ -424,6 +424,21 @@ export function createRepos(db: Db, now: () => number) {
       const { sql, args } = buildImageQuery(q, opts.revealHidden)
       return (db.prepare(sql).all(...args) as ImageSql[]).map(toImage)
     },
+    /**
+     * The given images plus everything made from them, transitively: upscaled copies (source link) and img2img results
+     * (the source named in the job). These carry the original's picture and prompt, so hiding the original covers them.
+     */
+    descendantsOf(ids: number[]): number[] {
+      const rows = db.prepare(`WITH RECURSIVE d(id) AS (
+        SELECT value FROM json_each(?)
+        UNION
+        SELECT i.id FROM images i JOIN jobs j ON j.id = i.job_id, d
+          WHERE i.source_image_id = d.id
+            OR json_extract(j.params, '$.img2img.sourceImageId') = d.id
+            OR json_extract(j.params, '$.upscale.sourceImageId') = d.id
+      ) SELECT id FROM d`).all(JSON.stringify(ids)) as { id: number }[]
+      return rows.map((r) => r.id)
+    },
     /** Sets the flag on the given ids; returns how many images exist among them. */
     setHidden(ids: number[], hidden: boolean): number {
       return db.transaction(() => {

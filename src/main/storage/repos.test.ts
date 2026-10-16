@@ -666,3 +666,21 @@ test('settings presets: unique names ignoring case, ordered, renamed and removed
   expect(repos.presets.remove(a.id)?.name).toBe('Omega')
   expect(repos.presets.remove(a.id)).toBeNull()
 })
+
+test('descendantsOf follows source links of upscales and the source of img2img jobs, transitively', () => {
+  const { repos } = setup()
+  const server = repos.servers.add('Home', 'http://100.64.0.1:7860')
+  const mk = (over: Partial<GenerationParams> = {}, source?: number) => {
+    const job = repos.jobs.insert(server.id, over.upscale ? 'upscale' : over.img2img ? 'img2img' : 'txt2img', params(over))
+    repos.jobs.setStatus(job.id, 'done')
+    return repos.images.insert({ ...imageRow(job.id), ...(source ? { sourceImageId: source } : {}) })
+  }
+  const original = mk()
+  const upscaled = mk({ upscale: { sourceImageId: original.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }, original.id)
+  const edited = mk({ img2img: { sourceImageId: original.id, denoisingStrength: 0.5, resizeMode: 0 } })
+  const editedUpscaled = mk({ upscale: { sourceImageId: edited.id, upscaler: 'R-ESRGAN 4x+', scale: 2 } }, edited.id)
+  const unrelated = mk()
+  expect(repos.images.descendantsOf([original.id]).sort()).toEqual([original.id, upscaled.id, edited.id, editedUpscaled.id].sort())
+  expect(repos.images.descendantsOf([unrelated.id])).toEqual([unrelated.id])
+  expect(repos.images.descendantsOf([edited.id]).sort()).toEqual([edited.id, editedUpscaled.id].sort())
+})
