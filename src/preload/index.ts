@@ -40,7 +40,7 @@ const api: Api = {
     state: () => invoke('civitai:state'),
     open: (kind, id, which) => invoke('civitai:open', kind, id, which),
     browse: (query) => invoke('civitai:browse', query),
-    openModel: (modelId, versionId) => invoke('civitai:openModel', modelId, versionId),
+    openModel: (modelId, versionId, site) => invoke('civitai:openModel', modelId, versionId, site),
     updateOne: (kind, id) => invoke('civitai:updateOne', kind, id),
   },
   tags: {

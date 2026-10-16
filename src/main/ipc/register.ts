@@ -773,6 +773,7 @@ export function registerIpc(
     if (repos.settings.get(CIVITAI_KEY) !== '1') return fail('error.invalidParams')
     const q = raw as Partial<CivitaiBrowseQuery> | null
     if (typeof q !== 'object' || q === null || (q.kind !== 'checkpoint' && q.kind !== 'lora')
+      || !(q.site === 'com' || q.site === 'red')
       || !(q.period === 'day' || q.period === 'week' || q.period === 'month')
       || !(q.sort === 'newest' || q.sort === 'downloads' || q.sort === 'rating')
       || !Array.isArray(q.baseModels) || q.baseModels.length > 10 || !q.baseModels.every((b) => typeof b === 'string' && b.length > 0 && b.length <= 60)
@@ -780,7 +781,7 @@ export function registerIpc(
       || (q.cursor != null && (typeof q.cursor !== 'string' || q.cursor.length > 200))) return fail('error.invalidParams')
     let page: Awaited<ReturnType<typeof browseCivitai>>
     try {
-      page = await browseCivitai({ kind: q.kind, period: q.period, sort: q.sort, baseModels: q.baseModels as string[], text: q.text, cursor: q.cursor ?? null },
+      page = await browseCivitai({ site: q.site, kind: q.kind, period: q.period, sort: q.sort, baseModels: q.baseModels as string[], text: q.text, cursor: q.cursor ?? null },
         { ...(deps.civitaiFetch ? { fetch: deps.civitaiFetch } : {}), now: Date.now })
     } catch (err) {
       return fail(err instanceof CivitaiBusyError ? 'error.civitaiBusy' : 'error.network')
@@ -812,9 +813,10 @@ export function registerIpc(
     }
   })
 
-  handle('civitai:openModel', (modelId, versionId) => {
+  handle('civitai:openModel', (modelId, versionId, site) => {
+    if (site !== undefined && site !== 'com' && site !== 'red') return fail('error.invalidParams')
     if (!Number.isSafeInteger(modelId) || !Number.isSafeInteger(versionId) || (modelId as number) <= 0 || (versionId as number) <= 0) return fail('error.invalidParams')
-    deps.openExternal?.(`https://civitai.com/models/${modelId as number}?modelVersionId=${versionId as number}`)
+    deps.openExternal?.(`https://civitai.${site ?? 'com'}/models/${modelId as number}?modelVersionId=${versionId as number}`)
   })
 
   handle('civitai:cancel', () => { civitaiUpdater.cancel() })

@@ -202,6 +202,8 @@ export interface ImportSummary {
 
 /** The filters of the Civitai browser; `period` limits to versions published within that time. */
 export interface CivitaiBrowseQuery {
+  /** com: safe-for-work only; red: everything, mature content included. */
+  site: 'com' | 'red'
   kind: ModelKind
   period: 'day' | 'week' | 'month'
   sort: 'newest' | 'downloads' | 'rating'

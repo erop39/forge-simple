@@ -38,13 +38,13 @@ test('with consent it lists the week by newest, re-queries on a filter change an
     settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
   })
   expect(await screen.findByText('Detail Tweaker')).toBeDefined()
-  expect(browseCivitai).toHaveBeenCalledWith({ kind: 'lora', period: 'week', sort: 'newest', baseModels: [], text: '', cursor: null })
+  expect(browseCivitai).toHaveBeenCalledWith({ site: 'com', kind: 'lora', period: 'week', sort: 'newest', baseModels: [], text: '', cursor: null })
   expect(screen.getByText(en['browser.have'])).toBeDefined()
   expect(screen.getByText(en['browser.older'])).toBeDefined()
   await userEvent.click(screen.getByRole('button', { name: en['browser.more'] }))
   expect(browseCivitai).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'c2' }))
   await userEvent.click(screen.getAllByRole('button', { name: /Detail Tweaker/ })[0]!)
-  expect(openCivitaiModel).toHaveBeenCalledWith(1, 10)
+  expect(openCivitaiModel).toHaveBeenCalledWith(1, 10, 'com')
   await userEvent.click(screen.getByRole('button', { name: new RegExp(en['browser.period']) }))
   await userEvent.click(screen.getByRole('menuitemradio', { name: en['browser.period.day'] }))
   expect(browseCivitai).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'day', cursor: null }))
@@ -67,4 +67,24 @@ test('Back leaves the browser for the model library it came from', async () => {
   await userEvent.click(screen.getByRole('button', { name: en['browser.back'] }))
   expect(store.getState().civitaiBrowser).toBeNull()
   expect(store.getState().modelGallery).toBe('lora')
+})
+
+test('the Site menu switches to civitai.red: new listing, a notice, pages open there, and the choice is remembered', async () => {
+  localStorage.clear()
+  const browseCivitai = vi.fn(async (): Promise<CivitaiBrowsePage> => ({ items: [item({})], next: null }))
+  const openCivitaiModel = vi.fn(async () => undefined)
+  renderWithStore(<CivitaiBrowserDialog />, 'sdxl', {
+    civitaiBrowser: 'checkpoint', browseCivitai, openCivitaiModel,
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
+  })
+  expect(await screen.findByText('Detail Tweaker')).toBeDefined()
+  expect(screen.queryByText(en['browser.redNotice'])).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: new RegExp(en['browser.site']) }))
+  await userEvent.click(screen.getByRole('menuitemradio', { name: en['browser.site.red'] }))
+  expect(browseCivitai).toHaveBeenLastCalledWith(expect.objectContaining({ site: 'red', cursor: null }))
+  expect(await screen.findByText(en['browser.redNotice'])).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: /Detail Tweaker/ }))
+  expect(openCivitaiModel).toHaveBeenCalledWith(1, 10, 'red')
+  expect(localStorage.getItem('fnc.civitaiSite')).toBe('red')
+  localStorage.clear()
 })

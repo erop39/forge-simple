@@ -181,7 +181,7 @@ export interface AppState {
   backFromCivitaiBrowser(): void
   /** Rejects with the IPC error key (error.civitaiBusy, error.network). */
   browseCivitai(query: CivitaiBrowseQuery): Promise<CivitaiBrowsePage>
-  openCivitaiModel(modelId: number, versionId: number): Promise<void>
+  openCivitaiModel(modelId: number, versionId: number, site?: 'com' | 'red'): Promise<void>
   /** Records the user's consent (or its withdrawal); a lookup needs it. */
   setCivitaiEnabled(enabled: boolean): Promise<void>
   updateFromCivitai(force?: boolean): Promise<void>
@@ -1178,8 +1178,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return api.civitai.browse(query)
       },
 
-      async openCivitaiModel(modelId, versionId) {
-        await attempt(() => api.civitai.openModel(modelId, versionId))
+      async openCivitaiModel(modelId, versionId, site) {
+        await attempt(() => api.civitai.openModel(modelId, versionId, site))
       },
 
       closeModelGallery() {

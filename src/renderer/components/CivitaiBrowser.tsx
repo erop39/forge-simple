@@ -14,6 +14,10 @@ const PERIODS = ['day', 'week', 'month'] as const
 const SORTS = ['newest', 'downloads', 'rating'] as const
 /** Civitai's own names for the base models; '' = any. */
 const BASES = ['', 'SD 1.5', 'SDXL 1.0', 'Pony', 'Illustrious', 'Flux.1 D', 'Flux.1 S', 'SD 3.5', 'Qwen', 'Anima'] as const
+const SITE_KEY = 'fnc.civitaiSite'
+const readSite = (): 'com' | 'red' => {
+  try { return localStorage.getItem(SITE_KEY) === 'red' ? 'red' : 'com' } catch { return 'com' }
+}
 const day = new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium' })
 const count = new Intl.NumberFormat(LOCALE, { notation: 'compact' })
 
@@ -40,6 +44,7 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
   const browse = useAppStore((s) => s.browseCivitai)
   const openModel = useAppStore((s) => s.openCivitaiModel)
   const [kind, setKind] = useState<ModelKind>(initialKind)
+  const [site, setSite] = useState<'com' | 'red'>(readSite)
   const [period, setPeriod] = useState<CivitaiBrowseQuery['period']>('week')
   const [sort, setSort] = useState<CivitaiBrowseQuery['sort']>('newest')
   const [base, setBase] = useState('')
@@ -56,7 +61,7 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
     setLoading(true)
     setError(null)
     try {
-      const page = await browse({ kind, period, sort, baseModels: base === '' ? [] : [base], text: submitted, cursor })
+      const page = await browse({ site, kind, period, sort, baseModels: base === '' ? [] : [base], text: submitted, cursor })
       if (mine !== seq.current) return
       setItems((old) => (cursor === null ? page.items : [...old, ...page.items.filter((n) => !old.some((o) => o.versionId === n.versionId))]))
       setNext(page.next)
@@ -74,7 +79,7 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
     else seq.current++
     // `load` reads the filters above; a change of any of them starts a new listing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consent, kind, period, sort, base, submitted])
+  }, [consent, site, kind, period, sort, base, submitted])
 
   return (
     <div className={styles.layout}>
@@ -95,6 +100,12 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
       ) : (
         <>
           <div className={styles.toolbar}>
+            <Select label={t('browser.site')} value={site} onChange={(v) => {
+              const next = v === 'red' ? 'red' : 'com'
+              try { localStorage.setItem(SITE_KEY, next) } catch { /* the choice just does not outlive the session */ }
+              setSite(next)
+            }}
+              options={[{ value: 'com', label: t('browser.site.com') }, { value: 'red', label: t('browser.site.red') }]} />
             <Select label={t('browser.kind')} value={kind} onChange={(v) => setKind(v as ModelKind)}
               options={[{ value: 'checkpoint', label: t('browser.checkpoints') }, { value: 'lora', label: t('browser.loras') }]} />
             <Select label={t('browser.period')} value={period} onChange={(v) => setPeriod(v as typeof period)}
@@ -107,15 +118,16 @@ function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onC
               value={text} maxLength={100} onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') setSubmitted(text.trim()) }} />
           </div>
+          {site === 'red' && <p className={styles.hint}>{t('browser.redNotice')}</p>}
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {!error && !loading && items.length === 0 && <p className={styles.empty}>{t('browser.empty')}</p>}
           <ul className={styles.grid}>
             {items.map((item) => (
               <li key={`${item.modelId}-${item.versionId}`} className={styles.item}>
-                <button type="button" className={styles.card} onClick={() => void openModel(item.modelId, item.versionId)}
+                <button type="button" className={styles.card} onClick={() => void openModel(item.modelId, item.versionId, site)}
                   title={t('browser.open')}>
                   <span className={styles.frame}>
-                    {item.thumb ? <img className={styles.thumb} src={item.thumb} alt="" /> : <span className={styles.noThumb}>{t('browser.noPreview')}</span>}
+                    {item.thumb ? <img className={styles.thumb} src={item.thumb} alt="" /> : <span className={styles.noThumb}>{t(site === 'com' ? 'browser.noPreviewSafe' : 'browser.noPreview')}</span>}
                     {item.inLibrary && (
                       <span className={`${styles.mark} ${item.inLibrary === 'have' ? styles.markHave : styles.markOlder}`}>
                         {t(item.inLibrary === 'have' ? 'browser.have' : 'browser.older')}

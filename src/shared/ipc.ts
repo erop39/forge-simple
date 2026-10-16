@@ -138,7 +138,7 @@ export interface Api {
     /** One page of Civitai's newest/popular models for the filters (needs the same consent); error.civitaiBusy when it is busy, error.network otherwise. */
     browse(query: CivitaiBrowseQuery): Promise<CivitaiBrowsePage>
     /** Opens a model version found by `browse` in the system browser. */
-    openModel(modelId: number, versionId: number): Promise<void>
+    openModel(modelId: number, versionId: number, site?: 'com' | 'red'): Promise<void>
   }
   /** Tags on saved images. Hidden images are left out while the lock is closed; changes push 'images:changed'. */
   tags: {

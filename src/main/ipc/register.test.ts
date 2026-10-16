@@ -1325,7 +1325,7 @@ describe('civitai lookup', () => {
   })
 
   test('the Civitai browser needs consent, validates filters, marks what the library has and opens a version', async () => {
-    const query = { kind: 'lora', period: 'week', sort: 'downloads', baseModels: ['SDXL 1.0'], text: 'detail' }
+    const query = { site: 'com', kind: 'lora', period: 'week', sort: 'downloads', baseModels: ['SDXL 1.0'], text: 'detail' }
     await expect(call('civitai:browse', query)).rejects.toThrow('error.invalidParams')
     await call('civitai:setEnabled', true)
     await expect(call('civitai:browse', { ...query, period: 'year' })).rejects.toThrow('error.invalidParams')

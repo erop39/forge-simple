@@ -120,7 +120,7 @@ test('browsing: the newest version of each model is kept, and a date sort stops 
     { id: id * 10 + 1, name: 'new', publishedAt: new Date(now - ago).toISOString(), images: [] },
   ] })
   const fetchFn = (async () => new Response(JSON.stringify({ items: [model(1, day / 2), model(2, 2 * day), model(3, 1.5 * day)], metadata: { nextCursor: 'n' } }))) as typeof fetch
-  const q = { kind: 'checkpoint' as const, period: 'day' as const, sort: 'newest' as const, baseModels: [], text: '' }
+  const q = { site: 'com' as const, kind: 'checkpoint' as const, period: 'day' as const, sort: 'newest' as const, baseModels: [], text: '' }
   const page = await browseCivitai(q, { fetch: fetchFn, now: () => now })
   expect(page.entries.map((e) => [e.modelId, e.versionId, e.versionName])).toEqual([[1, 11, 'new']])
   expect(page.next).toBeNull()
@@ -148,4 +148,18 @@ test('a thumbnail may come through a redirect inside civitai.com but not from an
   }) as typeof fetch
   expect(await fetchThumb('https://image.civitai.com/k/u/width=450/1.jpeg', through('https://blobs-b2.civitai.com/file/x.jpeg'))).toMatch(/^data:image\/jpeg/)
   expect(await fetchThumb('https://image.civitai.com/k/u/width=450/1.jpeg', through('https://evil.example/x.jpeg'))).toBeNull()
+})
+
+test('the red site asks its own API for everything, the com site only for safe content, and both sites\' images are accepted', async () => {
+  const asked: string[] = []
+  const fetchFn = (async (u: RequestInfo | URL) => { asked.push(String(u)); return new Response(JSON.stringify({ items: [] })) }) as typeof fetch
+  const q = { kind: 'lora' as const, period: 'week' as const, sort: 'newest' as const, baseModels: [], text: '' }
+  await browseCivitai({ ...q, site: 'com' }, { fetch: fetchFn, now: () => 0 })
+  await browseCivitai({ ...q, site: 'red' }, { fetch: fetchFn, now: () => 0 })
+  expect(asked[0]).toMatch(/^https:\/\/civitai\.com\/api\/v1\/models\?.*nsfw=false/)
+  expect(asked[1]).toMatch(/^https:\/\/civitai\.red\/api\/v1\/models\?.*nsfw=true/)
+  expect(isCivitaiImage('https://image.civitai.red/a/b.jpeg')).toBe(true)
+  expect(isCivitaiImage('https://blobs-b2.civitai.com/x.jpeg')).toBe(true)
+  expect(isCivitaiImage('https://civitai.red.evil.example/a.png')).toBe(false)
+  expect(isCivitaiImage('http://image.civitai.red/a.png')).toBe(false)
 })

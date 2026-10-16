@@ -37,7 +37,7 @@ export function parseLatest(json: unknown): CivitaiInfo['latest'] {
 export function isCivitaiImage(url: string): boolean {
   try {
     const u = new URL(url)
-    return u.protocol === 'https:' && (u.hostname === 'civitai.com' || u.hostname.endsWith('.civitai.com'))
+    return u.protocol === 'https:' && ['civitai.com', 'civitai.red'].some((site) => u.hostname === site || u.hostname.endsWith(`.${site}`))
   } catch {
     return false
   }
@@ -107,7 +107,10 @@ export function createCivitaiClient(deps: { fetch?: typeof fetch; now(): number 
   }
 }
 
-const BROWSE_API = 'https://civitai.com/api/v1/models'
+/** The two Civitai sites: .com lists safe-for-work content only, .red everything. */
+export const CIVITAI_SITES = ['com', 'red'] as const
+export type CivitaiSite = (typeof CIVITAI_SITES)[number]
+const browseApi = (site: CivitaiSite): string => `https://civitai.${site}/api/v1/models`
 const PERIOD_MS = { day: 86_400_000, week: 7 * 86_400_000, month: 30 * 86_400_000 } as const
 const PERIOD_NAME = { day: 'Day', week: 'Week', month: 'Month' } as const
 const SORT_NAME = { newest: 'Newest', downloads: 'Most Downloaded', rating: 'Highest Rated' } as const
@@ -155,17 +158,17 @@ export function parseBrowse(json: unknown): { entries: BrowseEntry[]; next: stri
 
 /** One page of Civitai's public model listing (safe-for-work only); versions older than the period are dropped when sorting by date. */
 export async function browseCivitai(
-  query: { kind: 'checkpoint' | 'lora'; period: keyof typeof PERIOD_MS; sort: keyof typeof SORT_NAME; baseModels: string[]; text: string; cursor?: string | null },
+  query: { site: CivitaiSite; kind: 'checkpoint' | 'lora'; period: keyof typeof PERIOD_MS; sort: keyof typeof SORT_NAME; baseModels: string[]; text: string; cursor?: string | null },
   deps: { fetch?: typeof fetch; now(): number }, signal?: AbortSignal,
 ): Promise<{ entries: BrowseEntry[]; next: string | null }> {
   const params = new URLSearchParams({
     types: query.kind === 'checkpoint' ? 'Checkpoint' : 'LORA', sort: SORT_NAME[query.sort], period: PERIOD_NAME[query.period],
-    limit: '24', nsfw: 'false',
+    limit: '24', nsfw: query.site === 'red' ? 'true' : 'false',
   })
   for (const b of query.baseModels.slice(0, 10)) params.append('baseModels', b)
   if (query.text.trim() !== '') params.set('query', query.text.trim().slice(0, 100))
   if (query.cursor) params.set('cursor', query.cursor)
-  const res = await (deps.fetch ?? fetch)(`${BROWSE_API}?${params}`, {
+  const res = await (deps.fetch ?? fetch)(`${browseApi(query.site)}?${params}`, {
     headers: { accept: 'application/json' },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
   })
