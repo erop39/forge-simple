@@ -87,3 +87,13 @@ test('sdxl has clip skip 2 and no shift', () => {
   expect(PROFILES.sdxl.defaults.clipSkip).toBe(2)
   expect(PROFILES.sdxl.defaults.shift).toBeNull()
 })
+
+test.each<[string, Family]>([
+  ['animagineXL_v31.safetensors', 'sdxl'], ['animalPaintXL.safetensors', 'sdxl'], ['animation_style_v2.safetensors', 'sdxl'],
+  ['illuminatiDiffusion_v11.safetensors', 'sdxl'], ['Animagine-XL-4.0 [abcd1234]', 'sdxl'],
+  ['animaDeltaMix38BQwen0_deltamix38BV40.safetensors', 'anima'], ['anima 102026\\zodiacModelAnima_leoV30.safetensors', 'anima'],
+  ['ANIMA_v1.safetensors', 'anima'], ['myKrea2Turbo.safetensors', 'krea2'], ['Lumina-Image-2.safetensors', 'lumina'],
+  ['sdxl\\anima\\mixA.safetensors', 'anima'], ['NetaLumina_v1.safetensors', 'lumina'],
+])('detectFamily matches whole words, not letters inside other words: %s -> %s', (name, family) => {
+  expect(detectFamily(name)).toBe(family)
+})

@@ -55,13 +55,30 @@ export const PROFILES: Record<Family, FamilyProfile> = {
   },
 }
 
+/**
+ * True when `word` stands as a word in the name, not as letters inside another word: it starts at the name's start, after
+ * a non-alphanumeric character, or at a camelCase boundary (`zodiacModelAnima`), and is not followed by a lowercase letter
+ * (`animaDeltaMix` and `anima_v1` count, `animagine`, `animal`, `animation` and `illuminati` do not).
+ */
+function hasWord(segment: string, word: string): boolean {
+  const lower = segment.toLowerCase()
+  for (let at = lower.indexOf(word); at !== -1; at = lower.indexOf(word, at + 1)) {
+    const before = at === 0 ? '' : segment[at - 1]!
+    const first = segment[at]!
+    const startsWord = before === '' || !/[A-Za-z0-9]/.test(before) || (first >= 'A' && first <= 'Z' && /[a-z0-9]/.test(before))
+    const after = segment[at + word.length] ?? ''
+    if (startsWord && !/[a-z]/.test(after)) return true
+  }
+  return false
+}
+
 function familyOfSegment(segment: string): Family | null {
   const name = segment.toLowerCase()
-  if (name.includes('krea')) return 'krea2'
-  if (name.includes('anima')) return 'anima'
+  if (hasWord(segment, 'krea')) return 'krea2'
+  if (hasWord(segment, 'anima')) return 'anima'
   if (/z_image|z-image|zimage/.test(name)) return 'zimage'
-  if (name.includes('lumina')) return 'lumina'
-  if (name.includes('qwen')) return 'qwen'
+  if (hasWord(segment, 'lumina')) return 'lumina'
+  if (hasWord(segment, 'qwen')) return 'qwen'
   return null
 }
 
