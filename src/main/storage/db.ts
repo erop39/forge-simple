@@ -44,6 +44,9 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   `ALTER TABLE model_meta ADD COLUMN civitai TEXT;`,
   // 8: when the app first saw a file (0: it was already there at the first scan, so its real date is unknown).
   `ALTER TABLE model_meta ADD COLUMN first_seen INTEGER;`,
+  // 9: named sets of generation settings (JSON without prompt, negative, seed and count).
+  `CREATE TABLE presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  params TEXT NOT NULL, created_at INTEGER NOT NULL);`,
 ]
 
 export function openDb(path: string): Db {

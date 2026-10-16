@@ -1,5 +1,5 @@
 import type {
-  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind, HiresPreset, CivitaiInfo,
+  GenerationParams, HiresSettings, Img2ImgSettings, UpscaleSettings, ImageQuery, ImageRecord, Job, JobError, JobStatus, JobType, NegativePreset, ServerInfo, Family, ModelKind, HiresPreset, CivitaiInfo, Preset, PresetParams,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
 import type { Db } from './db'
@@ -581,6 +581,44 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
+  interface SettingsPresetSql { id: number; name: string; params: string; created_at: number }
+  const toPreset2 = (r: SettingsPresetSql): Preset | null => {
+    let params: unknown
+    try { params = JSON.parse(r.params) } catch { return null }
+    if (!isGenerationParams({ ...(params as object), prompt: '', negativePrompt: '', seed: -1, count: 1 })) return null
+    return { id: r.id, name: r.name, params: params as PresetParams, createdAt: r.created_at }
+  }
+  const presetRowById = db.prepare('SELECT * FROM presets WHERE id = ?')
+  const getPresetSet = (id: number): Preset | null => {
+    const r = presetRowById.get(id) as SettingsPresetSql | undefined
+    return r ? toPreset2(r) : null
+  }
+  const presets = {
+    /** Ordered by name; a row whose settings no longer validate is left out. */
+    list(): Preset[] {
+      const rows = db.prepare('SELECT * FROM presets ORDER BY name COLLATE NOCASE, id').all() as SettingsPresetSql[]
+      return rows.map(toPreset2).filter((p): p is Preset => p !== null)
+    },
+    get: getPresetSet,
+    /** Throws DuplicatePresetError when the name is taken (ignoring case). */
+    add(name: string, params: PresetParams): Preset {
+      const res = uniqueName(() => db.prepare('INSERT INTO presets (name, params, created_at) VALUES (?, ?, ?)')
+        .run(name, JSON.stringify(params), now()))
+      return getPresetSet(Number(res.lastInsertRowid)) as Preset
+    },
+    rename(id: number, name: string): Preset | null {
+      if (!getPresetSet(id)) return null
+      uniqueName(() => db.prepare('UPDATE presets SET name = ? WHERE id = ?').run(name, id))
+      return getPresetSet(id)
+    },
+    remove(id: number): Preset | null {
+      const before = getPresetSet(id)
+      if (!before) return null
+      db.prepare('DELETE FROM presets WHERE id = ?').run(id)
+      return before
+    },
+  }
+
   const metaGet = db.prepare('SELECT * FROM model_meta WHERE server_id = ? AND kind = ? AND filename = ?')
   const metaUpsert = (column: 'family' | 'favorite' | 'note' | 'preview' | 'triggers' | 'civitai', value: string | number | null) =>
     (serverId: number, kind: ModelKind, filename: string): void => {
@@ -634,5 +672,5 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, modelMeta }
+  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta }
 }

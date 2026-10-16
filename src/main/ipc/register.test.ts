@@ -1310,3 +1310,25 @@ test('images:deleteMany removes what it can and reports the rest; hidden images 
   await expect(call('images:deleteMany', [])).rejects.toThrow('error.invalidParams')
   await expect(call('images:deleteMany', ['a'])).rejects.toThrow('error.invalidParams')
 })
+
+test('settings presets: saved without prompt, negative, seed and count; names are unique; every change is logged by name', async () => {
+  const saved = (await call('presets:save', ' My look ', goodParams({ prompt: 'a secret prompt', negativePrompt: 'secret negative', seed: 99, count: 4, steps: 31 }))) as {
+    id: number; name: string; params: Record<string, unknown>
+  }
+  expect(saved.name).toBe('My look')
+  expect(saved.params.steps).toBe(31)
+  for (const key of ['prompt', 'negativePrompt', 'seed', 'count', 'img2img', 'upscale']) expect(saved.params).not.toHaveProperty(key)
+  const stored = repos.presets.list()
+  expect(JSON.stringify(stored)).not.toContain('secret')
+  await expect(call('presets:save', 'my LOOK', goodParams())).rejects.toThrow('error.presetNameTaken')
+  await expect(call('presets:save', '', goodParams())).rejects.toThrow('error.invalidParams')
+  await expect(call('presets:save', 'Bad', { ...goodParams(), steps: 9999 })).rejects.toThrow('error.invalidParams')
+  expect(((await call('presets:list')) as { name: string }[]).map((p) => p.name)).toEqual(['My look'])
+  await call('presets:applied', saved.id)
+  expect(((await call('presets:rename', saved.id, 'Renamed')) as { name: string }).name).toBe('Renamed')
+  await call('presets:remove', saved.id)
+  await expect(call('presets:applied', saved.id)).rejects.toThrow('error.notFound')
+  const keys = oplog.list().map((e) => e.messageKey)
+  expect(keys).toEqual(expect.arrayContaining(['log.preset.settingsCreated', 'log.preset.settingsApplied', 'log.preset.settingsRenamed', 'log.preset.settingsDeleted']))
+  expect(JSON.stringify(oplog.list())).not.toContain('secret')
+})

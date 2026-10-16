@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -45,6 +45,8 @@ export interface AppState {
   /** Saved negative prompts, ordered by name. */
   negativePresets: NegativePreset[]
   hiresPresets: HiresPreset[]
+  /** Saved sets of generation settings (everything but prompt, negative, seed and count). */
+  presets: Preset[]
   catalog: Catalog | null
   /** Why the catalog could not be loaded, as an error key; null when it loaded or was not requested. */
   catalogError: IpcErrorKey | null
@@ -153,6 +155,12 @@ export interface AppState {
   openOnCivitai(kind: ModelKind, id: string, which?: 'current' | 'newer'): Promise<void>
   /** Rejects with error.presetNameTaken when the name exists. */
   saveHiresPreset(name: string, settings: HiresSettings): Promise<void>
+  /** Save the current settings under a name; rejects with error.presetNameTaken. */
+  savePreset(name: string): Promise<void>
+  renamePreset(id: number, name: string): Promise<void>
+  deletePreset(id: number): Promise<void>
+  /** Replaces the settings with the preset's and keeps prompt, negative, seed and image count. */
+  applyPreset(preset: Preset): void
   deleteHiresPreset(id: number): Promise<void>
   closeModelGallery(): void
   setModelFavorite(kind: ModelKind, id: string, favorite: boolean): Promise<void>
@@ -383,6 +391,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       await call()
       await loadPresets()
       void attempt(() => api.hiresPresets.list()).then((list) => { if (list) set({ hiresPresets: list }) })
+      void attempt(() => api.presets.list()).then((list) => { if (list) set({ presets: list }) })
     }
 
     function forgetJob(id: number): void {
@@ -579,6 +588,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       servers: [],
       negativePresets: [],
       hiresPresets: [],
+      presets: [],
       catalog: null,
       catalogError: null,
       lastError: null,
@@ -997,6 +1007,42 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       async openOnCivitai(kind, id, which) {
         await attempt(() => api.civitai.open(kind, id, which))
+      },
+
+      async savePreset(name) {
+        const params = get().params
+        if (!params) return
+        const { prompt: _p, negativePrompt: _n, seed: _s, count: _c, img2img: _i, upscale: _u, ...kept } = params
+        await api.presets.save(name, kept)
+        const list = await attempt(() => api.presets.list())
+        if (list) set({ presets: list })
+      },
+
+      async renamePreset(id, name) {
+        await api.presets.rename(id, name)
+        const list = await attempt(() => api.presets.list())
+        if (list) set({ presets: list })
+      },
+
+      async deletePreset(id) {
+        await attempt(() => api.presets.remove(id))
+        const list = await attempt(() => api.presets.list())
+        if (list) set({ presets: list })
+      },
+
+      applyPreset(preset) {
+        const current = get().params
+        const params: GenerationParams = {
+          ...preset.params,
+          prompt: current?.prompt ?? get().draftPrompt,
+          negativePrompt: current?.negativePrompt ?? get().draftNegative ?? '',
+          seed: current?.seed ?? -1,
+          count: current?.count ?? 1,
+        }
+        selectSeq++
+        set({ params, draftPrompt: params.prompt, draftNegative: keptNegative(params, get().draftNegative) })
+        void refreshParts(params)
+        void attempt(() => api.presets.applied(preset.id))
       },
 
       async saveHiresPreset(name, settings) {

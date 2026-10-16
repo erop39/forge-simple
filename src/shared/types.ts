@@ -164,6 +164,10 @@ export interface PartStatus { role: 'model' | 'module' | 'upscaler' | 'lora'; va
 export interface ServerInfo { id: number; name: string; url: string; active: boolean }
 /** A saved negative prompt; its text replaces the Negative field when applied. */
 export interface NegativePreset { id: number; name: string; text: string; createdAt: number }
+/** Everything a preset keeps: all settings except what is specific to one picture. */
+export type PresetParams = Omit<GenerationParams, 'prompt' | 'negativePrompt' | 'seed' | 'count' | 'img2img' | 'upscale'>
+/** A named set of generation settings (model, modules, LoRA, size, steps, sampler, hires, tags…). */
+export interface Preset { id: number; name: string; params: PresetParams; createdAt: number }
 /** A saved second pass: scale, upscaler, steps, denoising and CFG to apply together. */
 export interface HiresPreset { id: number; name: string; settings: HiresSettings; createdAt: number }
 /** What the active Forge allows: restart needs it to run with --api-server-stop. */

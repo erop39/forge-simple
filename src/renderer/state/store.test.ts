@@ -1224,3 +1224,19 @@ describe('selection', () => {
     expect(await store.getState().deleteImages([4, 3])).toEqual({ deleted: [], failed: [4, 3] })
   })
 })
+
+test('savePreset sends the current settings without prompt, negative, seed, count and image source, then reloads the list', async () => {
+  const { api, store } = await ready()
+  store.getState().setParams({ prompt: 'secret', negativePrompt: 'secret too', seed: 5, count: 4, steps: 33 })
+  api.presets = {
+    list: vi.fn(async () => [{ id: 1, name: 'Mine', createdAt: 1, params: {} as never }]),
+    save: vi.fn(async () => ({ id: 1, name: 'Mine', createdAt: 1, params: {} as never })),
+    rename: vi.fn(), remove: vi.fn(), applied: vi.fn(async () => undefined),
+  } as never
+  await store.getState().savePreset('Mine')
+  const sent = (api.presets.save as ReturnType<typeof vi.fn>).mock.calls[0]!
+  expect(sent[0]).toBe('Mine')
+  expect(sent[1]).toMatchObject({ steps: 33 })
+  for (const key of ['prompt', 'negativePrompt', 'seed', 'count', 'img2img', 'upscale']) expect(sent[1]).not.toHaveProperty(key)
+  expect(store.getState().presets.map((p) => p.name)).toEqual(['Mine'])
+})

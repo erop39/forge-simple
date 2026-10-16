@@ -9,6 +9,7 @@ import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import { Notice } from './ui/Notice'
 import { NegativePresetMenu } from './NegativePresetMenu'
+import { PresetMenu } from './PresetMenu'
 import { IconButton } from './ui/IconButton'
 import { NumberField } from './ui/NumberField'
 import { Select } from './ui/Select'
@@ -305,6 +306,7 @@ export function PromptBar() {
       <div className={styles.row}>
         {model ? (
           <>
+            <PresetMenu />
             <Select
               grow
               label={t('params.model')}

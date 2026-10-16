@@ -264,7 +264,9 @@
 }
 
 /* The model select takes what is left and ellipsizes; below its basis the controls drop to a second line. */
-.row > :first-child {
+.row > button:not([aria-label]),
+.row > .loading,
+.row > .pending {
   flex: 1 1 200px;
 }
 

@@ -1,5 +1,5 @@
 import type {
-  Catalog, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -139,6 +139,17 @@ export interface Api {
     add(imageIds: number[], names: string[]): Promise<void>
     remove(imageIds: number[], names: string[]): Promise<void>
   }
+  /**
+   * Named sets of generation settings (everything but the prompt, negative, seed and count). A name already taken
+   * (ignoring case) is error.presetNameTaken. `applied` only writes the log entry.
+   */
+  presets: {
+    list(): Promise<Preset[]>
+    save(name: string, params: PresetParams): Promise<Preset>
+    rename(id: number, name: string): Promise<Preset>
+    remove(id: number): Promise<void>
+    applied(id: number): Promise<void>
+  }
   /** Named hires second passes; a name already taken (ignoring case) is error.presetNameTaken. */
   hiresPresets: {
     list(): Promise<HiresPreset[]>
@@ -231,7 +242,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'tags:suggest', 'tags:add', 'tags:remove', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

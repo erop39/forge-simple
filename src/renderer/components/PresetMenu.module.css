@@ -1,0 +1,128 @@
+.overlay {
+  composes: fadeIn from '../styles/motion.module.css';
+  position: fixed;
+  z-index: var(--z-dialog);
+  inset: 0;
+  background: var(--scrim);
+}
+
+.dialog {
+  position: fixed;
+  z-index: var(--z-dialog);
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(460px, calc(100vw - var(--sp-8)));
+  max-height: calc(100vh - var(--sp-8));
+  transform: translate(-50%, -50%);
+  padding: var(--sp-6);
+  border-radius: var(--r-panel);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-float);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.label,
+.hint {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.hint {
+  margin: 0;
+}
+
+.input {
+  width: 100%;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.error {
+  margin: 0;
+  color: var(--blocked);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--h-menu-max);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-bar);
+  border-bottom: 1px solid var(--line);
+}
+
+.rowName,
+.confirm {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.separator {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--line);
+}

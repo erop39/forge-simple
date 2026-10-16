@@ -556,6 +556,42 @@ export function registerIpc(
     }
   })
 
+  // ---- generation presets (the log carries names only) -----------------------
+
+  handle('presets:list', () => repos.presets.list())
+
+  handle('presets:save', (name, params) => {
+    const clean = presetName(name) ?? fail('error.invalidParams')
+    if (typeof params !== 'object' || params === null) return fail('error.invalidParams')
+    // The ordinary job validation decides what is acceptable; what belongs to one picture is then dropped.
+    const checked = validateEnqueue({ ...params, prompt: 'x', negativePrompt: '', seed: -1, count: 1, img2img: undefined, upscale: undefined })
+    const { prompt: _p, negativePrompt: _n, seed: _s, count: _c, img2img: _i, upscale: _u, ...kept } = checked
+    const preset = presetNameFree(() => repos.presets.add(clean, kept))
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.settingsCreated', details: { name: preset.name } })
+    return preset
+  })
+
+  handle('presets:rename', (id, name) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const clean = presetName(name) ?? fail('error.invalidParams')
+    const before = repos.presets.get(id) ?? fail('error.notFound')
+    const after = presetNameFree(() => repos.presets.rename(id, clean)) ?? fail('error.notFound')
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.settingsRenamed', details: { old: before.name, new: after.name } })
+    return after
+  })
+
+  handle('presets:remove', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const removed = repos.presets.remove(id) ?? fail('error.notFound')
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.settingsDeleted', details: { name: removed.name } })
+  })
+
+  handle('presets:applied', (id) => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const preset = repos.presets.get(id) ?? fail('error.notFound')
+    oplog.write({ level: 'info', category: 'preset', messageKey: 'log.preset.settingsApplied', details: { name: preset.name } })
+  })
+
   // ---- hires presets (the log carries names only) --------------------------
 
   handle('hiresPresets:list', () => repos.hiresPresets.list())

@@ -45,6 +45,13 @@ const api: Api = {
     add: (ids, names) => invoke('tags:add', ids, names),
     remove: (ids, names) => invoke('tags:remove', ids, names),
   },
+  presets: {
+    list: () => invoke('presets:list'),
+    save: (name, params) => invoke('presets:save', name, params),
+    rename: (id, name) => invoke('presets:rename', id, name),
+    remove: (id) => invoke('presets:remove', id),
+    applied: (id) => invoke('presets:applied', id),
+  },
   hiresPresets: {
     list: () => invoke('hiresPresets:list'),
     add: (input) => invoke('hiresPresets:add', input),
