@@ -101,9 +101,9 @@ const api: Api = {
   clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },
   backup: {
-    export: () => invoke('backup:export'),
+    export: (sections) => invoke('backup:export', sections),
     preview: () => invoke('backup:preview'),
-    apply: () => invoke('backup:apply'),
+    apply: (sections) => invoke('backup:apply', sections),
     discard: () => invoke('backup:discard'),
   },
   wishlist: {

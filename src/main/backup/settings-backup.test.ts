@@ -102,6 +102,36 @@ test('names already taken get "(imported)", servers with a known address are ski
   expect(applyBackup(target, file).renamed).toBeGreaterThan(0)
 })
 
+test('only the chosen parts are exported, and only the chosen parts of a file are imported', () => {
+  const source = filled()
+  source.wishlist.add({ modelId: 7, versionId: 70, kind: 'lora', name: 'Detail', versionName: 'v3', baseModel: 'SDXL 1.0', creator: 'maker', site: 'com', thumb: 'data:image/jpeg;base64,AAAA', files: ['detail.safetensors'] })
+  const partial = buildBackup(source, new Date(0), ['presets', 'wishlist'])
+  expect(partial.presets).toHaveLength(1)
+  expect(partial.wishlist).toEqual([{ modelId: 7, versionId: 70, kind: 'lora', name: 'Detail', versionName: 'v3', baseModel: 'SDXL 1.0', creator: 'maker', site: 'com', files: ['detail.safetensors'] }])
+  expect(JSON.stringify(partial)).not.toContain('AAAA')
+  expect([partial.servers, partial.hiresPresets, partial.negativePresets, partial.models]).toEqual([[], [], [], []])
+  expect(partial.settings).toEqual({ familyNegatives: {}, familyModules: {} })
+
+  const full = parseBackup(JSON.stringify(buildBackup(source, new Date(0))), validate)
+  const target = fresh()
+  expect(previewBackup(target, full, ['servers', 'wishlist'])).toMatchObject({ servers: 1, wishlist: 1, presets: 0, negativePresets: 0, models: 0, settings: 0 })
+  expect(applyBackup(target, full, ['servers', 'wishlist'])).toMatchObject({ servers: 1, wishlist: 1, presets: 0 })
+  expect(target.servers.list()).toHaveLength(1)
+  expect(target.presets.list()).toEqual([])
+  expect(target.wishlist.list().map((w) => [w.name, w.thumb])).toEqual([['Detail', null]])
+  expect(target.settings.get('oplog.retentionDays')).toBeNull()
+  // The same wished model is not added twice.
+  expect(applyBackup(target, full, ['wishlist'])).toMatchObject({ wishlist: 0, skipped: 1 })
+  expect(target.wishlist.list()).toHaveLength(1)
+})
+
+test('a malformed Download later entry refuses the whole file', () => {
+  const good = buildBackup(filled(), new Date(0))
+  const code = (text: string): string => { try { parseBackup(text, validate); return 'ok' } catch (e) { return e instanceof BackupError ? e.code : 'other' } }
+  expect(code(JSON.stringify({ ...good, wishlist: [{ modelId: 'x' }] }))).toBe('malformed')
+  expect(code(JSON.stringify({ ...good, wishlist: [{ modelId: 1, versionId: 2, kind: 'lora', name: 'n', versionName: 'v', baseModel: 'b', creator: 'c', site: 'org', files: [] }] }))).toBe('malformed')
+})
+
 test('a preview counts without writing anything', () => {
   const file = parseBackup(JSON.stringify(buildBackup(filled(), new Date(0))), validate)
   const target = fresh()

@@ -1,6 +1,7 @@
 import { appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { inLibrary } from '../forge/wishlist'
 import { ArchiveError, createArchive, restoreArchive } from '../archive/archive'
+import { BACKUP_SECTIONS, type BackupSection } from '@shared/types'
 import { applyBackup, BackupError, buildBackup, MAX_BACKUP_BYTES, parseBackup, previewBackup, type BackupFile } from '../backup/settings-backup'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
@@ -1314,13 +1315,20 @@ export function registerIpc(
     }
   }
 
-  handle('backup:export', async (): Promise<boolean> => {
+  const validSections = (value: unknown): BackupSection[] | null => {
+    if (!Array.isArray(value) || value.length < 1 || value.length > BACKUP_SECTIONS.length) return null
+    if (!value.every((s): s is BackupSection => typeof s === 'string' && (BACKUP_SECTIONS as readonly string[]).includes(s))) return null
+    return [...new Set(value)]
+  }
+
+  handle('backup:export', async (chosen): Promise<boolean> => {
+    const sections = validSections(chosen) ?? fail('error.invalidParams')
     const path = await deps.chooseExportPath(`forge-neo-client-settings-${localDay(new Date())}.json`)
     if (path === null) return false
-    const file = buildBackup(repos, new Date())
+    const file = buildBackup(repos, new Date(), sections)
     await writeFile(path, JSON.stringify(file, null, 2), 'utf8')
     // The file name only: the folder may name the user, and the file holds server addresses.
-    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.settingsExported', details: { file: basename(path), servers: file.servers.length, presets: file.presets.length } })
+    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.settingsExported', details: { file: basename(path), servers: file.servers.length, presets: file.presets.length, sections: sections.join(', ') } })
     return true
   })
 
@@ -1341,10 +1349,12 @@ export function registerIpc(
     return previewBackup(repos, pendingImport)
   })
 
-  handle('backup:apply', (): ImportSummary => {
+  handle('backup:apply', (chosen): ImportSummary => {
+    const sections = validSections(chosen) ?? fail('error.invalidParams')
     const file = pendingImport ?? fail('error.notFound')
     pendingImport = null
-    const summary = applyBackup(repos, file)
+    const summary = applyBackup(repos, file, sections)
+    if (summary.wishlist > 0) send('wishlist:changed', { removed: 0 })
     oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.settingsImported', details: { ...summary } })
     return summary
   })

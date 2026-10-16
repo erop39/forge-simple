@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { CheckCircle, Desktop, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { ArchiveState, ImportSummary, ServerInfo } from '@shared/types'
+import { BACKUP_SECTIONS, type ArchiveState, type BackupSection, type ImportSummary, type ServerInfo } from '@shared/types'
 import { errorText } from '../i18n/error-text'
 import { formatBytes } from '../format'
 import { LOCALE, t, type MessageKey } from '../i18n/t'
@@ -263,6 +263,8 @@ function SettingsBackup() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [summary, setSummary] = useState<ImportSummary | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [chosen, setChosen] = useState<BackupSection[]>([...BACKUP_SECTIONS])
 
   async function run(work: () => Promise<void>): Promise<void> {
     setBusy(true)
@@ -273,30 +275,57 @@ function SettingsBackup() {
     setBusy(false)
   }
 
-  const lines = summary
-    ? (['servers', 'presets', 'hiresPresets', 'negativePresets', 'models', 'settings'] as const)
-      .filter((key) => summary[key] > 0)
-      .map((key) => t(`backup.${key}` as MessageKey, { n: summary[key] }))
-    : []
+  const toggle = (section: BackupSection): void =>
+    setChosen((now) => (now.includes(section) ? now.filter((s) => s !== section) : [...now, section]))
+  const addable = summary ? BACKUP_SECTIONS.filter((key) => summary[key] > 0) : []
+  const picked = (list: readonly BackupSection[]): BackupSection[] => list.filter((s) => chosen.includes(s))
+
+  const checklist = (sections: readonly BackupSection[], label: (s: BackupSection) => string) => (
+    <ul className={styles.checks}>
+      {sections.map((s) => (
+        <li key={s}>
+          <label className={styles.check}>
+            <input type="checkbox" checked={chosen.includes(s)} disabled={busy} onChange={() => toggle(s)} />
+            <span>{label(s)}</span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  )
 
   return <section className={styles.storage} aria-label={t('backup.title')}>
     <h3 className={styles.forgeHeading}>{t('backup.title')}</h3>
     <p className={styles.hint}>{t('backup.hint')}</p>
-    {summary === null ? (
+    {summary === null && !exporting && (
       <div className={styles.forgeActions}>
-        <Button disabled={busy} onClick={() => void run(async () => { if (await exportSettings()) setStatus(t('backup.exported')) })}>{t('backup.export')}</Button>
-        <Button disabled={busy} onClick={() => void run(async () => setSummary(await preview()))}>{t('backup.import')}</Button>
+        <Button disabled={busy} onClick={() => { setStatus(null); setError(null); setChosen([...BACKUP_SECTIONS]); setExporting(true) }}>{t('backup.export')}</Button>
+        <Button disabled={busy} onClick={() => void run(async () => {
+          const s = await preview()
+          if (s) setChosen(BACKUP_SECTIONS.filter((key) => s[key] > 0))
+          setSummary(s)
+        })}>{t('backup.import')}</Button>
       </div>
-    ) : (
+    )}
+    {exporting && (
+      <div role="group" aria-label={t('backup.exportTitle')} className={styles.storage}>
+        <strong>{t('backup.exportTitle')}</strong>
+        {checklist(BACKUP_SECTIONS, (s) => t(`backup.pick.${s}` as MessageKey))}
+        <div className={styles.forgeActions}>
+          <Button variant="primary" disabled={busy || chosen.length === 0}
+            onClick={() => void run(async () => { if (await exportSettings(picked(BACKUP_SECTIONS))) { setStatus(t('backup.exported')); setExporting(false) } })}>{t('backup.exportDo')}</Button>
+          <Button disabled={busy} onClick={() => setExporting(false)}>{t('backup.cancel')}</Button>
+        </div>
+      </div>
+    )}
+    {summary !== null && (
       <div role="group" aria-label={t('backup.previewTitle')} className={styles.storage}>
         <strong>{t('backup.previewTitle')}</strong>
-        {lines.length === 0 ? <p className={styles.hint}>{t('backup.nothing')}</p> : (
-          <ul className={styles.hint}>{lines.map((line) => <li key={line}>{line}</li>)}</ul>
-        )}
+        {addable.length === 0 ? <p className={styles.hint}>{t('backup.nothing')}</p>
+          : checklist(addable, (s) => t(`backup.${s}` as MessageKey, { n: summary[s] }))}
         {(summary.renamed > 0 || summary.skipped > 0) && <p className={styles.hint}>{t('backup.renamed', { renamed: summary.renamed, skipped: summary.skipped })}</p>}
         <div className={styles.forgeActions}>
-          <Button variant="primary" disabled={busy || lines.length === 0}
-            onClick={() => void run(async () => { await apply(); setSummary(null); setStatus(t('backup.done')) })}>{t('backup.apply')}</Button>
+          <Button variant="primary" disabled={busy || picked(addable).length === 0}
+            onClick={() => void run(async () => { await apply(picked(addable)); setSummary(null); setStatus(t('backup.done')) })}>{t('backup.apply')}</Button>
           <Button disabled={busy} onClick={() => { void discard(); setSummary(null) }}>{t('backup.cancel')}</Button>
         </div>
       </div>

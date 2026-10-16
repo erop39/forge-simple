@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  ArchiveCreated, ArchiveRestored, ArchiveState, WishlistItem, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  ArchiveCreated, ArchiveRestored, ArchiveState, BackupSection, WishlistItem, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -130,11 +130,11 @@ export interface AppState {
   /** Deletes every image and finished job; rejects with error.jobRunning or error.lockedImages. */
   deleteAllGenerations(): Promise<{ deleted: number; failed: number }>
   /** Saves the settings to a file the user picks; false when cancelled. */
-  exportSettings(): Promise<boolean>
+  exportSettings(sections: BackupSection[]): Promise<boolean>
   /** Asks for a settings file and says what importing it would add (null when cancelled); rejects with error.backup*. */
   previewSettingsImport(): Promise<ImportSummary | null>
   /** Imports the file shown by the preview, then reloads everything it may have changed. */
-  applySettingsImport(): Promise<ImportSummary>
+  applySettingsImport(sections: BackupSection[]): Promise<ImportSummary>
   discardSettingsImport(): Promise<void>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
@@ -850,16 +850,16 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return api.generations.deleteAll()
       },
 
-      exportSettings() {
-        return api.backup.export()
+      exportSettings(sections) {
+        return api.backup.export(sections)
       },
 
       previewSettingsImport() {
         return api.backup.preview()
       },
 
-      async applySettingsImport() {
-        const summary = await api.backup.apply()
+      async applySettingsImport(sections) {
+        const summary = await api.backup.apply(sections)
         const [settings, servers] = await Promise.all([api.settings.get(), api.servers.list()])
         set({ settings, servers })
         await changePresets(async () => undefined)

@@ -1,5 +1,5 @@
 import type {
-  ArchiveCreated, ArchiveRestored, ArchiveState, Catalog, ImportSummary, WishlistItem, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  ArchiveCreated, ArchiveRestored, ArchiveState, BackupSection, Catalog, ImportSummary, WishlistItem, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -226,9 +226,11 @@ export interface Api {
    * the file is refused); `apply` then imports exactly that file; `discard` forgets it.
    */
   backup: {
-    export(): Promise<boolean>
+    /** Saves only the chosen parts (at least one: error.invalidParams); false when the dialog was cancelled. */
+    export(sections: BackupSection[]): Promise<boolean>
     preview(): Promise<ImportSummary | null>
-    apply(): Promise<ImportSummary>
+    /** Imports the chosen parts of the previewed file (at least one). */
+    apply(sections: BackupSection[]): Promise<ImportSummary>
     discard(): Promise<void>
   }
   /**

@@ -221,6 +221,22 @@
   white-space: nowrap;
 }
 
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+
 .danger {
   display: flex;
   flex-direction: column;

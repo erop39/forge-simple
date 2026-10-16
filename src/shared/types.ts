@@ -202,9 +202,13 @@ export interface WishlistItem {
   creator: string; site: 'com' | 'red'; thumb: string | null; addedAt: number
 }
 
+/** The parts of a settings backup the user can choose from, when exporting and when importing. */
+export const BACKUP_SECTIONS = ['servers', 'presets', 'hiresPresets', 'negativePresets', 'models', 'settings', 'wishlist'] as const
+export type BackupSection = (typeof BACKUP_SECTIONS)[number]
+
 /** What an import of a settings file adds (or would add). `renamed`: names that got "(imported)"; `skipped`: what was already there. */
 export interface ImportSummary {
-  servers: number; presets: number; hiresPresets: number; negativePresets: number; models: number; settings: number
+  servers: number; presets: number; hiresPresets: number; negativePresets: number; models: number; settings: number; wishlist: number
   renamed: number; skipped: number
 }
 

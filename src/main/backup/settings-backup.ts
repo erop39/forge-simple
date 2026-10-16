@@ -1,5 +1,5 @@
 import { PROFILES } from '@shared/profiles'
-import type { Family, HiresSettings, ImportSummary, ModelKind, PresetParams } from '@shared/types'
+import { BACKUP_SECTIONS, type BackupSection, type Family, type HiresSettings, type ImportSummary, type ModelKind, type PresetParams } from '@shared/types'
 import { normalizeBaseUrl } from '../forge/client'
 import { isHiresSettings, type createRepos } from '../storage/repos'
 
@@ -38,6 +38,8 @@ export interface BackupFile {
   negativePresets: { name: string; text: string }[]
   /** Marks the user made on files, per server address: a hand-set family (checkpoints) and own trigger words. */
   models: { serverUrl: string; kind: ModelKind; file: string; family?: Family; triggers?: string[] }[]
+  /** Models marked to download later (without their preview). */
+  wishlist: { modelId: number; versionId: number; kind: ModelKind; name: string; versionName: string; baseModel: string; creator: string; site: 'com' | 'red'; files: string[] }[]
   settings: {
     retentionDays?: number
     upscalers?: { hires: string; finished: string }
@@ -48,7 +50,26 @@ export interface BackupFile {
 }
 
 /** Everything the file may hold, read from the database. Images, jobs, tags, the log and the lock hash are never read. */
-export function buildBackup(repos: Repos, now: Date): BackupFile {
+export function buildBackup(repos: Repos, now: Date, sections: readonly BackupSection[] = BACKUP_SECTIONS): BackupFile {
+  return restrictBackup(buildFullBackup(repos, now), sections)
+}
+
+/** The same file with every part the user did not choose emptied. */
+export function restrictBackup(file: BackupFile, sections: readonly BackupSection[]): BackupFile {
+  const has = (s: BackupSection): boolean => sections.includes(s)
+  return {
+    ...file,
+    servers: has('servers') ? file.servers : [],
+    presets: has('presets') ? file.presets : [],
+    hiresPresets: has('hiresPresets') ? file.hiresPresets : [],
+    negativePresets: has('negativePresets') ? file.negativePresets : [],
+    models: has('models') ? file.models : [],
+    wishlist: has('wishlist') ? file.wishlist : [],
+    settings: has('settings') ? file.settings : { familyNegatives: {}, familyModules: {} },
+  }
+}
+
+function buildFullBackup(repos: Repos, now: Date): BackupFile {
   const servers = repos.servers.list()
   const models: BackupFile['models'] = []
   for (const server of servers) {
@@ -85,6 +106,7 @@ export function buildBackup(repos: Repos, now: Date): BackupFile {
     hiresPresets: repos.hiresPresets.list().map((p) => ({ name: p.name, settings: p.settings })),
     negativePresets: repos.negativePresets.list().map((p) => ({ name: p.name, text: p.text })),
     models,
+    wishlist: repos.wishlist.list().map(({ id: _id, thumb: _thumb, addedAt: _added, ...w }) => w),
     settings: {
       ...(Number.isInteger(retention) && retention >= 1 ? { retentionDays: retention } : {}),
       ...(hires !== null && finished !== null ? { upscalers: { hires, finished } } : {}),
@@ -97,6 +119,7 @@ export function buildBackup(repos: Repos, now: Date): BackupFile {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isName = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '' && v.trim().length <= MAX_NAME
 const isFamily = (v: unknown): v is Family => typeof v === 'string' && Object.hasOwn(PROFILES, v)
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0
 const isStringList = (v: unknown, max: number): v is string[] =>
   Array.isArray(v) && v.length <= max && v.every((s) => typeof s === 'string' && s !== '' && s.length <= 500)
 
@@ -160,6 +183,14 @@ export function parseBackup(text: string, validatePreset: (params: unknown) => P
     }
   })
 
+  const wishlist = list('wishlist').map((w) => {
+    if (!isObject(w) || !isInt(w.modelId) || !isInt(w.versionId) || (w.kind !== 'checkpoint' && w.kind !== 'lora')
+      || typeof w.name !== 'string' || w.name === '' || w.name.length > 200 || typeof w.versionName !== 'string' || w.versionName.length > 200
+      || typeof w.baseModel !== 'string' || w.baseModel.length > 60 || typeof w.creator !== 'string' || w.creator.length > 60
+      || (w.site !== 'com' && w.site !== 'red') || !(Array.isArray(w.files) && w.files.length <= 5 && w.files.every((f) => typeof f === 'string' && f.length <= 200))) return bad()
+    return { modelId: w.modelId, versionId: w.versionId, kind: w.kind as ModelKind, name: w.name, versionName: w.versionName, baseModel: w.baseModel, creator: w.creator, site: w.site as 'com' | 'red', files: w.files as string[] }
+  })
+
   const rawSettings = json.settings === undefined ? {} : json.settings
   if (!isObject(rawSettings)) return bad()
   const settings: BackupFile['settings'] = { familyNegatives: {}, familyModules: {} }
@@ -188,7 +219,7 @@ export function parseBackup(text: string, validatePreset: (params: unknown) => P
       }
     }
   }
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: typeof json.exportedAt === 'string' ? json.exportedAt.slice(0, 40) : '', servers, presets, hiresPresets, negativePresets, models, settings }
+  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: typeof json.exportedAt === 'string' ? json.exportedAt.slice(0, 40) : '', servers, presets, hiresPresets, negativePresets, models, wishlist, settings }
 }
 
 /** A free name for an imported entry: its own, else "<name> (imported)", else "<name> (imported 2)" and so on. */
@@ -202,7 +233,7 @@ function freeName(name: string, taken: Set<string>): string {
 
 /** Adds the file's entries to the database (one transaction) or, with `dryRun`, only counts what that would add. */
 function run(repos: Repos, file: BackupFile, dryRun: boolean): ImportSummary {
-  const summary: ImportSummary = { servers: 0, presets: 0, hiresPresets: 0, negativePresets: 0, models: 0, settings: 0, renamed: 0, skipped: 0 }
+  const summary: ImportSummary = { servers: 0, presets: 0, hiresPresets: 0, negativePresets: 0, models: 0, settings: 0, wishlist: 0, renamed: 0, skipped: 0 }
   const write = (fn: () => void): void => { if (!dryRun) fn() }
   const steps = (): void => {
     const liveUrls = new Map(repos.servers.list().map((s) => [s.url, s.id]))
@@ -247,6 +278,15 @@ function run(repos: Repos, file: BackupFile, dryRun: boolean): ImportSummary {
       })
     }
 
+    const wished = new Set(repos.wishlist.list().map((w) => `${w.modelId}:${w.versionId}`))
+    for (const w of file.wishlist) {
+      const key = `${w.modelId}:${w.versionId}`
+      if (wished.has(key)) { summary.skipped++; continue }
+      wished.add(key)
+      summary.wishlist++
+      write(() => { repos.wishlist.add({ ...w, thumb: null }) })
+    }
+
     // Settings are filled in only where the user has not chosen yet; an existing choice always stays.
     const setIfUnset = (key: string, value: string): void => {
       if (repos.settings.get(key) !== null) { summary.skipped++; return }
@@ -277,7 +317,9 @@ function run(repos: Repos, file: BackupFile, dryRun: boolean): ImportSummary {
 }
 
 /** What importing the file would add, without changing anything. */
-export const previewBackup = (repos: Repos, file: BackupFile): ImportSummary => run(repos, file, true)
+export const previewBackup = (repos: Repos, file: BackupFile, sections: readonly BackupSection[] = BACKUP_SECTIONS): ImportSummary =>
+  run(repos, restrictBackup(file, sections), true)
 
 /** Adds the file's entries in one transaction; nothing is overwritten and a fault rolls everything back. */
-export const applyBackup = (repos: Repos, file: BackupFile): ImportSummary => run(repos, file, false)
+export const applyBackup = (repos: Repos, file: BackupFile, sections: readonly BackupSection[] = BACKUP_SECTIONS): ImportSummary =>
+  run(repos, restrictBackup(file, sections), false)
