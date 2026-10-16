@@ -89,6 +89,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The loading bar at start spans the whole row up to the Generate button instead of two thirds of it, and its text wraps instead of being cut.
 - An upscale that Forge never answered kept its tile running forever (extras reports no progress, so nothing ended it). A request with no answer after ten minutes is now given up and the job is interrupted, with Retry available.
 - The preview in the model details panel is centred.
 - Hires fix answered Forge HTTP 500 (`TypeError`) on the user's Forge Neo: it needs `hr_additional_modules` in the request. The second pass now sends `["Use same choices"]`, as Forge's own UI does. Checked against the real server for sdxl, anima and krea2 with `Latent` and a real upscaler.

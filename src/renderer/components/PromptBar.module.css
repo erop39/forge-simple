@@ -109,6 +109,7 @@
 .loadingHint {
   color: var(--text-2);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .loadingHint {
@@ -182,10 +183,15 @@
 /* Fixed-size controls stay together, keep their size and sit at the right edge. */
 .controls {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--sp-2);
   margin-left: auto;
+}
+
+/* With the model controls present the group takes the room left in the row (the guidance slider grows into it). */
+.controlsFill {
+  flex: 1 1 auto;
 }
 
 .controls > * {

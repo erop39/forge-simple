@@ -266,7 +266,7 @@ export function PromptBar() {
             </span>
           </>
         ) : loading && <ModelsLoading />}
-        <div className={styles.controls}>
+        <div className={model ? `${styles.controls} ${styles.controlsFill}` : styles.controls}>
           {model && (
             <>
               {model.profile.cfg && (
