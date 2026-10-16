@@ -188,6 +188,12 @@ export interface OplogQuery {
 /** The session lock over hidden images: whether a password is set and whether hidden images are shown now. */
 export interface LockState { hasPassword: boolean; open: boolean }
 
+/** What an import of a settings file adds (or would add). `renamed`: names that got "(imported)"; `skipped`: what was already there. */
+export interface ImportSummary {
+  servers: number; presets: number; hiresPresets: number; negativePresets: number; models: number; settings: number
+  renamed: number; skipped: number
+}
+
 /** The filters of the Civitai browser; `period` limits to versions published within that time. */
 export interface CivitaiBrowseQuery {
   kind: ModelKind

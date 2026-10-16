@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Settings backup in the server dialog: Export settings writes one versioned JSON file (servers, settings presets, hires and negative presets, hand-set families, own trigger words, family defaults, upscaler choices, log retention; never images, jobs, tags, the log, the lock password or Civitai consent). Import Settings checks the whole file, shows what it would add, and then adds it in one step: taken names get "(imported)", servers with a known address and anything you already set stay as they are. A damaged file or an unknown version is refused whole.
+- A Back button in the Civitai browser returns to the model library it was opened from.
+
+### Fixed
+
+- Quick successive marks on models (favorite on, then off) can no longer be overwritten by a late answer; a model preview image is read through the managed-folder check; PromptBar's pill radius and loading duration use tokens; the viewer's Set as model preview result stays with the image it was made for.
+
 ## [0.2.0] - 2026-10-16
 
 ### Fixed

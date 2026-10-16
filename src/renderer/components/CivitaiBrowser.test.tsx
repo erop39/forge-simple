@@ -58,3 +58,13 @@ test('a failed listing shows the error text instead of cards', async () => {
   })
   expect((await screen.findByRole('alert')).textContent).toBe(en['error.civitaiBusy'])
 })
+
+test('Back leaves the browser for the model library it came from', async () => {
+  const { store } = renderWithStore(<CivitaiBrowserDialog />, 'sdxl', {
+    civitaiBrowser: 'lora', browseCivitai: vi.fn(async (): Promise<CivitaiBrowsePage> => ({ items: [], next: null })),
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
+  })
+  await userEvent.click(screen.getByRole('button', { name: en['browser.back'] }))
+  expect(store.getState().civitaiBrowser).toBeNull()
+  expect(store.getState().modelGallery).toBe('lora')
+})

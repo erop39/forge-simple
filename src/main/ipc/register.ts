@@ -1,4 +1,5 @@
-import { appendFile, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { applyBackup, BackupError, buildBackup, MAX_BACKUP_BYTES, parseBackup, previewBackup, type BackupFile } from '../backup/settings-backup'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, resolve } from 'node:path'
@@ -6,7 +7,7 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
+  type Catalog, type ImportSummary, type PresetParams, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, moduleValue, type createCatalog } from '../forge/catalog'
@@ -56,6 +57,8 @@ export interface IpcDeps {
   onServerChanged?(): void
   /** Asks the user where to save a log export (a save dialog); null when cancelled. */
   chooseExportPath(defaultName: string): Promise<string | null>
+  /** Asks the user which settings file to import (an open dialog); null when cancelled. */
+  chooseImportPath(): Promise<string | null>
   /** Entries read per page while exporting; injectable for tests. */
   exportPageSize?: number
   /** What the active Forge allows (see forge/capabilities.ts). */
@@ -897,7 +900,7 @@ export function registerIpc(
     if (!deps.previews) return fail('error.unexpected')
     let bytes: Buffer
     try {
-      bytes = await fs.readFile(row.thumbPath)
+      bytes = await deps.images.readThumb(row.thumbPath)
     } catch {
       return fail('error.notFound')
     }
@@ -1138,6 +1141,58 @@ export function registerIpc(
   })
 
   // ---- operation log -----------------------------------------------------
+
+  // ---- settings backup ------------------------------------------------------
+
+  let pendingImport: BackupFile | null = null
+  /** The job validation applied to a preset's parameters; what belongs to one picture is dropped. */
+  const validatePresetParams = (params: unknown): PresetParams | null => {
+    if (typeof params !== 'object' || params === null) return null
+    try {
+      const checked = validateEnqueue({ ...params, prompt: 'x', negativePrompt: '', seed: -1, count: 1, img2img: undefined, upscale: undefined })
+      const { prompt: _p, negativePrompt: _n, seed: _s, count: _c, img2img: _i, upscale: _u, ...kept } = checked
+      return kept
+    } catch {
+      return null
+    }
+  }
+
+  handle('backup:export', async (): Promise<boolean> => {
+    const path = await deps.chooseExportPath(`forge-neo-client-settings-${localDay(new Date())}.json`)
+    if (path === null) return false
+    const file = buildBackup(repos, new Date())
+    await writeFile(path, JSON.stringify(file, null, 2), 'utf8')
+    // The file name only: the folder may name the user, and the file holds server addresses.
+    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.settingsExported', details: { file: basename(path), servers: file.servers.length, presets: file.presets.length } })
+    return true
+  })
+
+  handle('backup:preview', async (): Promise<ImportSummary | null> => {
+    pendingImport = null
+    const path = await deps.chooseImportPath()
+    if (path === null) return null
+    try {
+      if ((await stat(path)).size > MAX_BACKUP_BYTES) return fail('error.backupTooBig')
+      pendingImport = parseBackup(await readFile(path, 'utf8'), validatePresetParams)
+    } catch (err) {
+      if (err instanceof BackupError) {
+        return fail(err.code === 'unknownVersion' ? 'error.backupVersion' : err.code === 'notBackup' ? 'error.backupNotBackup' : 'error.backupMalformed')
+      }
+      if (err instanceof IpcError) throw err
+      return fail('error.backupMalformed')
+    }
+    return previewBackup(repos, pendingImport)
+  })
+
+  handle('backup:apply', (): ImportSummary => {
+    const file = pendingImport ?? fail('error.notFound')
+    pendingImport = null
+    const summary = applyBackup(repos, file)
+    oplog.write({ level: 'info', category: 'backup', messageKey: 'log.backup.settingsImported', details: { ...summary } })
+    return summary
+  })
+
+  handle('backup:discard', () => { pendingImport = null })
 
   handle('oplog:list', (query) => oplog.list(validateLogQuery(query)))
 

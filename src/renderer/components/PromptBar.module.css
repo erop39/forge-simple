@@ -121,7 +121,7 @@
   display: block;
   height: 3px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: var(--r-tag);
   background: var(--line);
 }
 
@@ -130,7 +130,7 @@
   width: 30%;
   height: 100%;
   background: var(--signal);
-  animation: loading-slide 1.3s ease-in-out infinite;
+  animation: loading-slide var(--dur-loading) ease-in-out infinite;
 }
 
 @keyframes loading-slide {
@@ -161,7 +161,7 @@
   right: 0;
   min-width: 14px;
   padding: 0 3px;
-  border-radius: 7px;
+  border-radius: var(--r-pill);
   background: var(--signal);
   color: var(--on-paper);
   font-size: 12px;
@@ -210,7 +210,7 @@
   position: relative;
   width: 26px;
   height: 14px;
-  border-radius: 7px;
+  border-radius: var(--r-pill);
   background: var(--line-strong);
 }
 

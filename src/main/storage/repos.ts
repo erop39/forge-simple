@@ -672,5 +672,7 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
-  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta }
+  /** Runs the function in one transaction: all its writes land, or none do. */
+  const transaction = <T>(fn: () => T): T => db.transaction(fn)()
+  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta, transaction }
 }

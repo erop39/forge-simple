@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { CheckCircle, Desktop, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { ServerInfo } from '@shared/types'
+import type { ImportSummary, ServerInfo } from '@shared/types'
 import { errorText } from '../i18n/error-text'
-import { t } from '../i18n/t'
+import { t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { RestartConfirm } from './ForgeRestart'
 import { Button } from './ui/Button'
@@ -126,6 +126,7 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       )}
       <ForgeActions running={running} busyId={busyId} />
       <ImageStorage />
+      <SettingsBackup />
       {error !== null && (
         <p role="alert" className={styles.error}>
           {error}
@@ -139,6 +140,59 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       </div>
     </div>
   )
+}
+
+/** Export and import of the settings in one file; an import shows what it would add before anything is written. */
+function SettingsBackup() {
+  const exportSettings = useAppStore((s) => s.exportSettings)
+  const preview = useAppStore((s) => s.previewSettingsImport)
+  const apply = useAppStore((s) => s.applySettingsImport)
+  const discard = useAppStore((s) => s.discardSettingsImport)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const [summary, setSummary] = useState<ImportSummary | null>(null)
+
+  async function run(work: () => Promise<void>): Promise<void> {
+    setBusy(true)
+    setError(null)
+    setStatus(null)
+    try { await work() }
+    catch (err) { setError(errorText(err)) }
+    setBusy(false)
+  }
+
+  const lines = summary
+    ? (['servers', 'presets', 'hiresPresets', 'negativePresets', 'models', 'settings'] as const)
+      .filter((key) => summary[key] > 0)
+      .map((key) => t(`backup.${key}` as MessageKey, { n: summary[key] }))
+    : []
+
+  return <section className={styles.storage} aria-label={t('backup.title')}>
+    <h3 className={styles.forgeHeading}>{t('backup.title')}</h3>
+    <p className={styles.hint}>{t('backup.hint')}</p>
+    {summary === null ? (
+      <div className={styles.forgeActions}>
+        <Button disabled={busy} onClick={() => void run(async () => { if (await exportSettings()) setStatus(t('backup.exported')) })}>{t('backup.export')}</Button>
+        <Button disabled={busy} onClick={() => void run(async () => setSummary(await preview()))}>{t('backup.import')}</Button>
+      </div>
+    ) : (
+      <div role="group" aria-label={t('backup.previewTitle')} className={styles.storage}>
+        <strong>{t('backup.previewTitle')}</strong>
+        {lines.length === 0 ? <p className={styles.hint}>{t('backup.nothing')}</p> : (
+          <ul className={styles.hint}>{lines.map((line) => <li key={line}>{line}</li>)}</ul>
+        )}
+        {(summary.renamed > 0 || summary.skipped > 0) && <p className={styles.hint}>{t('backup.renamed', { renamed: summary.renamed, skipped: summary.skipped })}</p>}
+        <div className={styles.forgeActions}>
+          <Button variant="primary" disabled={busy || lines.length === 0}
+            onClick={() => void run(async () => { await apply(); setSummary(null); setStatus(t('backup.done')) })}>{t('backup.apply')}</Button>
+          <Button disabled={busy} onClick={() => { void discard(); setSummary(null) }}>{t('backup.cancel')}</Button>
+        </div>
+      </div>
+    )}
+    {status && <p role="status" className={styles.hint}>{status}</p>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>
 }
 
 function ImageStorage() {

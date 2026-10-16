@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ArrowSquareOut, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowSquareOut, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import type { CivitaiBrowseItem, CivitaiBrowseQuery, ModelKind } from '@shared/types'
 import { errorText } from '../i18n/error-text'
@@ -21,19 +21,20 @@ const count = new Intl.NumberFormat(LOCALE, { notation: 'compact' })
 export function CivitaiBrowserDialog() {
   const kind = useAppStore((s) => s.civitaiBrowser)
   const close = useAppStore((s) => s.closeCivitaiBrowser)
+  const back = useAppStore((s) => s.backFromCivitaiBrowser)
   return (
     <Dialog.Root open={kind !== null} onOpenChange={(open) => { if (!open) close() }}>
       <Dialog.Portal>
         <Dialog.Overlay className={styles.overlay} />
         <Dialog.Content className={styles.content} aria-describedby={undefined}>
-          {kind !== null && <Browser initialKind={kind} onClose={close} />}
+          {kind !== null && <Browser initialKind={kind} onClose={close} onBack={back} />}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   )
 }
 
-function Browser({ initialKind, onClose }: { initialKind: ModelKind; onClose(): void }) {
+function Browser({ initialKind, onClose, onBack }: { initialKind: ModelKind; onClose(): void; onBack(): void }) {
   const consent = useAppStore((s) => s.settings?.civitaiEnabled === true)
   const setCivitaiEnabled = useAppStore((s) => s.setCivitaiEnabled)
   const browse = useAppStore((s) => s.browseCivitai)
@@ -78,6 +79,7 @@ function Browser({ initialKind, onClose }: { initialKind: ModelKind; onClose(): 
   return (
     <div className={styles.layout}>
       <div className={styles.head}>
+        <IconButton label={t('browser.back')} icon={<ArrowLeft size={20} />} onClick={onBack} />
         <Dialog.Title className={styles.title}>{t('browser.title')}</Dialog.Title>
         <IconButton label={t('models.close')} icon={<X size={20} />} onClick={onClose} />
       </div>

@@ -48,6 +48,7 @@ let browseUrls: string[]
 let browseAnswer: unknown
 let browseStatus: number
 let exportPath: string | null
+let importPath: string | null
 let exportNames: string[]
 let selectedImagesDir: string | null
 /** The address main treats as Forge on this PC; tests point it at the mock (or at nothing). */
@@ -101,6 +102,7 @@ beforeEach(async () => {
   browseAnswer = { items: [] }
   browseStatus = 200
   exportPath = null
+  importPath = null
   exportNames = []
   selectedImagesDir = null
   localServer = mock.url
@@ -132,6 +134,7 @@ beforeEach(async () => {
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       lock,
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
+      chooseImportPath: async () => importPath,
       exportPageSize: 3,
       get localUrl() { return localServer },
     },
@@ -544,7 +547,7 @@ test('a handler throwing a plain Error rejects with error.unexpected, original l
     copyToClipboard: () => undefined,
     revealFile: () => undefined,
     capabilities: { current: () => ({ canRestart: false }), refresh: async () => ({ canRestart: false }), reset: () => undefined },
-    chooseExportPath: async () => null, lock: createLock(repos.settings, oplog),
+    chooseExportPath: async () => null, chooseImportPath: async () => null, lock: createLock(repos.settings, oplog),
   }, () => undefined)
   const err = await h.get('jobs:listActive')!({}).catch((e: Error) => e)
   expect((err as Error).message).toBe('error.unexpected')
@@ -1243,6 +1246,43 @@ describe('model previews from generations', () => {
     await call('lock:setPassword', null, 'secret-pass')
     await call('images:setHidden', [row.id], true)
     expect(clearedPreviews).toEqual([CKPT_FILE])
+  })
+})
+
+describe('settings backup', () => {
+  test('export writes one versioned file; import asks first, shows what it adds, then adds without overwriting', async () => {
+    repos.presets.add('Evening', { family: 'sdxl', checkpoint: 'exampleMix_v10.safetensors [abc]', modules: [], width: 1024, height: 1024, steps: 20, cfgScale: 7, distilledCfg: 3.5, shift: null, clipSkip: null, sampler: 'Euler', scheduler: 'Simple', loras: [] })
+    repos.negativePresets.add('Clean', 'lowres')
+    repos.settings.set('lock.hash', 'scrypt:secret')
+    expect(await call('backup:export')).toBe(false)
+    exportPath = path.join(dir, 'settings.json')
+    expect(await call('backup:export')).toBe(true)
+    expect(exportNames.at(-1)).toMatch(/^forge-neo-client-settings-\d{4}-\d{2}-\d{2}\.json$/)
+    const text = readFileSync(exportPath, 'utf8')
+    expect(JSON.parse(text)).toMatchObject({ format: 'forge-neo-client-settings', version: 1, presets: [{ name: 'Evening' }], negativePresets: [{ name: 'Clean' }] })
+    expect(text).not.toContain('secret')
+
+    await expect(call('backup:apply')).rejects.toThrow('error.notFound')
+    expect(await call('backup:preview')).toBeNull()
+    importPath = exportPath
+    expect(await call('backup:preview')).toMatchObject({ presets: 1, negativePresets: 1, renamed: 2 })
+    expect(repos.presets.list()).toHaveLength(1)
+    expect(await call('backup:apply')).toMatchObject({ presets: 1, negativePresets: 1, renamed: 2 })
+    expect(repos.presets.list().map((p) => p.name).sort()).toEqual(['Evening', 'Evening (imported)'])
+    await expect(call('backup:apply')).rejects.toThrow('error.notFound')
+  })
+
+  test.each([
+    ['not json', 'error.backupMalformed'],
+    ['{"format":"other","version":1}', 'error.backupNotBackup'],
+    ['{"format":"forge-neo-client-settings","version":99}', 'error.backupVersion'],
+    ['{"format":"forge-neo-client-settings","version":1,"presets":[{"name":"x","params":{"steps":"many"}}]}', 'error.backupMalformed'],
+  ])('a refused file (%s) imports nothing and says why', async (content, key) => {
+    importPath = path.join(dir, 'bad.json')
+    writeFileSync(importPath, content)
+    await expect(call('backup:preview')).rejects.toThrow(key)
+    await expect(call('backup:apply')).rejects.toThrow('error.notFound')
+    expect(repos.presets.list()).toEqual([])
   })
 })
 

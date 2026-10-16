@@ -1,5 +1,5 @@
 import type {
-  Catalog, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -11,7 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
-  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy',
+  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy', 'error.backupNotBackup', 'error.backupVersion', 'error.backupMalformed', 'error.backupTooBig',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -218,6 +218,18 @@ export interface Api {
   }
   clipboard: { writeText(text: string): Promise<void> }
   connection: { get(): Promise<ConnectionStatus> }
+  /**
+   * Backup of the user's settings in one versioned JSON file: servers, presets, hires and negative presets, family choices,
+   * own trigger words and a few settings (never images, jobs, tags, the log, the lock or Civitai consent). Import is additive.
+   * `preview` asks for a file and returns what importing it would add (null when the dialog was cancelled; error.backup* when
+   * the file is refused); `apply` then imports exactly that file; `discard` forgets it.
+   */
+  backup: {
+    export(): Promise<boolean>
+    preview(): Promise<ImportSummary | null>
+    apply(): Promise<ImportSummary>
+    discard(): Promise<void>
+  }
   /** The operation log. */
   oplog: {
     list(query: OplogQuery): Promise<OplogEntry[]>
@@ -250,7 +262,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:setFamilyModules', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'backup:export', 'backup:preview', 'backup:apply', 'backup:discard', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

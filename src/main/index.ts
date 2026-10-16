@@ -233,6 +233,11 @@ async function boot(): Promise<void> {
       const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
       return result.canceled || !result.filePath ? null : result.filePath
     },
+    chooseImportPath: async () => {
+      const options = { defaultPath: app.getPath('documents'), properties: ['openFile'] as 'openFile'[], filters: [{ name: 'JSON', extensions: ['json'] }] }
+      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+      return result.canceled || !result.filePaths[0] ? null : result.filePaths[0]
+    },
     chooseImagesDir: async (current) => {
       const options = { defaultPath: current, properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
       const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)

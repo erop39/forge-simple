@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -112,6 +112,13 @@ export interface AppState {
   /** The VAE/text-encoder files a family starts with (null = Forge's own); needs the files on the server. */
   setFamilyModules(family: Family, modules: string[] | null): Promise<void>
   chooseImagesDir(): Promise<string | null>
+  /** Saves the settings to a file the user picks; false when cancelled. */
+  exportSettings(): Promise<boolean>
+  /** Asks for a settings file and says what importing it would add (null when cancelled); rejects with error.backup*. */
+  previewSettingsImport(): Promise<ImportSummary | null>
+  /** Imports the file shown by the preview, then reloads everything it may have changed. */
+  applySettingsImport(): Promise<ImportSummary>
+  discardSettingsImport(): Promise<void>
   cancelJob(id: number): Promise<void>
   retryJob(id: number): Promise<void>
   deleteImage(id: number): Promise<void>
@@ -153,6 +160,8 @@ export interface AppState {
   civitaiBrowser: ModelKind | null
   openCivitaiBrowser(kind: ModelKind): void
   closeCivitaiBrowser(): void
+  /** Leaves the Civitai browser for the model library it was opened from. */
+  backFromCivitaiBrowser(): void
   /** Rejects with the IPC error key (error.civitaiBusy, error.network). */
   browseCivitai(query: CivitaiBrowseQuery): Promise<CivitaiBrowsePage>
   openCivitaiModel(modelId: number, versionId: number): Promise<void>
@@ -236,6 +245,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
   // Bumped by every checkpoint selection and catalog load; a response from an older one is dropped.
   let selectSeq = 0
   let catalogSeq = 0
+  let marksSeq = 0
   let presetsSeq = 0
   // Bumped by each forge:capabilities / forge:health event: a load that started earlier is older.
   let capabilitiesSeq = 0
@@ -321,9 +331,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
     /** Saves a mark on a model file and reads the catalog again (main applies marks without refetching Forge). */
     async function markModel(call: () => Promise<void>): Promise<void> {
       const seq = catalogSeq
+      const mine = ++marksSeq // two quick marks: only the later answer may set the catalog
       if (await attempt(async () => { await call(); return true }) === undefined) return
       const fresh = await attempt(() => api.catalog.get())
-      if (fresh && seq === catalogSeq) set({ catalog: fresh })
+      if (fresh && seq === catalogSeq && mine === marksSeq) set({ catalog: fresh })
     }
 
     /** Loads the catalog and selects the loaded checkpoint, else the first one. */
@@ -771,6 +782,27 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         return selected
       },
 
+      exportSettings() {
+        return api.backup.export()
+      },
+
+      previewSettingsImport() {
+        return api.backup.preview()
+      },
+
+      async applySettingsImport() {
+        const summary = await api.backup.apply()
+        const [settings, servers] = await Promise.all([api.settings.get(), api.servers.list()])
+        set({ settings, servers })
+        await changePresets(async () => undefined)
+        if (summary.models > 0 || summary.settings > 0) void loadCatalog()
+        return summary
+      },
+
+      async discardSettingsImport() {
+        await attempt(() => api.backup.discard())
+      },
+
       async cancelJob(id) {
         await attempt(() => api.jobs.cancel(id))
       },
@@ -1082,6 +1114,10 @@ export function createAppStore(api: Api): StoreApi<AppState> {
 
       closeCivitaiBrowser() {
         set({ civitaiBrowser: null })
+      },
+
+      backFromCivitaiBrowser() {
+        set((s) => ({ modelGallery: s.civitaiBrowser, civitaiBrowser: null }))
       },
 
       browseCivitai(query) {

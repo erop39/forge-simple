@@ -100,6 +100,12 @@ const api: Api = {
   },
   clipboard: { writeText: (value) => invoke('clipboard:writeText', value) },
   connection: { get: () => invoke('connection:get') },
+  backup: {
+    export: () => invoke('backup:export'),
+    preview: () => invoke('backup:preview'),
+    apply: () => invoke('backup:apply'),
+    discard: () => invoke('backup:discard'),
+  },
   oplog: {
     list: (query) => invoke('oplog:list', query),
     export: (query) => invoke('oplog:export', query),

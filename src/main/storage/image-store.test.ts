@@ -167,3 +167,17 @@ test('an unapproved path is neither read nor deleted', async () => {
   await expect(store.remove(outside, outside)).rejects.toThrow()
   expect(await exists(outside)).toBe(true)
 })
+
+test('readThumb returns the bytes of a thumbnail inside the managed folder and refuses any other file', async () => {
+  const store = createImageStore(() => root, stubThumb)
+  const saved = await store.save(PNG.toString('base64'), { jobId: 1, seed: 2, createdAt })
+  expect((await store.readThumb(saved.thumbPath)).equals(THUMB)).toBe(true)
+  const outside = path.join(os.tmpdir(), `fnc-outside-${Date.now()}.jpg`)
+  await fs.writeFile(outside, 'private')
+  try {
+    await expect(store.readThumb(outside)).rejects.toThrow()
+    await expect(store.readThumb(path.join(root, 'thumbs', 'gone.jpg'))).rejects.toThrow()
+  } finally {
+    await fs.rm(outside, { force: true })
+  }
+})

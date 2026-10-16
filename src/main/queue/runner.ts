@@ -541,6 +541,7 @@ export function createRunner(deps: RunnerDeps): {
           if (params.tags && params.tags.length > 0) repos.tags.add([row.id], params.tags)
         } catch (err) {
           failingPath = file.filePath
+          // The row is already in `saved`, so the outer rollback deletes it too.
           await deps.images.remove(file.filePath, file.thumbPath).catch(() => undefined)
           throw err
         }

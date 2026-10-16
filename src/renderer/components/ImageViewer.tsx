@@ -187,7 +187,9 @@ export function ImageViewer({ image, opener, onClose, onPrevious, onNext, hasPre
     const file = catalogCheckpoints?.find((c) => c.title === params?.checkpoint)?.filename
     setModelPreviewState(null)
     if (!file) { setModelPreviewState('failed'); return }
-    setModelPreviewState((await usePreviewFromImage('checkpoint', file, image!.id)) ? 'set' : 'failed')
+    const target = image!.id
+    const done = await usePreviewFromImage('checkpoint', file, target)
+    if (shownId.current === target) setModelPreviewState(done ? 'set' : 'failed') // not on the image the user moved on to
   }
 
   async function reveal(): Promise<void> {

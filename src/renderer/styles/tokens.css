@@ -25,6 +25,7 @@
   --r-control: 8px;
   --r-panel: 12px;
   --r-tag: 4px;
+  --r-pill: 999px;
 
   --h-control: 28px;
   --h-bar: 32px;
@@ -39,6 +40,7 @@
   --dur-panel-in: 220ms;
   --dur-panel-out: 160ms;
   --dur-reveal: 260ms;
+  --dur-loading: 1300ms;
 
   --font-ui: 'Onest Variable', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;

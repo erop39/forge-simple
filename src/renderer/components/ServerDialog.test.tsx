@@ -241,3 +241,33 @@ describe('Forge actions', () => {
     expect((within(section()).getByRole('button', { name: en['forge.unload'] }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+test('settings export reports success; import shows what it would add and writes only after Import', async () => {
+  const exportSettings = vi.fn(async () => true)
+  const summary = { servers: 1, presets: 2, hiresPresets: 0, negativePresets: 0, models: 0, settings: 0, renamed: 1, skipped: 3 }
+  const previewSettingsImport = vi.fn(async () => summary)
+  const applySettingsImport = vi.fn(async () => summary)
+  const discardSettingsImport = vi.fn(async () => undefined)
+  setup({ exportSettings, previewSettingsImport, applySettingsImport, discardSettingsImport })
+  await userEvent.click(screen.getByRole('button', { name: en['backup.export'] }))
+  expect(await screen.findByText(en['backup.exported'])).toBeDefined()
+  await userEvent.click(screen.getByRole('button', { name: en['backup.import'] }))
+  const group = await screen.findByRole('group', { name: en['backup.previewTitle'] })
+  expect(within(group).getByText('1 servers')).toBeDefined()
+  expect(within(group).getByText('2 settings presets')).toBeDefined()
+  expect(applySettingsImport).not.toHaveBeenCalled()
+  await userEvent.click(within(group).getByRole('button', { name: en['backup.cancel'] }))
+  expect(discardSettingsImport).toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: en['backup.import'] }))
+  await userEvent.click(await screen.findByRole('button', { name: en['backup.apply'] }))
+  expect(applySettingsImport).toHaveBeenCalledOnce()
+  expect(await screen.findByText(en['backup.done'])).toBeDefined()
+})
+
+test('a refused settings file shows the reason and leaves the dialog usable', async () => {
+  const previewSettingsImport = vi.fn(async () => { throw new Error('error.backupVersion') })
+  setup({ previewSettingsImport })
+  await userEvent.click(screen.getByRole('button', { name: en['backup.import'] }))
+  expect((await screen.findByRole('alert')).textContent).toBe(en['error.backupVersion'])
+  expect(screen.getByRole('button', { name: en['backup.import'] })).toBeDefined()
+})
