@@ -45,6 +45,7 @@ export function parseVersion(json: unknown, now: number): CivitaiInfo | null {
   return {
     modelId, versionId: id, name: text(model.name), versionName: text(o.name), baseModel: text(o.baseModel, 60),
     trainedWords: words, imageUrl: firstImage ? (firstImage.url as string) : null, checkedAt: now,
+    publishedAt: typeof o.publishedAt === 'string' && Number.isFinite(Date.parse(o.publishedAt)) ? Date.parse(o.publishedAt) : null,
   }
 }
 

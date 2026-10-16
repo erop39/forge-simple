@@ -14,8 +14,10 @@ const version = {
 test('a version is reduced to the kept fields; only civitai https images count', () => {
   expect(parseVersion(version, 99)).toEqual({
     modelId: 5, versionId: 11, name: 'Detail Tweaker', versionName: 'v2', baseModel: 'Illustrious',
-    trainedWords: ['sharp', 'skin'], imageUrl: 'https://image.civitai.com/a/b.jpeg', checkedAt: 99,
+    trainedWords: ['sharp', 'skin'], imageUrl: 'https://image.civitai.com/a/b.jpeg', checkedAt: 99, publishedAt: null,
   })
+  expect(parseVersion({ ...version, publishedAt: '2026-03-04T10:00:00.000Z' }, 1)?.publishedAt).toBe(Date.parse('2026-03-04T10:00:00.000Z'))
+  expect(parseVersion({ ...version, publishedAt: 'soon' }, 1)?.publishedAt).toBeNull()
   expect(parseVersion({ id: 1 }, 1)).toBeNull()
   expect(parseVersion('x', 1)).toBeNull()
   expect(isCivitaiImage('http://image.civitai.com/a.png')).toBe(false)

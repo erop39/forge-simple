@@ -14,6 +14,8 @@ export function createActiveForge(deps: {
   /** What the user marked on the active server's files (favorite, note, family, own trigger words). */
   modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
   previewUrl?(kind: ModelKind, filename: string): string
+  usage?: NonNullable<Parameters<typeof createCatalog>[0]['usage']>
+  noteSeen?(kind: ModelKind, files: string[]): void
   oplog: Oplog
   now(): number
   create?: (url: string) => ForgeClient
@@ -45,6 +47,8 @@ export function createActiveForge(deps: {
         client, familyOverride: deps.familyOverride, oplog: deps.oplog, now: deps.now,
         ...(deps.modelMeta ? { modelMeta: deps.modelMeta } : {}),
         ...(deps.previewUrl ? { previewUrl: deps.previewUrl } : {}),
+        ...(deps.usage ? { usage: deps.usage } : {}),
+        ...(deps.noteSeen ? { noteSeen: deps.noteSeen } : {}),
       })
       return catalog
     },

@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord } from '@shared/types'
@@ -217,4 +217,13 @@ test('CFG is a slider in the bottom row (1 to 30, steps of 0.5); distilled famil
   renderWithStore(<PromptBar />, 'krea2', {})
   expect(screen.getByRole('slider', { name: en['params.distilledCfg'] })).toBeDefined()
   expect(screen.queryByRole('slider', { name: en['params.cfg'] })).toBeNull()
+})
+
+test('the LoRA library opens from the prompt bar and shows how many LoRA are in use', async () => {
+  const openModelGallery = vi.fn()
+  const { store } = renderWithStore(<PromptBar />, 'sdxl', { openModelGallery })
+  await userEvent.click(screen.getByRole('button', { name: en['models.openLoras'] }))
+  expect(openModelGallery).toHaveBeenCalledWith('lora')
+  act(() => store.getState().setParams({ loras: [{ name: 'a', weight: 1, enabled: true }, { name: 'b', weight: 1, enabled: false }] }))
+  expect(screen.getByRole('button', { name: 'Browse LoRA (1 in use)' })).toBeDefined()
 })

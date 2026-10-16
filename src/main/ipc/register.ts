@@ -10,7 +10,7 @@ import {
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, type createCatalog } from '../forge/catalog'
-import { createCivitaiClient, type CivitaiClient } from '../forge/civitai'
+import { CivitaiBusyError, createCivitaiClient, type CivitaiClient } from '../forge/civitai'
 import { createCivitaiUpdater } from '../forge/civitai-updater'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
@@ -606,7 +606,7 @@ export function registerIpc(
       if (serverId === undefined || !lastCatalog) return []
       const stored = (kind: ModelKind) => repos.modelMeta.list(serverId, kind)
       const checkedAt = (row: ReturnType<typeof stored> extends Map<string, infer R> ? R | undefined : never): number | null =>
-        row?.civitai ? row.civitai.checkedAt : null
+        row?.civitai && (row.civitai.missing || row.civitai.publishedAt !== undefined) ? row.civitai.checkedAt : null
       const checkpoints = stored('checkpoint')
       const loras = stored('lora')
       return [
@@ -640,6 +640,26 @@ export function registerIpc(
     const force = typeof opts === 'object' && opts !== null && (opts as { force?: unknown }).force === true
     lastCatalog = await loadCatalog()
     void civitaiUpdater.start({ force })
+  })
+
+  handle('civitai:updateOne', async (kind, id) => {
+    if (repos.settings.get(CIVITAI_KEY) !== '1') return fail('error.invalidParams')
+    const target = await modelTarget(kind, id)
+    const catalog = await loadCatalog()
+    const hash = target.kind === 'checkpoint'
+      ? catalog.checkpoints.find((c) => c.filename === target.id)?.sha256
+      : catalog.loras.find((l) => l.path === target.id)?.hash
+    if (!hash) return 'noHash'
+    const client = deps.civitai ?? createCivitaiClient({ now: Date.now })
+    let info: Awaited<ReturnType<CivitaiClient['lookup']>>
+    try {
+      info = await client.lookup(hash)
+    } catch (err) {
+      if (err instanceof CivitaiBusyError) return 'busy'
+      throw err
+    }
+    civitaiUpdater.record({ kind: target.kind, id: target.id, hash, checkedAt: null }, info)
+    return info ? 'found' : 'missing'
   })
 
   handle('civitai:cancel', () => { civitaiUpdater.cancel() })
@@ -689,13 +709,13 @@ export function registerIpc(
     })
   })
 
-  handle('models:setTriggers', async (path, triggers) => {
+  handle('models:setTriggers', async (kind, id, triggers) => {
     if (triggers !== null && (!Array.isArray(triggers) || triggers.length > 40
       || !triggers.every((t) => typeof t === 'string' && t.trim() !== '' && t.length <= 60))) {
       return fail('error.invalidParams')
     }
-    const target = await modelTarget('lora', path)
-    repos.modelMeta.setTriggers(target.serverId, 'lora', target.id,
+    const target = await modelTarget(kind, id)
+    repos.modelMeta.setTriggers(target.serverId, target.kind, target.id,
       triggers === null ? null : [...new Set(triggers.map((t) => t.trim()))])
   })
 

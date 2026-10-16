@@ -244,7 +244,18 @@
 }
 
 .detailPreview {
+  width: 100%;
   max-width: 180px;
+  margin: 0 auto;
+}
+
+.wordText {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
 .detailName {

@@ -149,6 +149,26 @@
   }
 }
 
+.loraButton {
+  position: relative;
+  display: inline-flex;
+}
+
+.loraCount {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--signal);
+  color: var(--on-paper);
+  font-size: 12px;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
 .pending {
   color: var(--text-3);
   font-size: 12px;

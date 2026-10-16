@@ -575,7 +575,7 @@ test('modelMeta keeps marks per server, kind and file, and clearPreviews leaves 
   repos.modelMeta.setPreview(a.id, 'checkpoint', 'f1', 'png')
   repos.modelMeta.setTriggers(a.id, 'lora', 'l1', ['x', 'y'])
   expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')).toEqual({
-    family: 'anima', favorite: true, note: 'good', preview: 'png', triggers: null, civitai: null,
+    family: 'anima', favorite: true, note: 'good', preview: 'png', triggers: null, civitai: null, firstSeen: null,
   })
   expect(repos.modelMeta.get(b.id, 'checkpoint', 'f1')).toBeNull()
   expect(repos.modelMeta.get(a.id, 'lora', 'f1')).toBeNull()
@@ -584,4 +584,42 @@ test('modelMeta keeps marks per server, kind and file, and clearPreviews leaves 
   expect(repos.modelMeta.get(a.id, 'lora', 'l1')?.triggers).toBeNull()
   repos.modelMeta.clearPreviews(a.id)
   expect(repos.modelMeta.get(a.id, 'checkpoint', 'f1')).toMatchObject({ preview: null, favorite: true, family: 'anima' })
+})
+
+test('noteSeen marks the first scan as unknown (0) and stamps only the newcomers of later scans', () => {
+  const { repos } = setup()
+  const s = repos.servers.setActiveUrl('http://a:7860')
+  repos.modelMeta.noteSeen(s.id, 'checkpoint', ['old1', 'old2'], 1000)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'old1')?.firstSeen).toBeNull()
+  repos.modelMeta.noteSeen(s.id, 'checkpoint', ['old1', 'old2', 'new1'], 2000)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'new1')?.firstSeen).toBe(2000)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'old2')?.firstSeen).toBeNull()
+  repos.modelMeta.noteSeen(s.id, 'checkpoint', ['old1', 'new1', 'new2'], 3000)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'new1')?.firstSeen).toBe(2000)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'new2')?.firstSeen).toBe(3000)
+  repos.modelMeta.setFavorite(s.id, 'checkpoint', 'old1', true)
+  expect(repos.modelMeta.get(s.id, 'checkpoint', 'old1')).toMatchObject({ favorite: true, firstSeen: null })
+  repos.modelMeta.noteSeen(s.id, 'lora', ['l1'], 4000)
+  expect(repos.modelMeta.get(s.id, 'lora', 'l1')?.firstSeen).toBeNull() // each kind has its own first scan
+})
+
+test('usage counts finished jobs per checkpoint and per enabled LoRA of one server', () => {
+  const { repos, setTime } = setup()
+  const a = repos.servers.setActiveUrl('http://a:7860')
+  const b = repos.servers.setActiveUrl('http://b:7860')
+  const loras = [{ name: 'detail', weight: 1, enabled: true }, { name: 'off', weight: 1, enabled: false }]
+  const run = (serverId: number, checkpoint: string, status: 'done' | 'failed', time: number, withLoras = false) => {
+    setTime(time)
+    const job = repos.jobs.insert(serverId, 'txt2img', params({ checkpoint, loras: withLoras ? loras : [] }))
+    repos.jobs.setStatus(job.id, status)
+  }
+  run(a.id, 'ckptA', 'done', 100, true)
+  run(a.id, 'ckptA', 'done', 300)
+  run(a.id, 'ckptB', 'failed', 400)
+  run(b.id, 'ckptA', 'done', 500)
+  const usage = repos.jobs.usage(a.id)
+  expect(usage.checkpoints.get('ckptA')).toEqual({ uses: 2, last: 300 })
+  expect(usage.checkpoints.has('ckptB')).toBe(false)
+  expect(usage.loras.get('detail')).toEqual({ uses: 1, last: 100 })
+  expect(usage.loras.has('off')).toBe(false)
 })

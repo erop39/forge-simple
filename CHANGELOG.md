@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Model galleries sort by name (favorites first), recently added, release date, most used and recently used; cards show the date or the count. "Added" is when the app first saw a file (files already there at the first scan have no date); the release date comes from Civitai; use is counted from finished jobs of the server.
+- Browse LoRA button next to the checkpoint gallery in the prompt bar, with the number of LoRA in use.
+- Update from Civitai on a single card (needs the same consent), and Civitai trigger words for checkpoints as well as LoRA; trigger words in the details panel are buttons that add the word to the prompt.
 - Optional Civitai lookup, off until you agree: Update from Civitai in the model galleries sends only each file's SHA-256 hash to civitai.com (about one a second, stoppable) and keeps the official name, base model, trigger words (they replace the file's own tags until you edit them), a preview when Forge has none, and an Open on Civitai link.
 - A loading bar with the server's name replaces the model menu while checkpoints and LoRA load at start, with a hint when it takes long.
 - Hires presets: save the second pass (scale, upscaler, steps, denoising, CFG) under a name, pick one to apply everything at once, delete the selected one.
@@ -85,6 +88,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The preview in the model details panel is centred.
 - Hires fix answered Forge HTTP 500 (`TypeError`) on the user's Forge Neo: it needs `hr_additional_modules` in the request. The second pass now sends `["Use same choices"]`, as Forge's own UI does. Checked against the real server for sdxl, anima and krea2 with `Latent` and a real upscaler.
 - Hires fix failed ("missing on the server", and Forge HTTP 500 with a stale value) because Forge lists its latent second-pass modes (`Latent`, `Latent (nearest)`…) apart from its upscalers; the app now reads them too, defaults to `Latent`, and never offers `None` as a second-pass upscaler.
 - Steps follow CFG in the prompt bar's bottom row, before the ratio.

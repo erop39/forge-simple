@@ -44,11 +44,13 @@ export interface ModelMetaRow {
   family: Family | null; favorite: boolean; note: string; preview: string | null; triggers: string[] | null
   /** null: never looked up; `missing`: Civitai does not know the file (checkedAt is when we asked). */
   civitai: CivitaiStored | null
+  /** ms the app first saw the file; null when it was there at the first scan (or never scanned). */
+  firstSeen: number | null
 }
 export type CivitaiStored = (CivitaiInfo & { missing?: false }) | { missing: true; checkedAt: number }
 interface ModelMetaSql {
   server_id: number; kind: string; filename: string; family: string | null; favorite: number
-  note: string; preview: string | null; triggers: string | null; civitai: string | null
+  note: string; preview: string | null; triggers: string | null; civitai: string | null; first_seen: number | null
 }
 function toModelMeta(r: ModelMetaSql): ModelMetaRow {
   let triggers: string[] | null = null
@@ -67,7 +69,7 @@ function toModelMeta(r: ModelMetaSql): ModelMetaRow {
     } catch { /* a damaged value counts as never looked up */ }
   }
   return { family: r.family && Object.hasOwn(PROFILES, r.family) ? (r.family as Family) : null, favorite: r.favorite === 1,
-    note: r.note, preview: r.preview, triggers, civitai }
+    note: r.note, preview: r.preview, triggers, civitai, firstSeen: r.first_seen === null || r.first_seen === 0 ? null : r.first_seen }
 }
 
 interface ImageSql {
@@ -318,6 +320,16 @@ export function createRepos(db: Db, now: () => number) {
     },
     hasRunning(): boolean {
       return db.prepare("SELECT 1 FROM jobs WHERE status = 'running' LIMIT 1").get() !== undefined
+    },
+    /** How often finished jobs of this server used each checkpoint (by title) and each enabled LoRA (by name), and when last. */
+    usage(serverId: number): { checkpoints: Map<string, { uses: number; last: number | null }>; loras: Map<string, { uses: number; last: number | null }> } {
+      const read = (sql: string): Map<string, { uses: number; last: number | null }> =>
+        new Map((db.prepare(sql).all(serverId) as { k: string | null; uses: number; last: number | null }[])
+          .filter((r) => typeof r.k === 'string').map((r) => [r.k as string, { uses: r.uses, last: r.last }]))
+      return {
+        checkpoints: read("SELECT json_extract(params, '$.checkpoint') AS k, count(*) AS uses, max(finished_at) AS last FROM jobs WHERE server_id = ? AND status = 'done' AND type != 'upscale' GROUP BY k"),
+        loras: read("SELECT json_extract(e.value, '$.name') AS k, count(*) AS uses, max(j.finished_at) AS last FROM jobs j, json_each(j.params, '$.loras') e WHERE j.server_id = ? AND j.status = 'done' AND j.type != 'upscale' AND json_extract(e.value, '$.enabled') = 1 GROUP BY k"),
+      }
     },
     listActive(): Job[] {
       const rows = db.prepare(
@@ -587,6 +599,20 @@ export function createRepos(db: Db, now: () => number) {
       metaUpsert('triggers', triggers === null ? null : JSON.stringify(triggers))(serverId, kind, filename),
     setCivitai: (serverId: number, kind: ModelKind, filename: string, value: CivitaiStored): void =>
       metaUpsert('civitai', JSON.stringify(value))(serverId, kind, filename),
+    /**
+     * Remembers when each listed file first appeared. The first scan of a server and kind only marks what is already
+     * there (0 = date unknown); later scans stamp the newcomers with `now`.
+     */
+    noteSeen(serverId: number, kind: ModelKind, files: string[], now: number): void {
+      db.transaction(() => {
+        const scanned = db.prepare('SELECT 1 FROM model_meta WHERE server_id = ? AND kind = ? AND first_seen IS NOT NULL LIMIT 1')
+          .get(serverId, kind) !== undefined
+        const stamp = scanned ? now : 0
+        const insert = db.prepare(`INSERT INTO model_meta (server_id, kind, filename, first_seen) VALUES (?, ?, ?, ?)
+          ON CONFLICT(server_id, kind, filename) DO UPDATE SET first_seen = COALESCE(first_seen, excluded.first_seen)`)
+        for (const file of files) insert.run(serverId, kind, file, stamp)
+      })()
+    },
     clearPreview(serverId: number, kind: ModelKind, filename: string): void {
       db.prepare('UPDATE model_meta SET preview = NULL WHERE server_id = ? AND kind = ? AND filename = ?').run(serverId, kind, filename)
     },

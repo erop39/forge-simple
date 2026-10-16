@@ -126,6 +126,14 @@ async function boot(): Promise<void> {
       return serverId === undefined ? new Map() : repos.modelMeta.list(serverId, kind)
     },
     previewUrl: (kind, filename) => previews?.urlFor(kind, filename) ?? '',
+    usage: () => {
+      const serverId = repos.servers.active()?.id
+      return serverId === undefined ? { checkpoints: new Map(), loras: new Map() } : repos.jobs.usage(serverId)
+    },
+    noteSeen: (kind, files) => {
+      const serverId = repos.servers.active()?.id
+      if (serverId !== undefined) repos.modelMeta.noteSeen(serverId, kind, files, now())
+    },
     oplog,
     now,
   })

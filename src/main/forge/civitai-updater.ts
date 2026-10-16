@@ -22,6 +22,8 @@ export interface Updater {
   /** Starts a run unless one is going; resolves when it ends. */
   start(opts?: { force?: boolean }): Promise<void>
   cancel(): void
+  /** Stores one answer the same way a run does (used by the single-file update). */
+  record(item: UpdaterItem, info: CivitaiInfo | null): void
   state(): CivitaiProgress
 }
 
@@ -82,6 +84,7 @@ export function createCivitaiUpdater(deps: UpdaterDeps): Updater {
     cancel() {
       controller?.abort()
     },
+    record: (item, info) => deps.save(item, info),
     state: () => progress,
   }
 }

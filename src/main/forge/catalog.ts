@@ -13,6 +13,10 @@ export interface CatalogDeps {
   /** Marks the user made on files of the active server; read at every `get`, so they apply without a refetch. */
   modelMeta?(kind: ModelKind): Map<string, ModelMetaRow>
   previewUrl?(kind: ModelKind, filename: string): string
+  /** How often each checkpoint (title) and LoRA (name) was used by finished jobs of the active server. */
+  usage?(): { checkpoints: Map<string, { uses: number; last: number | null }>; loras: Map<string, { uses: number; last: number | null }> }
+  /** Told which files a fresh fetch listed, so the first appearance of a new one can be recorded. */
+  noteSeen?(kind: ModelKind, files: string[]): void
   oplog: Oplog
   now(): number
 }
@@ -42,6 +46,9 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
   let loraMetadata = new Map<string, Record<string, unknown>>()
   let loraHashes = new Map<string, string>()
 
+  const releasedOf = (mark: ModelMetaRow | undefined): number | null =>
+    mark?.civitai && !mark.civitai.missing ? mark.civitai.publishedAt ?? null : null
+
   const civitaiOf = (mark: ModelMetaRow | undefined): { url: string; name: string; baseModel: string } | null =>
     mark?.civitai && !mark.civitai.missing
       ? { url: `https://civitai.com/models/${mark.civitai.modelId}?modelVersionId=${mark.civitai.versionId}`,
@@ -52,6 +59,7 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
   function withMarks(base: Catalog): Catalog {
     const checkpointMeta = deps.modelMeta?.('checkpoint') ?? new Map<string, ModelMetaRow>()
     const loraMeta = deps.modelMeta?.('lora') ?? new Map<string, ModelMetaRow>()
+    const used = deps.usage?.()
     return {
       ...base,
       checkpoints: base.checkpoints.map((c) => {
@@ -65,6 +73,12 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           note: mark?.note ?? '',
           previewUrl: deps.previewUrl?.('checkpoint', c.filename) ?? '',
           civitai: civitaiOf(mark),
+          triggers: mark?.triggers ?? (mark?.civitai && !mark.civitai.missing ? mark.civitai.trainedWords : []),
+          triggersEdited: (mark?.triggers ?? null) !== null,
+          addedAt: mark?.firstSeen ?? null,
+          releasedAt: releasedOf(mark),
+          uses: used?.checkpoints.get(c.title)?.uses ?? 0,
+          lastUsedAt: used?.checkpoints.get(c.title)?.last ?? null,
         }
       }),
       loras: base.loras.map((l) => {
@@ -83,6 +97,10 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
           favorite: mark?.favorite ?? false,
           note: mark?.note ?? '',
           previewUrl: deps.previewUrl?.('lora', l.path) ?? '',
+          addedAt: mark?.firstSeen ?? null,
+          releasedAt: releasedOf(mark),
+          uses: used?.loras.get(l.name)?.uses ?? 0,
+          lastUsedAt: used?.loras.get(l.name)?.last ?? null,
         }
       }),
     }
@@ -131,6 +149,8 @@ export function createCatalog(deps: CatalogDeps): { get(refresh?: boolean): Prom
         familyModules: familyModules(options),
       }
       loraMetadata = new Map(loras.map((l) => [l.path, l.metadata]))
+      deps.noteSeen?.('checkpoint', models.map((m) => m.filename))
+      deps.noteSeen?.('lora', loras.map((l) => l.path))
       loraHashes = new Map(loras.flatMap((l): [string, string][] => {
         const hash = l.metadata.sshs_model_hash
         return typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash) ? [[l.path, hash]] : []

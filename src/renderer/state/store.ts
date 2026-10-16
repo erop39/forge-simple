@@ -138,7 +138,11 @@ export interface AppState {
   setModelFavorite(kind: ModelKind, id: string, favorite: boolean): Promise<void>
   setModelNote(kind: ModelKind, id: string, note: string): Promise<void>
   setCheckpointFamily(file: string, family: Family | null): Promise<void>
-  setLoraTriggers(path: string, triggers: string[] | null): Promise<void>
+  setModelTriggers(kind: ModelKind, id: string, triggers: string[] | null): Promise<void>
+  /** One file looked up on Civitai now; the result tells what happened (the catalog is re-read when found or unknown). */
+  updateModelFromCivitai(kind: ModelKind, id: string): Promise<'found' | 'missing' | 'noHash' | 'busy' | 'failed'>
+  /** Appends a word to the prompt unless it is already there. */
+  insertPromptWord(word: string): void
   /** Adds a LoRA (by its Forge name) to the stack, enabled at weight 1; false at the 16 limit or when present. */
   addLora(name: string): boolean
   closeHires(): void
@@ -901,8 +905,23 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         if (current && current.filename === file && current.family !== params?.family) await useCheckpoint(current.title)
       },
 
-      async setLoraTriggers(path, triggers) {
-        await markModel(() => api.models.setTriggers(path, triggers))
+      async setModelTriggers(kind, id, triggers) {
+        await markModel(() => api.models.setTriggers(kind, id, triggers))
+      },
+
+      async updateModelFromCivitai(kind, id) {
+        const result = await attempt(() => api.civitai.updateOne(kind, id))
+        if (result === undefined) return 'failed'
+        if (result === 'found' || result === 'missing') await markModel(async () => undefined)
+        return result
+      },
+
+      insertPromptWord(word) {
+        const params = get().params
+        if (!params) return
+        const prompt = params.prompt.trimEnd()
+        const present = prompt.split(',').some((part) => part.trim().toLowerCase() === word.toLowerCase())
+        if (!present) get().setParams({ prompt: prompt === '' ? word : `${prompt}, ${word}` })
       },
 
       addLora(name) {

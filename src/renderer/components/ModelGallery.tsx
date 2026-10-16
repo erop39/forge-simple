@@ -3,7 +3,7 @@ import { CloudArrowDown, Star, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
 import type { Family, ModelKind } from '@shared/types'
-import { t } from '../i18n/t'
+import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
@@ -30,6 +30,30 @@ interface Item {
   key: string
   familyOverridden: boolean
   civitai: { url: string; name: string; baseModel: string } | null
+  addedAt: number | null
+  releasedAt: number | null
+  uses: number
+  lastUsedAt: number | null
+}
+
+type Sort = 'name' | 'added' | 'released' | 'used' | 'lastUsed'
+const SORTS: readonly Sort[] = ['name', 'added', 'released', 'used', 'lastUsed']
+const day = new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium' })
+
+/** The value a sort puts first (the newest, the most used); null when the file has none, which sorts last. */
+function sortKey(item: Item, sort: Sort): number | null {
+  if (sort === 'added') return item.addedAt
+  if (sort === 'released') return item.releasedAt
+  if (sort === 'used') return item.uses > 0 ? item.uses : null
+  if (sort === 'lastUsed') return item.lastUsedAt
+  return null
+}
+
+/** What the active sort is about, shown on the card: a date or a count. */
+function cardStat(item: Item, sort: Sort): string | null {
+  const key = sortKey(item, sort)
+  if (key === null) return null
+  return sort === 'used' ? t('models.usedTimes', { n: item.uses }) : day.format(key)
 }
 
 const folderOf = (path: string): string => {
@@ -61,7 +85,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const setFavorite = useAppStore((s) => s.setModelFavorite)
   const setNote = useAppStore((s) => s.setModelNote)
   const setFamily = useAppStore((s) => s.setCheckpointFamily)
-  const setTriggers = useAppStore((s) => s.setLoraTriggers)
+  const setTriggers = useAppStore((s) => s.setModelTriggers)
   const civitai = useAppStore((s) => s.civitai)
   const consent = useAppStore((s) => s.settings?.civitaiEnabled === true)
   const setCivitaiEnabled = useAppStore((s) => s.setCivitaiEnabled)
@@ -69,16 +93,32 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const cancelCivitai = useAppStore((s) => s.cancelCivitai)
   const openOnCivitai = useAppStore((s) => s.openOnCivitai)
   const [asking, setAsking] = useState(false)
+  const [askFor, setAskFor] = useState<{ kind: ModelKind; id: string } | null>(null)
+  const updateOne = useAppStore((s) => s.updateModelFromCivitai)
+  const insertWord = useAppStore((s) => s.insertPromptWord)
+  const [oneResult, setOneResult] = useState<{ id: string; result: string } | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState(ALL)
   const [folder, setFolder] = useState(ALL)
+  const [sort, setSort] = useState<Sort>('name')
   const [selected, setSelected] = useState<string | null>(null)
   const search = useRef<HTMLInputElement>(null)
+
+  async function runOne(target: { kind: ModelKind; id: string }): Promise<void> {
+    setOneResult({ id: target.id, result: 'running' })
+    setOneResult({ id: target.id, result: await updateOne(target.kind, target.id) })
+  }
 
   async function startUpdate(): Promise<void> {
     if (!consent) await setCivitaiEnabled(true)
     setAsking(false)
-    await updateFromCivitai()
+    if (askFor) {
+      const target = askFor
+      setAskFor(null)
+      await runOne(target)
+    } else {
+      await updateFromCivitai()
+    }
   }
 
   const items = useMemo<Item[]>(() => {
@@ -88,13 +128,15 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
         id: c.filename, key: c.title, name: c.name,
         folder: folderOf(c.filename), family: c.family, favorite: c.favorite ?? false, note: c.note ?? '',
         previewUrl: c.previewUrl ?? '', hash: c.sha256 ?? c.hash ?? null, loaded: catalog.loadedCheckpoint === c.title,
-        triggers: [], triggersEdited: false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null,
+        triggers: c.triggers ?? [], triggersEdited: c.triggersEdited ?? false, familyOverridden: c.familyOverridden ?? false, civitai: c.civitai ?? null,
+        addedAt: c.addedAt ?? null, releasedAt: c.releasedAt ?? null, uses: c.uses ?? 0, lastUsedAt: c.lastUsedAt ?? null,
       }))
     }
     return catalog.loras.map((l) => ({
       id: l.path, key: l.name, name: l.alias || l.name, folder: folderOf(l.path), family: l.baseFamily ?? null,
-      favorite: l.favorite ?? false, note: l.note ?? '', previewUrl: l.previewUrl ?? '', hash: null, loaded: false,
+      favorite: l.favorite ?? false, note: l.note ?? '', previewUrl: l.previewUrl ?? '', hash: l.hash ?? null, loaded: false,
       triggers: l.triggers ?? [], triggersEdited: l.triggersEdited ?? false, familyOverridden: false, civitai: l.civitai ?? null,
+      addedAt: l.addedAt ?? null, releasedAt: l.releasedAt ?? null, uses: l.uses ?? 0, lastUsedAt: l.lastUsedAt ?? null,
     }))
   }, [catalog, kind])
 
@@ -109,7 +151,15 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
     .filter((i) => (filter === ALL ? true : filter === FAVORITES ? i.favorite : i.family === filter))
     .filter((i) => folder === ALL || i.folder === folder)
     .filter((i) => needle === '' || `${i.folder}/${i.name}`.toLowerCase().includes(needle))
-    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name)), [items, filter, folder, needle])
+    .sort((a, b) => {
+      if (sort === 'name') return Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name)
+      const ka = sortKey(a, sort)
+      const kb = sortKey(b, sort)
+      if (ka === null && kb === null) return a.name.localeCompare(b.name)
+      if (ka === null) return 1
+      if (kb === null) return -1
+      return kb - ka || a.name.localeCompare(b.name)
+    }), [items, filter, folder, needle, sort])
 
   const current = items.find((i) => i.id === selected) ?? null
   useEffect(() => { search.current?.focus() }, [])
@@ -154,13 +204,13 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
           )}
           <IconButton label={t('models.close')} icon={<X size={20} />} onClick={onClose} />
         </div>
-        {asking && (
+        {(asking || askFor !== null) && (
           <div className={styles.consent} role="alertdialog" aria-label={t('civitai.consentTitle')}>
             <strong>{t('civitai.consentTitle')}</strong>
             <p>{t('civitai.consentBody')}</p>
             <div className={styles.consentActions}>
               <Button variant="primary" autoFocus onClick={() => void startUpdate()}>{t('civitai.consentAllow')}</Button>
-              <Button onClick={() => setAsking(false)}>{t('civitai.consentNo')}</Button>
+              <Button onClick={() => { setAsking(false); setAskFor(null) }}>{t('civitai.consentNo')}</Button>
             </div>
           </div>
         )}
@@ -178,6 +228,8 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onChange={(event) => setQuery(event.target.value)}
           />
           <Select label={t('models.family')} value={filter} options={filterOptions} onChange={setFilter} />
+          <Select label={t('models.sort')} value={sort} options={SORTS.map((value) => ({ value, label: t(`models.sort.${value}`) }))}
+            onChange={(value) => setSort(value as Sort)} />
           {folders.length > 1 && (
             <Select label={t('models.folder')} value={folder}
               options={[{ value: ALL, label: t('models.allFolders') }, ...folders.map((f) => ({ value: f, label: f }))]}
@@ -202,6 +254,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
                   <span className={styles.cardName}>{item.name}</span>
                   <span className={styles.cardMeta}>
                     {item.family && <span className={styles.chip}>{t(`family.${item.family}`)}</span>}
+                    {cardStat(item, sort) && <span className={styles.chip}>{cardStat(item, sort)}</span>}
                     {item.loaded && <span className={`${styles.chip} ${styles.chipLoaded}`}>{t('models.loaded')}</span>}
                     {kind === 'lora' && item.family && params && item.family !== params.family && (
                       <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.otherFamily', { family: t(`family.${item.family}`) })}</span>
@@ -228,8 +281,11 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
             onFavorite={(favorite) => void setFavorite(kind, current.id, favorite)}
             onNote={(note) => void setNote(kind, current.id, note)}
             onFamily={(family) => void setFamily(current.id, family)}
-            onTriggers={(triggers) => void setTriggers(current.id, triggers)}
+            onTriggers={(triggers) => void setTriggers(kind, current.id, triggers)}
             onOpenCivitai={() => void openOnCivitai(kind, current.id)}
+            onInsertWord={insertWord}
+            updateResult={oneResult?.id === current.id ? oneResult.result : null}
+            onUpdateOne={() => (consent ? void runOne({ kind, id: current.id }) : setAskFor({ kind, id: current.id }))}
           />
         ) : (
           <p className={styles.hint}>{t('models.select', { name: title })}</p>
@@ -258,9 +314,12 @@ type DetailsProps = {
   onFamily(family: Family | null): void
   onTriggers(triggers: string[] | null): void
   onOpenCivitai(): void
+  onInsertWord(word: string): void
+  onUpdateOne(): void
+  updateResult: string | null
 }
 
-function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai }: DetailsProps) {
+function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onFamily, onTriggers, onOpenCivitai, onInsertWord, onUpdateOne, updateResult }: DetailsProps) {
   const [noteDraft, setNoteDraft] = useState(item.note)
   const [word, setWord] = useState('')
   const detected = item.familyOverridden ? null : item.family
@@ -302,7 +361,7 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
           {detected && <span className={styles.hint}>{t('models.detectedFamily', { family: t(`family.${detected}`) })}</span>}
         </label>
       )}
-      {kind === 'lora' && (
+      {(
         <section className={styles.field}>
           <span className={styles.label}>{t('models.triggers')}</span>
           {item.triggers.length === 0 ? (
@@ -311,7 +370,8 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
             <ul className={styles.words}>
               {item.triggers.map((trigger) => (
                 <li key={trigger} className={styles.word}>
-                  <span>{trigger}</span>
+                  <button type="button" className={styles.wordText} title={t('lora.insertTrigger', { word: trigger })}
+                    aria-label={t('lora.insertTrigger', { word: trigger })} onClick={() => onInsertWord(trigger)}>{trigger}</button>
                   <button type="button" className={styles.wordRemove} aria-label={t('models.triggerRemove', { word: trigger })}
                     onClick={() => onTriggers(item.triggers.filter((w) => w !== trigger))}>
                     <X size={12} aria-hidden="true" />
@@ -343,13 +403,16 @@ function Details({ kind, item, primary, note, onPrimary, onFavorite, onNote, onF
           onBlur={() => { if (noteDraft.trim() !== item.note) onNote(noteDraft) }}
         />
       </label>
-      {item.civitai && (
-        <div className={styles.field}>
-          <span className={styles.label}>{t('civitai.on')}</span>
-          <span className={styles.hint}>{item.civitai.name}{item.civitai.baseModel ? ` · ${item.civitai.baseModel}` : ''}</span>
-          <Button onClick={onOpenCivitai}>{t('civitai.open')}</Button>
+      <div className={styles.field}>
+        <span className={styles.label}>{t('civitai.on')}</span>
+        {item.civitai && <span className={styles.hint}>{item.civitai.name}{item.civitai.baseModel ? ` · ${item.civitai.baseModel}` : ''}</span>}
+        <div className={styles.detailActions}>
+          {item.civitai && <Button onClick={onOpenCivitai}>{t('civitai.open')}</Button>}
+          <Button disabled={!item.hash || updateResult === 'running'} onClick={onUpdateOne}>{t('civitai.updateOne')}</Button>
         </div>
-      )}
+        {updateResult && updateResult !== 'running' && <span role="status" className={styles.hint}>{t(`civitai.one.${updateResult}` as MessageKey)}</span>}
+        {!item.hash && <span className={styles.hint}>{t('civitai.one.noHash')}</span>}
+      </div>
       <dl className={styles.facts}>
         <dt>{t('models.path')}</dt>
         <dd className="mono" title={item.id}>{item.id}</dd>

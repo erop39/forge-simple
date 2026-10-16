@@ -1,4 +1,4 @@
-import { ArrowUp, SlidersHorizontal, SquaresFour, X } from '@phosphor-icons/react'
+import { ArrowUp, SlidersHorizontal, SquaresFour, Stack, X } from '@phosphor-icons/react'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PROFILES, RATIOS, dimsForRatio } from '@shared/profiles'
 import type { GenerationParams } from '@shared/types'
@@ -130,6 +130,7 @@ export function PromptBar() {
   const removeImageSource = useAppStore((s) => s.removeImageSource)
   const selectCheckpoint = useAppStore((s) => s.selectCheckpoint)
   const openModelGallery = useAppStore((s) => s.openModelGallery)
+  const loraCount = useAppStore((s) => s.params?.loras.filter((l) => l.enabled).length ?? 0)
   const generate = useAppStore((s) => s.generate)
   const togglePanel = useAppStore((s) => s.togglePanel)
   const [negativeOpen, setNegativeOpen] = useState(false)
@@ -255,6 +256,14 @@ export function PromptBar() {
               icon={<SquaresFour size={20} />}
               onClick={() => openModelGallery('checkpoint')}
             />
+            <span className={styles.loraButton}>
+              <IconButton
+                label={loraCount > 0 ? t('models.openLorasCount', { n: loraCount }) : t('models.openLoras')}
+                icon={<Stack size={20} />}
+                onClick={() => openModelGallery('lora')}
+              />
+              {loraCount > 0 && <span className={`mono ${styles.loraCount}`} aria-hidden="true">{loraCount}</span>}
+            </span>
           </>
         ) : loading && <ModelsLoading />}
         <div className={styles.controls}>

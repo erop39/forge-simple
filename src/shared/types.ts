@@ -104,6 +104,8 @@ export interface OplogEntry {
 export interface CivitaiInfo {
   modelId: number; versionId: number; name: string; versionName: string; baseModel: string
   trainedWords: string[]; imageUrl: string | null; checkedAt: number
+  /** When the version was published on Civitai (ms); null when it did not say. Absent in answers stored before 2026-10-16. */
+  publishedAt?: number | null
 }
 export interface CivitaiProgress { running: boolean; done: number; total: number; found: number; paused: boolean }
 export type ModelKind = 'checkpoint' | 'lora'
@@ -118,6 +120,10 @@ export interface CheckpointInfo {
   civitai?: { url: string; name: string; baseModel: string } | null
   /** fnc-model://… ; answers 404 when Forge has no preview for it. */
   previewUrl?: string
+  /** For sorting: when the app first saw the file (ms; null: it was there before the app looked), the Civitai release date, and how often it was used. */
+  addedAt?: number | null; releasedAt?: number | null; uses?: number; lastUsedAt?: number | null
+  /** Trigger words: the user's own list, else Civitai's (checkpoints have none in the file). */
+  triggers?: string[]; triggersEdited?: boolean
 }
 export interface LoraInfo {
   name: string; alias?: string; path: string
@@ -129,6 +135,7 @@ export interface LoraInfo {
   triggersEdited?: boolean
   favorite?: boolean; note?: string; previewUrl?: string
   civitai?: { url: string; name: string; baseModel: string } | null
+  addedAt?: number | null; releasedAt?: number | null; uses?: number; lastUsedAt?: number | null
 }
 export interface ModuleInfo { name: string; filename: string }
 export interface Catalog { checkpoints: CheckpointInfo[]; modules: ModuleInfo[]; loras: LoraInfo[];

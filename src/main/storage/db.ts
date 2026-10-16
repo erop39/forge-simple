@@ -42,6 +42,8 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   settings TEXT NOT NULL, created_at INTEGER NOT NULL);`,
   // 7: what Civitai answered for a file (JSON; '{"missing":true,…}' when it does not know it).
   `ALTER TABLE model_meta ADD COLUMN civitai TEXT;`,
+  // 8: when the app first saw a file (0: it was already there at the first scan, so its real date is unknown).
+  `ALTER TABLE model_meta ADD COLUMN first_seen INTEGER;`,
 ]
 
 export function openDb(path: string): Db {

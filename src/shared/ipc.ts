@@ -110,7 +110,7 @@ export interface Api {
     /** null returns to the family detected from the name. */
     setFamily(checkpointFile: string, family: Family | null): Promise<void>
     /** null returns to the words found in the file's metadata. */
-    setTriggers(loraPath: string, triggers: string[] | null): Promise<void>
+    setTriggers(kind: ModelKind, id: string, triggers: string[] | null): Promise<void>
   }
   /**
    * Optional lookup of the library on civitai.com: only file SHA-256 hashes are sent, one request a second.
@@ -123,6 +123,8 @@ export interface Api {
     state(): Promise<CivitaiProgress>
     /** Opens the file's Civitai page in the system browser; error.notFound when it was not found there. */
     open(kind: ModelKind, id: string): Promise<void>
+    /** Looks one file up now (needs the same consent): found, unknown to Civitai, no hash to ask with, or Civitai busy. */
+    updateOne(kind: ModelKind, id: string): Promise<'found' | 'missing' | 'noHash' | 'busy'>
   }
   /** Named hires second passes; a name already taken (ignoring case) is error.presetNameTaken. */
   hiresPresets: {
@@ -214,7 +216,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

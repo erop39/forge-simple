@@ -68,17 +68,17 @@ test('the details panel marks a favorite, sets the family and saves a note on bl
 })
 
 test('LoRA: Add puts it into the stack once; other-family LoRA is flagged; trigger words are editable', async () => {
-  const setLoraTriggers = vi.fn(async () => undefined)
-  const { store } = withGallery('lora', { setLoraTriggers })
+  const setModelTriggers = vi.fn(async () => undefined)
+  const { store } = withGallery('lora', { setModelTriggers })
   expect(screen.getByText('Made for Anima')).toBeDefined()
   await userEvent.click(screen.getByRole('button', { name: 'Select detail' }))
   await userEvent.click(screen.getByRole('button', { name: en['models.add'] }))
   expect(store.getState().params?.loras).toEqual([{ name: 'detail', weight: 1, enabled: true }])
   expect(screen.getByRole('button', { name: en['models.added'] })).toHaveProperty('disabled', true)
   await userEvent.click(screen.getByRole('button', { name: 'Remove sharp' }))
-  expect(setLoraTriggers).toHaveBeenCalledWith('C:\\m\\lora\\detail.safetensors', ['skin'])
+  expect(setModelTriggers).toHaveBeenCalledWith('lora', 'C:\\m\\lora\\detail.safetensors', ['skin'])
   await userEvent.type(screen.getByPlaceholderText(en['models.triggerAdd']), 'new word{Enter}')
-  expect(setLoraTriggers).toHaveBeenCalledWith('C:\\m\\lora\\detail.safetensors', ['sharp', 'skin', 'new word'])
+  expect(setModelTriggers).toHaveBeenCalledWith('lora', 'C:\\m\\lora\\detail.safetensors', ['sharp', 'skin', 'new word'])
 })
 
 test('the stack: switch off, change weight is a number, insert a trigger once, remove, missing and other-family warnings', async () => {
@@ -140,4 +140,43 @@ test('with consent given the button starts at once; progress and Stop show while
   await userEvent.click(screen.getByRole('button', { name: 'Select detail' }))
   await userEvent.click(screen.getByRole('button', { name: en['civitai.open'] }))
   expect(openOnCivitai).toHaveBeenCalledWith('lora', String.raw`C:\m\lora\detail.safetensors`)
+})
+
+test('sorting by release date, use and recent addition puts known values first and shows them on the cards', async () => {
+  const dated: Catalog = { ...models, checkpoints: [
+    { ...models.checkpoints[0]!, addedAt: null, releasedAt: Date.parse('2026-01-01'), uses: 2, lastUsedAt: 5 },
+    { ...models.checkpoints[1]!, addedAt: Date.parse('2026-10-01'), releasedAt: Date.parse('2026-06-01'), uses: 9, lastUsedAt: 9 },
+    { ...models.checkpoints[2]!, addedAt: Date.parse('2026-10-10'), releasedAt: null, uses: 0, lastUsedAt: null },
+  ] }
+  renderWithStore(<ModelGalleryDialog />, 'sdxl', { catalog: dated, modelGallery: 'checkpoint' })
+  const order = (): string[] => within(screen.getByRole('list', { name: en['models.checkpointsTitle'] })).getAllByRole('listitem')
+    .map((li) => li.textContent!.match(/alpha|beta|gamma/)![0])
+  const pick = async (label: string): Promise<void> => {
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(en['models.sort']) }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: label }))
+  }
+  await pick(en['models.sort.released'])
+  expect(order()).toEqual(['beta', 'alpha', 'gamma'])
+  await pick(en['models.sort.used'])
+  expect(order()).toEqual(['beta', 'alpha', 'gamma'])
+  expect(screen.getByText('Used 9×')).toBeDefined()
+  await pick(en['models.sort.added'])
+  expect(order()).toEqual(['gamma', 'beta', 'alpha'])
+})
+
+test('a checkpoint shows Civitai trigger words that insert into the prompt, and a single file can be updated from its card', async () => {
+  const insertPromptWord = vi.fn()
+  const updateModelFromCivitai = vi.fn(async () => 'found' as const)
+  const withWords: Catalog = { ...models, checkpoints: [{ ...models.checkpoints[0]!, triggers: ['masterpiece style'] }, ...models.checkpoints.slice(1)] }
+  renderWithStore(<ModelGalleryDialog />, 'sdxl', {
+    catalog: withWords, modelGallery: 'checkpoint', insertPromptWord, updateModelFromCivitai,
+    settings: { serverUrl: 'http://forge.test', imagesDir: '', localUrl: '', civitaiEnabled: true },
+  })
+  await userEvent.click(screen.getByRole('button', { name: 'Select alpha' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Add "masterpiece style" to the prompt' }))
+  expect(insertPromptWord).toHaveBeenCalledWith('masterpiece style')
+  const buttons = screen.getAllByRole('button', { name: en['civitai.updateOne'] })
+  await userEvent.click(buttons[buttons.length - 1]!)
+  expect(updateModelFromCivitai).toHaveBeenCalledWith('checkpoint', String.raw`C:\m\sdxl\alpha.safetensors`)
+  expect(await screen.findByText(en['civitai.one.found'])).toBeDefined()
 })

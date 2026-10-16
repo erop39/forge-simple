@@ -1110,7 +1110,7 @@ describe('model marks', () => {
     await call('models:setNote', 'checkpoint', SDXL_FILE, '  my base  ')
     await call('models:setFamily', SDXL_FILE, 'qwen')
     await call('models:setFavorite', 'lora', LORA_PATH, true)
-    await call('models:setTriggers', LORA_PATH, ['my word', 'my word', ' other '])
+    await call('models:setTriggers', 'lora', LORA_PATH, ['my word', 'my word', ' other '])
     const before = mock.requests.length
     const catalog = (await call('catalog:get')) as Catalog
     expect(mock.requests.length).toBe(before)
@@ -1122,7 +1122,7 @@ describe('model marks', () => {
     })
     expect(oplog.list().some((e) => e.messageKey === 'log.checkpoint.familyChanged')).toBe(true)
     await call('models:setFamily', SDXL_FILE, null)
-    await call('models:setTriggers', LORA_PATH, null)
+    await call('models:setTriggers', 'lora', LORA_PATH, null)
     const reset = (await call('catalog:get')) as Catalog
     expect(reset.checkpoints.find((c) => c.filename === SDXL_FILE)).toMatchObject({ family: 'sdxl', familyOverridden: false })
     expect(reset.loras.find((l) => l.path === LORA_PATH)).toMatchObject({ triggers: ['1girl', 'detailed skin', 'sharp'], triggersEdited: false })
@@ -1134,8 +1134,9 @@ describe('model marks', () => {
     await expect(call('models:setFavorite', 'lora', LORA_PATH, 'yes')).rejects.toThrow('error.invalidParams')
     await expect(call('models:setNote', 'lora', LORA_PATH, 'x'.repeat(2001))).rejects.toThrow('error.invalidParams')
     await expect(call('models:setFamily', SDXL_FILE, 'nope')).rejects.toThrow('error.invalidParams')
-    await expect(call('models:setTriggers', LORA_PATH, [''])).rejects.toThrow('error.invalidParams')
-    await expect(call('models:setTriggers', LORA_PATH, 'a')).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setTriggers', 'lora', LORA_PATH, [''])).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setTriggers', 'lora', LORA_PATH, 'a')).rejects.toThrow('error.invalidParams')
+    await expect(call('models:setTriggers', 'other', LORA_PATH, ['a'])).rejects.toThrow('error.invalidParams')
   })
 
   test('an explicit catalog refresh forgets the "no preview" answers', async () => {
@@ -1197,6 +1198,27 @@ describe('civitai lookup', () => {
     await call('civitai:open', 'lora', LORA_PATH)
     expect(openedUrls).toEqual(['https://civitai.com/models/7?modelVersionId=70'])
     await expect(call('civitai:open', 'lora', 'C:\nope')).rejects.toThrow('error.notFound')
+  })
+
+  test('one file can be updated on its own: needs consent, reports found / unknown / no hash', async () => {
+    mock.respond('/sdapi/v1/loras', { json: [
+      { name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH, metadata: { sshs_model_hash: LORA_HASH } },
+      { name: 'style_anima', alias: 'style_anima', path: String.raw`C:orgemodelsLorastyle_anima.safetensors`, metadata: { sshs_model_hash: 'c'.repeat(64) } },
+      { name: 'nohash', alias: 'nohash', path: String.raw`C:orgemodelsLora
+ohash.safetensors`, metadata: {} },
+    ] })
+    civitaiAnswers.set(LORA_HASH, answer)
+    await call('catalog:get', true)
+    await expect(call('civitai:updateOne', 'lora', LORA_PATH)).rejects.toThrow('error.invalidParams')
+    await call('civitai:setEnabled', true)
+    expect(await call('civitai:updateOne', 'lora', LORA_PATH)).toBe('found')
+    expect(await call('civitai:updateOne', 'lora', String.raw`C:orgemodelsLorastyle_anima.safetensors`)).toBe('missing')
+    expect(await call('civitai:updateOne', 'lora', String.raw`C:orgemodelsLora
+ohash.safetensors`)).toBe('noHash')
+    await expect(call('civitai:updateOne', 'lora', 'C:\nope')).rejects.toThrow('error.notFound')
+    expect(civitaiAsked).toEqual([LORA_HASH, 'c'.repeat(64)])
+    const lora = ((await call('catalog:get')) as Catalog).loras.find((l) => l.path === LORA_PATH)!
+    expect(lora.triggers).toEqual(['civi word'])
   })
 
   test('switching it off is logged', async () => {

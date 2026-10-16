@@ -38,6 +38,7 @@ const api: Api = {
     cancel: () => invoke('civitai:cancel'),
     state: () => invoke('civitai:state'),
     open: (kind, id) => invoke('civitai:open', kind, id),
+    updateOne: (kind, id) => invoke('civitai:updateOne', kind, id),
   },
   hiresPresets: {
     list: () => invoke('hiresPresets:list'),
@@ -49,7 +50,7 @@ const api: Api = {
     setFavorite: (kind, id, favorite) => invoke('models:setFavorite', kind, id, favorite),
     setNote: (kind, id, note) => invoke('models:setNote', kind, id, note),
     setFamily: (file, family) => invoke('models:setFamily', file, family),
-    setTriggers: (path, triggers) => invoke('models:setTriggers', path, triggers),
+    setTriggers: (kind, id, triggers) => invoke('models:setTriggers', kind, id, triggers),
   },
   catalog: {
     get: (refresh) => invoke('catalog:get', refresh),
