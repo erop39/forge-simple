@@ -33,6 +33,15 @@ export function galleryItems(
   ]
 }
 
+/**
+ * The focused view: only what belongs to the jobs of the latest generation request (their tiles while they wait or run,
+ * and the images they made). A locked image has no job id and never belongs to it.
+ */
+export function focusItems(items: readonly GalleryItem[], batchJobIds: readonly number[]): GalleryItem[] {
+  const batch = new Set(batchJobIds)
+  return items.filter((item) => batch.has(item.kind === 'job' ? item.job.id : item.image.jobId))
+}
+
 /** Stable key of an item across renders. */
 export const itemKey = (item: GalleryItem): string =>
   item.kind === 'job' ? `job:${item.job.id}` : `image:${item.image.id}`

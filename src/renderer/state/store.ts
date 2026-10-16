@@ -77,6 +77,11 @@ export interface AppState {
   restartAsked: boolean
   /** The saved image whose Send to hires dialog is open. */
   hiresFor: number | null
+  /** Gallery view: false shows everything, true only the latest generation request (its jobs and their images). */
+  focusMode: boolean
+  /** Ids of the jobs the latest generation request created (this session only). */
+  batchJobIds: number[]
+  setFocusMode(on: boolean): void
   /** Which model gallery is open (checkpoints or LoRA), if any. */
   modelGallery: ModelKind | null
   /** The optional Civitai lookup of the library. */
@@ -238,6 +243,11 @@ const OFFLINE: ConnectionStatus = { state: 'offline', latencyMs: null, attempts:
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i])
+
+const FOCUS_KEY = 'fnc.focusMode'
+const readFocusMode = (): boolean => {
+  try { return localStorage.getItem(FOCUS_KEY) === '1' } catch { return false }
+}
 
 export function createAppStore(api: Api): StoreApi<AppState> {
   let initPromise: Promise<void> | null = null
@@ -625,6 +635,8 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       forgeUnhealthy: false,
       restartAsked: false,
       hiresFor: null,
+      focusMode: readFocusMode(),
+      batchJobIds: [],
       modelGallery: null,
       civitaiBrowser: null,
       civitai: { running: false, done: 0, total: 0, found: 0, paused: false },
@@ -718,8 +730,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         // Queued jobs raise no job:update; a job an event already delivered is newer than this copy.
         set((s) => ({
           lastError: null,
+          batchJobIds: created.map((j) => j.id),
           jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs },
         }))
+      },
+
+      setFocusMode(on) {
+        try { localStorage.setItem(FOCUS_KEY, on ? '1' : '0') } catch { /* the choice just does not outlive the session */ }
+        set({ focusMode: on })
       },
 
       async upscaleImage(id, sourceParams, upscaler, scale) {
@@ -736,7 +754,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         }
         const created = await attempt(() => api.jobs.enqueue(params))
         if (!created) return false
-        set((s) => ({ lastError: null, jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
+        set((s) => ({ lastError: null, batchJobIds: created.map((j) => j.id), jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
         return true
       },
 
@@ -1199,7 +1217,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         }
         const created = await attempt(() => api.jobs.enqueue(params))
         if (!created) return 'failed'
-        set((s) => ({ lastError: null, hiresFor: null, jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
+        set((s) => ({ lastError: null, hiresFor: null, batchJobIds: created.map((j) => j.id), jobs: { ...Object.fromEntries(fresh(created)), ...s.jobs } }))
         return 'queued'
       },
 

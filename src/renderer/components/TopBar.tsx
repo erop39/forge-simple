@@ -1,4 +1,4 @@
-import { Broom, GearSix, Scroll } from '@phosphor-icons/react'
+import { Broom, GearSix, Image, Scroll } from '@phosphor-icons/react'
 import { t } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { IconButton } from './ui/IconButton'
@@ -16,6 +16,8 @@ export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
   const logOpen = useAppStore((s) => s.logOpen)
   const toggleLog = useAppStore((s) => s.toggleLog)
   const clearUnfinished = useAppStore((s) => s.clearUnfinished)
+  const focusMode = useAppStore((s) => s.focusMode)
+  const setFocusMode = useAppStore((s) => s.setFocusMode)
   const unfinished = useAppStore((s) => Object.values(s.jobs).some((job) => job.status === 'failed' || job.status === 'interrupted'))
   return (
     <header className={styles.bar}>
@@ -28,11 +30,18 @@ export function TopBar({ onOpenServer }: { onOpenServer: () => void }) {
       <Resources onOpenServer={onOpenServer} />
       <SearchField />
       <IconButton
+        label={t('topbar.focus')}
+        icon={<Image size={20} weight={focusMode ? 'fill' : 'regular'} />}
+        aria-pressed={focusMode}
+        onClick={() => setFocusMode(!focusMode)}
+        className={`${styles.noDrag} ${styles.end}`}
+      />
+      <IconButton
         label={t('topbar.clearUnfinished')}
         icon={<Broom size={20} />}
         disabled={!unfinished}
         onClick={() => void clearUnfinished()}
-        className={`${styles.noDrag} ${styles.end}`}
+        className={styles.noDrag}
       />
       <LockButton className={styles.noDrag} />
       <IconButton

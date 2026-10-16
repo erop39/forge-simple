@@ -329,6 +329,7 @@ test('generate enqueues the params and tracks the new jobs', async () => {
   await store.getState().generate()
   expect(api.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'a red fox' }))
   expect(store.getState().jobs[7]?.status).toBe('queued')
+  expect(store.getState().batchJobIds).toEqual([7])
 })
 
 test('attaching a saved image keeps the prompt, disables hires and sends an img2img job', async () => {

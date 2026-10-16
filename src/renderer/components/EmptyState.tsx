@@ -34,6 +34,17 @@ export function NoResults({ onClear }: { onClear: () => void }) {
   )
 }
 
+/** The focused view has nothing to show yet: no generation was requested in this session. */
+export function FocusEmpty({ onShowAll }: { onShowAll: () => void }) {
+  return (
+    <section className={styles.empty}>
+      <h1 className={styles.title}>{t('focus.empty.title')}</h1>
+      <p className={styles.body}>{t('focus.empty.body')}</p>
+      <Button onClick={onShowAll}>{t('focus.showAll')}</Button>
+    </section>
+  )
+}
+
 /** Nothing generated yet. */
 export function GalleryEmpty() {
   return (

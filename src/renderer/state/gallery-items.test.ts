@@ -1,6 +1,6 @@
 import { defaultParams } from '@shared/profiles'
 import type { ImageRecord, Job, JobProgress, JobStatus } from '@shared/types'
-import { galleryItems, layoutColumns } from './gallery-items'
+import { focusItems, galleryItems, layoutColumns } from './gallery-items'
 
 const params = defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })
 const job = (id: number, status: JobStatus): Job => ({
@@ -69,4 +69,12 @@ test('layoutColumns gives the same result for the same input and clamps the coun
   const aspect = (s: string) => (s === 'a' ? 0.7 : 1.3)
   expect(layoutColumns(items, 2, aspect)).toEqual(layoutColumns(items, 2, aspect))
   expect(layoutColumns(items, 0, aspect)).toEqual([['a', 'b', 'c']])
+})
+
+test('the focused view keeps only the tiles and images of the latest request', () => {
+  const items = galleryItems({ 5: job(5, 'running'), 6: job(6, 'queued'), 7: job(7, 'failed') }, {}, [image(4), image(3), image(5)], 1)
+  expect(label(focusItems(items, [5, 6]))).toEqual(['job5', 'job6', 'img5'])
+  expect(focusItems(items, [])).toEqual([])
+  // A locked image has job id 0 and is never part of a request.
+  expect(focusItems([{ kind: 'image', image: { ...image(9), jobId: 0, locked: true } }], [9])).toEqual([])
 })

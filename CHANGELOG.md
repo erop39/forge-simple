@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Focused gallery view: a button in the top bar (remembered between runs) shows only the results of your latest generation request, that is its tiles while they wait or run and the images they made, so other previews do not distract. The whole gallery is one click away (also from the empty focused view); a search always looks through everything.
 - Settings backup in the server dialog: Export settings writes one versioned JSON file (servers, settings presets, hires and negative presets, hand-set families, own trigger words, family defaults, upscaler choices, log retention; never images, jobs, tags, the log, the lock password or Civitai consent). Import Settings checks the whole file, shows what it would add, and then adds it in one step: taken names get "(imported)", servers with a known address and anything you already set stay as they are. A damaged file or an unknown version is refused whole.
 - A Back button in the Civitai browser returns to the model library it was opened from.
 

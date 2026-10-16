@@ -688,3 +688,17 @@ describe('selection and batch actions', () => {
     expect(removeImageTags).toHaveBeenCalledWith([9, 8], ['night'])
   })
 })
+
+test('the focused view shows only the latest request, says so when there is none yet, and can show everything again', async () => {
+  sizeGallery(1000, 700)
+  const { store } = renderWithStore(<Gallery />, 'sdxl', {
+    images: [image(4), image(3), image(2), image(1)], jobs: { 5: job(5, 'queued') }, focusMode: true, batchJobIds: [],
+  })
+  expect(screen.getByText(en['focus.empty.title'])).toBeDefined()
+  expect(cellCount()).toBe(0)
+  act(() => store.setState({ batchJobIds: [5, 3] }))
+  expect(cellCount()).toBe(2)
+  await userEvent.click(screen.queryByRole('button', { name: en['focus.showAll'] }) ?? document.body)
+  act(() => store.getState().setFocusMode(false))
+  expect(cellCount()).toBe(5)
+})

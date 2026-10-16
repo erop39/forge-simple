@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { t } from '../i18n/t'
-import { galleryItems, itemKey, type GalleryItem } from '../state/gallery-items'
+import { focusItems, galleryItems, itemKey, type GalleryItem } from '../state/gallery-items'
 import { isSearching } from '../state/store'
 import { neighbour, placeItems, visibleSlice, type Direction, type Placed } from '../state/masonry'
 import { useAppStore } from '../state/StoreProvider'
 import { useToday } from '../state/use-today'
-import { GalleryEmpty, NoResults } from './EmptyState'
+import { FocusEmpty, GalleryEmpty, NoResults } from './EmptyState'
 import { ImageTile } from './ImageTile'
 import { ImageViewer } from './ImageViewer'
 import { JobTile } from './JobTile'
@@ -74,6 +74,11 @@ export function Gallery() {
   const clearSelection = useAppStore((s) => s.clearSelection)
   const [failedCount, setFailedCount] = useState(0)
   const loadMoreImages = useAppStore((s) => s.loadMoreImages)
+  const focus = useAppStore((s) => s.focusMode)
+  const batchJobIds = useAppStore((s) => s.batchJobIds)
+  const setFocusMode = useAppStore((s) => s.setFocusMode)
+  // A search always looks through everything; the focused view is for browsing results of the latest request.
+  const focused = focus && !searching
   const viewRequest = useAppStore((s) => s.viewRequest)
   const today = useToday()
   const clearViewRequest = useAppStore((s) => s.clearViewRequest)
@@ -111,9 +116,12 @@ export function Gallery() {
   const activeServerId = servers.length === 0 ? undefined : (servers.find((s) => s.active)?.id ?? null)
   const items = useMemo(
     // A search shows saved images only: the queue is not part of its results.
-    () => galleryItems(searching ? {} : jobs, searching ? {} : progress, images, activeServerId)
-      .filter((i) => i.kind !== 'image' || !hidden.has(i.image.id)),
-    [jobs, progress, images, activeServerId, hidden, searching],
+    () => {
+      const all = galleryItems(searching ? {} : jobs, searching ? {} : progress, images, activeServerId)
+        .filter((i) => i.kind !== 'image' || !hidden.has(i.image.id))
+      return focused ? focusItems(all, batchJobIds) : all
+    },
+    [jobs, progress, images, activeServerId, hidden, searching, focused, batchJobIds],
   )
   // The viewer pages through the images it can show: a locked tile has nothing to open.
   const visibleImages = useMemo(
@@ -213,9 +221,9 @@ export function Gallery() {
   // Older images page in when the bottom of the rendered band is less than a screen from the end. A page
   // that failed changes nothing here, so it is retried on the next scroll rather than in a loop.
   useEffect(() => {
-    if (exhausted || images.length === 0) return
+    if (exhausted || images.length === 0 || focused) return
     if (height - (scrollTop + 2 * viewport.height) < viewport.height) void loadMoreImages()
-  }, [scrollTop, viewport.height, height, exhausted, images.length, loadMoreImages])
+  }, [scrollTop, viewport.height, height, exhausted, images.length, loadMoreImages, focused])
 
   /** Focuses the tile's focus target and scrolls it into view; false when its tile is not in the DOM. */
   const focusTile = (key: string): boolean => {
@@ -267,7 +275,8 @@ export function Gallery() {
   const unlock = (): void => openLockDialog(hasPassword ? 'open' : 'set')
   const serverName = (id: number): string | null => servers.find((s) => s.id === id)?.name ?? null
 
-  const empty = items.length === 0 && hasParams && hidden.size === 0 && !searching
+  const focusEmpty = focused && items.length === 0 && hasParams
+  const empty = items.length === 0 && hasParams && hidden.size === 0 && !searching && !focused
   const noResults = items.length === 0 && searching
   const renderTile = (item: GalleryItem, tabStop: boolean) =>
     item.kind === 'job' ? (
@@ -307,6 +316,8 @@ export function Gallery() {
         )}
         {noResults ? (
           <NoResults onClear={clearQuery} />
+        ) : focusEmpty ? (
+          <FocusEmpty onShowAll={() => setFocusMode(false)} />
         ) : empty ? (
           <GalleryEmpty />
         ) : (

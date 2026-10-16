@@ -95,6 +95,9 @@ export const en = {
   'viewer.seconds': '{n} s',
   'viewer.loras': 'LoRAs',
 
+  'focus.empty.title': 'Nothing from the latest generation yet',
+  'focus.empty.body': 'This view shows only the results of your latest generation request. Generate something, or show the whole gallery.',
+  'focus.showAll': 'Show the whole gallery',
   'empty.gallery.title': 'Your first image starts here',
   'empty.gallery.body': 'Write a prompt below and press Ctrl+Enter.',
 
@@ -150,6 +153,7 @@ export const en = {
   'forge.unhealthyNoRestart': 'Forge keeps failing. Restart it on the home PC, or add --api-server-stop to COMMANDLINE_ARGS in webui-user.bat so this app can restart it.',
 
   'topbar.settings': 'Settings',
+  'topbar.focus': 'Show only the latest generation',
   'topbar.clearUnfinished': 'Clear all failed and interrupted',
   'tags.title': 'Tags',
   'tags.add': 'Add a tag',
