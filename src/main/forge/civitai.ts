@@ -182,7 +182,7 @@ export async function browseCivitai(
 /** A small preview of a Civitai image as a data URL (https civitai.com only, at most 400 KB); null on any failure. */
 export async function fetchThumb(url: string, doFetch: typeof fetch = fetch): Promise<string | null> {
   if (!isCivitaiImage(url)) return null
-  const small = url.replace(/\/width=\d+\//, '/width=320/')
+  const small = url.replace(/\/(?:width=\d+|original=true)\//, '/width=320/')
   try {
     const res = await doFetch(small, { signal: AbortSignal.timeout(15_000) })
     const type = res.headers.get('content-type') ?? ''

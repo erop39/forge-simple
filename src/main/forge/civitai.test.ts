@@ -1,4 +1,4 @@
-import { browseCivitai, CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseLatest, parseVersion } from './civitai'
+import { browseCivitai, fetchThumb, CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseLatest, parseVersion } from './civitai'
 import { createCivitaiUpdater, type UpdaterItem } from './civitai-updater'
 
 const HASH = 'a'.repeat(64)
@@ -129,4 +129,13 @@ test('browsing: the newest version of each model is kept, and a date sort stops 
   expect(popular.next).toBe('n')
   const busy = (async () => new Response('', { status: 429 })) as typeof fetch
   await expect(browseCivitai(q, { fetch: busy, now: () => now })).rejects.toBeInstanceOf(CivitaiBusyError)
+})
+
+test('thumbnails ask Civitai for a small size, whether the URL carries a width or original=true', async () => {
+  const asked: string[] = []
+  const fetchFn = (async (u: RequestInfo | URL) => { asked.push(String(u)); return new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } }) }) as typeof fetch
+  expect(await fetchThumb('https://image.civitai.com/k/u/original=true/1.jpeg', fetchFn)).toMatch(/^data:image\/jpeg;base64,/)
+  await fetchThumb('https://image.civitai.com/k/u/width=450/1.jpeg', fetchFn)
+  expect(asked).toEqual(['https://image.civitai.com/k/u/width=320/1.jpeg', 'https://image.civitai.com/k/u/width=320/1.jpeg'])
+  expect(await fetchThumb('https://evil.example/x.jpeg', fetchFn)).toBeNull()
 })
