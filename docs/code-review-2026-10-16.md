@@ -4,26 +4,32 @@ Three read-only reviews on Opus (commit `8272a1d`, tag `ckpt-20261016-28`), spli
 B = Forge communication, queue and generation; C = renderer. Findings are the reviewers' claims, each checked by them against
 the code but **not yet reproduced by us**; verify before fixing. Status column: open until a commit fixes it.
 
+## Progress
+
+Fixed on 2026-10-16, each reproduced by a test first: C1, C2, C3, A1, A2, B1, B2, B6.
+**Still open (do these next, in this order): B3, B4, B5**, then triage the Minor list (fix or move to the backlog in `docs/ROADMAP.md`).
+Hints: B4 and B5 are both in `src/main/forge/catalog.ts` (store the fetch seq together with the cached catalog; bind the server id when a fetch starts, drop late results of a replaced catalog; `noteSeen` in `src/main/index.ts` uses the active server at call time). B3 is in `src/main/queue/runner.ts` (`checkParts` while `catalog.lorasLoading`: pause the job instead of failing it).
+
 ## Critical
 
 | # | Area | Finding | Where | Status |
 |---|---|---|---|---|
-| C1 | Renderer | "Send to hires" without a catalog (Forge offline or still loading) crashes the whole window: a selector returns a new `[]` every call, so React loops ("Maximum update depth exceeded"); there is no ErrorBoundary. The same array in the effect deps refetches details and resets the hires settings being edited when the catalog is replaced. | `HiresDialog.tsx:38,60` | open |
+| C1 | Renderer | "Send to hires" without a catalog (Forge offline or still loading) crashes the whole window: a selector returns a new `[]` every call, so React loops ("Maximum update depth exceeded"); there is no ErrorBoundary. The same array in the effect deps refetches details and resets the hires settings being edited when the catalog is replaced. | `HiresDialog.tsx:38,60` | fixed (test first; plus a top-level ErrorBoundary) |
 
 ## Important
 
 | # | Area | Finding | Where | Status |
 |---|---|---|---|---|
-| B1 | Queue | The stall detector can throw away a finished image: on a slow VPN link Forge reports idle (`job` '') while the large response is still downloading; after 45 s the job is aborted as `stalled`. Fix: stop judging once response headers arrived. | `runner.ts:428-437` | open |
-| B2 | Client | Undici's default 300 s headers timeout cuts every generation slower than 5 minutes (classified as `network`; Forge keeps generating). `EXTRAS_TIMEOUT_MS` and the 600 s LoRA timeout are unreachable. Fix: a dispatcher with `headersTimeout: 0, bodyTimeout: 0` for generation and LoRA requests. | `client.ts:246` | open |
+| B1 | Queue | The stall detector can throw away a finished image: on a slow VPN link Forge reports idle (`job` '') while the large response is still downloading; after 45 s the job is aborted as `stalled`. Fix: stop judging once response headers arrived. | `runner.ts:428-437` | fixed (test first; client reports response headers, the stall detector stops judging then) |
+| B2 | Client | Undici's default 300 s headers timeout cuts every generation slower than 5 minutes (classified as `network`; Forge keeps generating). `EXTRAS_TIMEOUT_MS` and the 600 s LoRA timeout are unreachable. Fix: a dispatcher with `headersTimeout: 0, bodyTimeout: 0` for generation and LoRA requests. | `client.ts:246` | fixed (test first; undici long-request agent, new dependency) |
 | B3 | Queue/catalog | Queued jobs with LoRA fail permanently as `missingParts` while the LoRA list is still loading (`lorasLoading: true`, no LoRA). Fix: pause (or skip the LoRA check) while it loads. | `runner.ts:284-291`, `catalog.ts` | open |
 | B4 | Catalog | A late LoRA list can be applied to the previous cached catalog and then `lorasLoading` stays true forever (microtask order against `cached = c`). Fix: store the fetch seq with the cached catalog. | `catalog.ts:167-178,236,264` | open |
 | B5 | Catalog | After a server switch the old server's late LoRA list (and a late `noteSeen`) is recorded under the new server: phantom `model_meta` rows, wrong "recently added", spurious `catalog:updated`. Fix: bind the server id when the fetch starts, or drop late results from a replaced catalog. | `catalog.ts:157-160,236`, `index.ts:142-145` | open |
-| B6 | Families | `detectFamily` matches `anima` inside `animagine…`, `animal…`, `animation…` (and `lumina` inside `illuminati…`): popular SDXL checkpoints get the anima profile. Fix: match whole tokens. | `shared/profiles.ts:61` | open |
-| A1 | Lock | Hiding an image does not hide its upscaled copies (they carry its infotext and show the same picture) nor img2img results made earlier. Fix: hide descendants too (or warn). | `register.ts:1092-1109`, `repos.ts:428` | open |
-| A2 | Archive | A failure after the gallery removal has started (e.g. SQLITE_BUSY) wipes the verified archive folder, losing the images already removed. Fix: end the cleanup scope right after `repos.archives.add`; removal errors only count as `notRemoved`. | `archive.ts:128-138` | open |
-| C2 | Renderer | The archive dialog lives inside `SelectionBar`, which unmounts when `image:removed` events empty the selection, so the result (or a late error) is never shown. Fix: lift the dialog out and snapshot the ids. | `SelectionBar.tsx:40`, `Gallery.tsx:361` | open |
-| C3 | Renderer | `image:removed` returns fresh arrays for every event even when the image is not loaded: delete-all or a big archive re-lays out the gallery once per image. Fix: ignore unknown ids; ideally a batched event. | `store.ts:478` | open |
+| B6 | Families | `detectFamily` matches `anima` inside `animagine…`, `animal…`, `animation…` (and `lumina` inside `illuminati…`): popular SDXL checkpoints get the anima profile. Fix: match whole tokens. | `shared/profiles.ts:61` | fixed (test first; whole-word matching) |
+| A1 | Lock | Hiding an image does not hide its upscaled copies (they carry its infotext and show the same picture) nor img2img results made earlier. Fix: hide descendants too (or warn). | `register.ts:1092-1109`, `repos.ts:428` | fixed (test first; hiding also hides descendants) |
+| A2 | Archive | A failure after the gallery removal has started (e.g. SQLITE_BUSY) wipes the verified archive folder, losing the images already removed. Fix: end the cleanup scope right after `repos.archives.add`; removal errors only count as `notRemoved`. | `archive.ts:128-138` | fixed (test first) |
+| C2 | Renderer | The archive dialog lives inside `SelectionBar`, which unmounts when `image:removed` events empty the selection, so the result (or a late error) is never shown. Fix: lift the dialog out and snapshot the ids. | `SelectionBar.tsx:40`, `Gallery.tsx:361` | fixed (test first; dialog now lives in App) |
+| C3 | Renderer | `image:removed` returns fresh arrays for every event even when the image is not loaded: delete-all or a big archive re-lays out the gallery once per image. Fix: ignore unknown ids; ideally a batched event. | `store.ts:478` | fixed (test first) |
 
 ## Minor
 

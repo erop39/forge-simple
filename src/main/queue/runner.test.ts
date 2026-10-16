@@ -63,9 +63,11 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
   const signals: AbortSignal[] = []
   const health: boolean[] = []
   const state = { unloadFails: false, restart: 'restarting' as RestartOutcome | Error, clientOverride: null as unknown, pingOk: true, lockOpen: false, progress: progressAt(0, null) as ProgressResponse | Error, catalog: opts.catalog ?? catalogWith([CKPT, CKPT2]) as Catalog | Error }
-  const generate = (_body: unknown, signal?: AbortSignal) => {
+  const hooks: ({ onHeaders?(): void } | undefined)[] = []
+  const generate = (_body: unknown, signal?: AbortSignal, requestHooks?: { onHeaders?(): void }) => {
     const d = deferred<GenerationResponse>()
     gens.push(d)
+    hooks.push(requestHooks)
     if (signal) {
       signals.push(signal)
       signal.addEventListener('abort', () => {
@@ -146,7 +148,7 @@ function setup(opts: { catalog?: Catalog; autoComplete?: boolean; abortResolves?
   }
   const started = (n = 1) => vi.waitFor(() => expect(client.txt2img).toHaveBeenCalledTimes(n))
 
-  return { health, repos, oplog, client, gens, signals, sleeps, images, runner, events, updates, progress, added, state, at, poll, started }
+  return { health, repos, oplog, client, gens, hooks, signals, sleeps, images, runner, events, updates, progress, added, state, at, poll, started }
 }
 
 
@@ -171,7 +173,7 @@ test('img2img dispatches from a managed source and keeps its job type on retry',
   expect(job.type).toBe('img2img')
   expect(await h.runner.tick()).toBe('ran')
   expect(h.client.txt2img).not.toHaveBeenCalled()
-  expect(h.client.img2img).toHaveBeenCalledWith(expect.objectContaining({ init_images: ['cG5n'], resize_mode: 1 }), expect.any(AbortSignal))
+  expect(h.client.img2img).toHaveBeenCalledWith(expect.objectContaining({ init_images: ['cG5n'], resize_mode: 1 }), expect.any(AbortSignal), expect.any(Object))
   expect(h.repos.jobs.get(job.id)?.status).toBe('done')
   expect(JSON.stringify(h.oplog.list())).not.toContain('cG5n')
   const failed = h.repos.jobs.insert(job.serverId, 'img2img', imgParams(source.id))
@@ -282,7 +284,7 @@ test('upscale runs the extras request and links its result to the source', async
   } }))[0]!
   expect(job.type).toBe('upscale')
   expect(await h.runner.tick()).toBe('ran')
-  expect(h.client.upscale).toHaveBeenCalledWith(expect.objectContaining({ image: 'cG5n', upscaling_resize: 2 }), expect.any(AbortSignal))
+  expect(h.client.upscale).toHaveBeenCalledWith(expect.objectContaining({ image: 'cG5n', upscaling_resize: 2 }), expect.any(AbortSignal), expect.any(Object))
   expect(h.repos.images.list({ limit: 1 })[0]?.sourceImageId).toBe(source.id)
 })
 
@@ -978,6 +980,22 @@ describe('review fixes', () => {
     expect(h.signals[0]!.aborted).toBe(true)
     expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'failed', error: { code: 'stalled' } })
     expect(h.oplog.list().map((e) => e.messageKey)).toContain('log.error.stalled')
+  })
+
+  test('once the answer has started to arrive an idle Forge is not a stall: a slow link still delivers the finished image', async () => {
+    const h = setup({ idleStallMs: 10_000 })
+    const [job] = h.runner.enqueue(params()) as [Job]
+    const t = h.runner.tick()
+    await h.started()
+    await h.poll(3, 1000, null, 0, 'task(x)')
+    h.hooks[0]?.onHeaders?.() // Forge finished and began sending the (large) response
+    await h.poll(0, 2000, null, 1, '')
+    await h.poll(0, 20_000, null, 1, '')
+    await h.poll(0, 60_000, null, 1, '')
+    expect(h.signals[0]!.aborted).toBe(false)
+    h.gens[0]!.resolve(response())
+    await t
+    expect(h.repos.jobs.get(job.id)).toMatchObject({ status: 'done' })
   })
 
   test('a Forge that does not name its job, or that is busy, is never judged idle; the tile is warned after 30 s without movement', async () => {

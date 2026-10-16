@@ -384,14 +384,17 @@ export function createRunner(deps: RunnerDeps): {
     let lastJobNo = 0
     let settled = false
     let sawRunning = false
+    // Once Forge starts sending its answer an idle Forge is expected (it has finished): only the download is left.
+    let answered = false
+    const hooks = { onHeaders: () => { answered = true } }
     let idleSince: number | null = null
     let lastMoveAt = deps.now()
     let lastStep = -1
 
     const request: Promise<Outcome> = (async () => job.type === 'upscale'
-      ? client.upscale(body as ReturnType<typeof buildUpscaleBody>, a.controller.signal)
-      : job.type === 'img2img' ? client.img2img(body as ReturnType<typeof buildImg2ImgBody>, a.controller.signal)
-        : client.txt2img(body as ReturnType<typeof buildTxt2ImgBody>, a.controller.signal))().then(
+      ? client.upscale(body as ReturnType<typeof buildUpscaleBody>, a.controller.signal, hooks)
+      : job.type === 'img2img' ? client.img2img(body as ReturnType<typeof buildImg2ImgBody>, a.controller.signal, hooks)
+        : client.txt2img(body as ReturnType<typeof buildTxt2ImgBody>, a.controller.signal, hooks))().then(
       (value): Outcome => { settled = true; return { ok: true, value } },
       (error: unknown): Outcome => { settled = true; return { ok: false, error } },
     )
@@ -426,7 +429,7 @@ export function createRunner(deps: RunnerDeps): {
             }
             if (prog.state.sampling_step !== lastStep) { lastStep = prog.state.sampling_step; lastMoveAt = now }
             // Forge says it runs nothing, yet our request has not been answered: the answer is not coming.
-            if (prog.state.job !== null) {
+            if (prog.state.job !== null && !answered) {
               if (prog.state.job !== '') { sawRunning = true; idleSince = null } else if (sawRunning) {
                 idleSince ??= now
                 if (now - idleSince >= (deps.idleStallMs ?? IDLE_STALL_MS) && !settled) {

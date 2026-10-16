@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Hiding an image also hides its upscaled copies and the img2img results made from it (they showed the same picture and prompt behind the lock); unhiding stays per image.
+- A failure while archived images leave the gallery no longer deletes the verified archive (such images stay in the gallery and are counted as not removed); the archive dialog now lives in the app, so it shows its result even though the archived images leave the selection while it works.
+- Family detection matches whole words: animagine, animal, animation and illuminati checkpoints are no longer taken for Anima or Lumina.
+- Generations and the LoRA list are no longer cut off after five minutes by the HTTP library's own timeouts (a long agent without headers/body timeouts is used; new dependency `undici`); and a finished image is no longer thrown away as "stalled" when Forge reports idle while a large answer is still downloading over a slow link.
 - Send to hires no longer crashes the window when Forge is offline or the model list has not loaded (a selector returned a new empty list on every render); the form being edited is no longer reset when the model list is replaced under it; and a crash while rendering now shows a message with a Reload button instead of a blank window.
 - Deleting or archiving many images no longer re-lays out the gallery once per image: an image-removed event for an image that is not loaded changes nothing.
 - Start-up no longer hangs on a slow LoRA list: Forge can take minutes to list LoRA (it reads new files), so the catalog is now handed out after at most 8 s without them, the prompt bar becomes usable, the LoRA gallery says Forge is still listing, and the LoRA appear by themselves when the list arrives (the wait for it is 10 minutes instead of 3).

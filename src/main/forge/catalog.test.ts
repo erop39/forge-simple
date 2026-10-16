@@ -236,7 +236,7 @@ test('a slow LoRA list does not hold the catalog back: it is handed out at once 
 })
 
 test('a LoRA list that arrives after a newer fetch started is ignored', async () => {
-  mock.respond('/sdapi/v1/loras', { delayMs: 200, json: [{ name: 'old', alias: 'old', path: 'C:/old.safetensors', metadata: {} }] })
+  mock.respond('/sdapi/v1/loras', { delayMs: 500, json: [{ name: 'old', alias: 'old', path: 'C:/old.safetensors', metadata: {} }] })
   const updated = vi.fn()
   const cat = createCatalog({
     client: () => createForgeClient(mock.url), familyOverride: () => null, oplog: log, now: () => 1234, lorasWaitMs: 20, onUpdated: updated,
@@ -245,7 +245,7 @@ test('a LoRA list that arrives after a newer fetch started is ignored', async ()
   mock.respond('/sdapi/v1/loras', { json: [{ name: 'fresh', alias: 'fresh', path: 'C:/fresh.safetensors', metadata: {} }] })
   const refreshed = await cat.get(true)
   expect(refreshed.loras.map((l) => l.name)).toEqual(['fresh'])
-  await new Promise((resolve) => setTimeout(resolve, 350))
+  await new Promise((resolve) => setTimeout(resolve, 900))
   expect((await cat.get()).loras.map((l) => l.name)).toEqual(['fresh'])
   expect(updated).not.toHaveBeenCalled()
 })

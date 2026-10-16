@@ -30,7 +30,17 @@ taken, or something starts waiting on the user. The plan for the coming versions
 
 ## Open review findings
 
-The whole-project review of 2026-10-16 (`docs/code-review-2026-10-16.md`) found 1 Critical, 9 Important and about 30 Minor issues, none fixed yet. Fix the Critical and Important ones before the 0.3.0 release pass.
+The whole-project review of 2026-10-16 (`docs/code-review-2026-10-16.md`) found 1 Critical, 9 Important and about 30 Minor issues. **Fixed (each reproduced by a test first): C1, C2, C3, A1, A2, B1, B2, B6.**
+
+**To do next (work continues on another PC):**
+
+1. B3 — queued jobs with LoRA fail as `missingParts` while the LoRA list is still loading (`runner.ts` with `checkParts`: pause the job while `catalog.lorasLoading`).
+2. B4 — a late LoRA list can land on the previous cached catalog and leave `lorasLoading` stuck (`catalog.ts`: keep the fetch seq with the cached catalog).
+3. B5 — a server switch records the old server's late LoRA list (`noteSeen`, `catalog:updated`) under the new server (`catalog.ts`, `index.ts`: bind the server id when the fetch starts, drop late results of a replaced catalog).
+4. Triage the Minor findings of that document: fix, or move to the backlog in `docs/ROADMAP.md`.
+5. Then the 0.3.0 release pass (see the roadmap).
+
+On the other PC run `pnpm install` first: this work added the dependency `undici` (the long-request agent in `src/main/forge/client.ts`).
 
 ## Waiting on the user
 

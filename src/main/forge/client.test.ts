@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { Agent } from 'undici'
 import { startMockForge, type MockForge } from '../../../tools/mock-forge/server'
 import {
   DEFAULT_LIST_TIMEOUT_MS,
@@ -6,6 +7,7 @@ import {
   DEFAULT_PING_TIMEOUT_MS,
   ForgeError,
   createForgeClient,
+  longRequestAgent,
   normalizeBaseUrl,
   type Txt2ImgBody,
 } from './client'
@@ -369,4 +371,43 @@ describe('server control', () => {
     mock.respond('/sdapi/v1/server-restart', { status: 500, json: { detail: 'boom' } })
     await expectForgeError(createForgeClient(mock.url).restartServer(), { kind: 'http', status: 500 })
   })
+})
+
+describe('long requests are not cut by the HTTP library\'s own timeouts', () => {
+  /** A server that sends its response headers only after `delayMs`, as Forge does while it generates. */
+  async function slowHeaders(delayMs: number): Promise<{ url: string; close(): Promise<void> }> {
+    const server = createServer((_req, res) => {
+      setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ images: ['AAAA'], info: '{}' })) }, delayMs)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as { port: number }
+    return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }) }
+  }
+
+  test('generation and LoRA requests use the shared agent without a headers or body timeout', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    try {
+      await createForgeClient(mock.url).txt2img(body).catch(() => undefined)
+      await createForgeClient(mock.url).loras().catch(() => undefined)
+      await createForgeClient(mock.url).models().catch(() => undefined)
+      const dispatchers = spy.mock.calls.map((c) => (c[1] as { dispatcher?: unknown } | undefined)?.dispatcher)
+      expect(dispatchers[0]).toBe(longRequestAgent)
+      expect(dispatchers[1]).toBe(longRequestAgent)
+      expect(dispatchers[2]).toBeUndefined()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test('an agent with a short headers timeout cuts a slow answer, the long-request agent does not', async () => {
+    const slow = await slowHeaders(2500) // undici's timers tick once a second: shorter limits are not exact
+    try {
+      await expect(createForgeClient(slow.url, { dispatcher: new Agent({ headersTimeout: 1000 }) }).txt2img(body))
+        .rejects.toMatchObject({ kind: 'network' })
+      await expect(createForgeClient(slow.url, { dispatcher: new Agent({ headersTimeout: 0, bodyTimeout: 0 }) }).txt2img(body))
+        .resolves.toBeDefined()
+    } finally {
+      await slow.close()
+    }
+  }, 15_000)
 })

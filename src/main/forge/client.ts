@@ -1,3 +1,4 @@
+import { Agent, type Dispatcher } from 'undici'
 import type { RestartOutcome } from '@shared/types'
 import type { ForgeStats, MemoryMetrics } from '@shared/types'
 import { parseMemory } from './resources'
@@ -5,6 +6,13 @@ import { parseStats } from './stats'
 
 export const DEFAULT_LIST_TIMEOUT_MS = 10_000
 export const DEFAULT_PING_TIMEOUT_MS = 5_000
+/**
+ * Generation and LoRA-list requests can take longer than the five minutes after which Node's fetch gives up waiting for response
+ * headers (and between body chunks). This agent has neither timeout; the app's own timeouts, the watchdog and the stall detector
+ * decide when to give up.
+ */
+export const longRequestAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0 })
+
 export const DEFAULT_LORAS_TIMEOUT_MS = 600_000
 export const DEFAULT_CONTROL_TIMEOUT_MS = 60_000
 
@@ -86,6 +94,9 @@ export interface GenerationResponse {
   info: string
 }
 
+/** Told when a long request's response headers arrive: Forge has finished and the (large) body is being sent. */
+export interface RequestHooks { onHeaders?(): void }
+
 export interface ProgressResponse {
   progress: number
   eta_relative: number
@@ -121,9 +132,9 @@ const DROPPED = /other side closed|socket hang up|ECONNRESET|EPIPE|terminated|UN
 
 export interface ForgeClient {
   ping(): Promise<number>
-  txt2img(body: Txt2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
-  img2img(body: Img2ImgBody, signal?: AbortSignal): Promise<GenerationResponse>
-  upscale(body: UpscaleBody, signal?: AbortSignal): Promise<GenerationResponse>
+  txt2img(body: Txt2ImgBody, signal?: AbortSignal, hooks?: RequestHooks): Promise<GenerationResponse>
+  img2img(body: Img2ImgBody, signal?: AbortSignal, hooks?: RequestHooks): Promise<GenerationResponse>
+  upscale(body: UpscaleBody, signal?: AbortSignal, hooks?: RequestHooks): Promise<GenerationResponse>
   progress(): Promise<ProgressResponse>
   /** Read-only Forge process and CUDA memory readings. */
   memory(): Promise<MemoryMetrics>
@@ -224,7 +235,7 @@ function parseProgress(value: unknown): ProgressResponse {
 
 export function createForgeClient(
   baseUrl: string,
-  opts: { listTimeoutMs?: number; pingTimeoutMs?: number; lorasTimeoutMs?: number; controlTimeoutMs?: number } = {},
+  opts: { listTimeoutMs?: number; pingTimeoutMs?: number; lorasTimeoutMs?: number; controlTimeoutMs?: number; dispatcher?: Dispatcher } = {},
 ): ForgeClient {
   const base = normalizeBaseUrl(baseUrl)
   const listTimeoutMs = opts.listTimeoutMs ?? DEFAULT_LIST_TIMEOUT_MS
@@ -235,7 +246,7 @@ export function createForgeClient(
   async function request(
     method: 'GET' | 'POST',
     path: string,
-    o: { body?: unknown; timeoutMs?: number; signal?: AbortSignal } = {},
+    o: { body?: unknown; timeoutMs?: number; signal?: AbortSignal; long?: boolean; onHeaders?: () => void } = {},
   ): Promise<unknown> {
     const timeout = o.timeoutMs === undefined ? undefined : AbortSignal.timeout(o.timeoutMs)
     const signals = [timeout, o.signal].filter((s): s is AbortSignal => s !== undefined)
@@ -249,7 +260,9 @@ export function createForgeClient(
           ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(o.body) }
           : {}),
         ...(signal ? { signal } : {}),
-      })
+        ...(o.long ? { dispatcher: opts.dispatcher ?? longRequestAgent } : {}),
+      } as RequestInit)
+      o.onHeaders?.()
       status = res.status
       text = await res.text()
     } catch (e) {
@@ -273,8 +286,8 @@ export function createForgeClient(
     }
   }
 
-  const list = async (path: string, timeoutMs = listTimeoutMs): Promise<unknown[]> =>
-    asArray(await request('GET', `${API}/${path}`, { timeoutMs }), path)
+  const list = async (path: string, timeoutMs = listTimeoutMs, long = false): Promise<unknown[]> =>
+    asArray(await request('GET', `${API}/${path}`, { timeoutMs, long }), path)
 
   const names = (items: unknown[], what: string): string[] =>
     items.map((item) => (typeof item === 'string' ? item : str(asObj(item, what), 'name', what)))
@@ -288,9 +301,9 @@ export function createForgeClient(
       return Math.round(performance.now() - started)
     },
 
-    async txt2img(body, signal) {
+    async txt2img(body, signal, hooks) {
       const json = asObj(
-        await request('POST', `${API}/txt2img`, { body, ...(signal ? { signal } : {}) }),
+        await request('POST', `${API}/txt2img`, { body, long: true, ...(hooks?.onHeaders ? { onHeaders: hooks.onHeaders } : {}), ...(signal ? { signal } : {}) }),
         'txt2img',
       )
       const images = asArray(json.images, 'images')
@@ -298,9 +311,9 @@ export function createForgeClient(
       return { images, info: typeof json.info === 'string' ? json.info : '' }
     },
 
-    async img2img(body, signal) {
+    async img2img(body, signal, hooks) {
       const json = asObj(
-        await request('POST', `${API}/img2img`, { body, ...(signal ? { signal } : {}) }),
+        await request('POST', `${API}/img2img`, { body, long: true, ...(hooks?.onHeaders ? { onHeaders: hooks.onHeaders } : {}), ...(signal ? { signal } : {}) }),
         'img2img',
       )
       const images = asArray(json.images, 'images')
@@ -308,9 +321,9 @@ export function createForgeClient(
       return { images, info: typeof json.info === 'string' ? json.info : '' }
     },
 
-    async upscale(body, signal) {
+    async upscale(body, signal, hooks) {
       const json = asObj(
-        await request('POST', `${API}/extra-single-image`, { body, ...(signal ? { signal } : {}) }),
+        await request('POST', `${API}/extra-single-image`, { body, long: true, ...(hooks?.onHeaders ? { onHeaders: hooks.onHeaders } : {}), ...(signal ? { signal } : {}) }),
         'extra-single-image',
       )
       const image = str(json, 'image', 'extra-single-image')
@@ -360,7 +373,7 @@ export function createForgeClient(
     },
 
     async loras() {
-      return (await list('loras', lorasTimeoutMs)).map((item) => {
+      return (await list('loras', lorasTimeoutMs, true)).map((item) => {
         const o = asObj(item, 'loras item')
         return {
           name: str(o, 'name', 'loras'),
