@@ -6,11 +6,11 @@ import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
+  type Catalog, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, moduleValue, type createCatalog } from '../forge/catalog'
-import { CivitaiBusyError, createCivitaiClient, type CivitaiClient } from '../forge/civitai'
+import { browseCivitai, CivitaiBusyError, createCivitaiClient, fetchThumb, type CivitaiClient } from '../forge/civitai'
 import { createCivitaiUpdater } from '../forge/civitai-updater'
 import { ForgeError, normalizeBaseUrl, type ForgeClient } from '../forge/client'
 import { FINDINGS } from '../forge/findings'
@@ -48,6 +48,8 @@ export interface IpcDeps {
   openExternal?(url: string): void
   /** Pause between Civitai requests; injectable for tests. */
   civitaiGapMs?: number
+  /** fetch used for the Civitai browser (tests). */
+  civitaiFetch?: typeof fetch
   /** Shows a file in the system file manager. */
   revealFile(path: string): void
   /** Called after the active server changed or went away (e.g. to start or stop the connection monitor). */
@@ -760,6 +762,54 @@ export function registerIpc(
     }
     civitaiUpdater.record({ kind: target.kind, id: target.id, hash, checkedAt: null }, info)
     return info ? 'found' : 'missing'
+  })
+
+  handle('civitai:browse', async (raw) => {
+    if (repos.settings.get(CIVITAI_KEY) !== '1') return fail('error.invalidParams')
+    const q = raw as Partial<CivitaiBrowseQuery> | null
+    if (typeof q !== 'object' || q === null || (q.kind !== 'checkpoint' && q.kind !== 'lora')
+      || !(q.period === 'day' || q.period === 'week' || q.period === 'month')
+      || !(q.sort === 'newest' || q.sort === 'downloads' || q.sort === 'rating')
+      || !Array.isArray(q.baseModels) || q.baseModels.length > 10 || !q.baseModels.every((b) => typeof b === 'string' && b.length > 0 && b.length <= 60)
+      || typeof q.text !== 'string' || q.text.length > 200
+      || (q.cursor != null && (typeof q.cursor !== 'string' || q.cursor.length > 200))) return fail('error.invalidParams')
+    let page: Awaited<ReturnType<typeof browseCivitai>>
+    try {
+      page = await browseCivitai({ kind: q.kind, period: q.period, sort: q.sort, baseModels: q.baseModels as string[], text: q.text, cursor: q.cursor ?? null },
+        { ...(deps.civitaiFetch ? { fetch: deps.civitaiFetch } : {}), now: Date.now })
+    } catch (err) {
+      return fail(err instanceof CivitaiBusyError ? 'error.civitaiBusy' : 'error.network')
+    }
+    const catalog = await loadCatalog().catch(() => null)
+    const have = new Map<number, Set<number>>()
+    for (const c of [...(catalog?.checkpoints ?? []), ...(catalog?.loras ?? [])]) {
+      const m = c.civitai ? /\/models\/(\d+)/.exec(c.civitai.url) : null
+      if (!m || !c.civitai) continue
+      const id = Number(m[1])
+      have.set(id, (have.get(id) ?? new Set()).add(c.civitai.versionId))
+    }
+    const thumbs: (string | null)[] = new Array(page.entries.length).fill(null)
+    let at = 0
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (at < page.entries.length) {
+        const i = at++
+        const url = page.entries[i]!.imageUrl
+        if (url) thumbs[i] = await fetchThumb(url, deps.civitaiFetch)
+      }
+    }))
+    return {
+      items: page.entries.map((e, i): CivitaiBrowseItem => {
+        const versions = have.get(e.modelId)
+        const { imageUrl: _drop, ...rest } = e
+        return { ...rest, thumb: thumbs[i] ?? null, inLibrary: versions ? (versions.has(e.versionId) ? 'have' : 'older') : null }
+      }),
+      next: page.next,
+    }
+  })
+
+  handle('civitai:openModel', (modelId, versionId) => {
+    if (!Number.isSafeInteger(modelId) || !Number.isSafeInteger(versionId) || (modelId as number) <= 0 || (versionId as number) <= 0) return fail('error.invalidParams')
+    deps.openExternal?.(`https://civitai.com/models/${modelId as number}?modelVersionId=${versionId as number}`)
   })
 
   handle('civitai:cancel', () => { civitaiUpdater.cancel() })

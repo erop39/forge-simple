@@ -44,6 +44,9 @@ let customPreviews: { kind: string; file: string; bytes: string }[]
 let clearedPreviews: string[]
 let civitaiAnswers: Map<string, object>
 let openedUrls: string[]
+let browseUrls: string[]
+let browseAnswer: unknown
+let browseStatus: number
 let exportPath: string | null
 let exportNames: string[]
 let selectedImagesDir: string | null
@@ -94,6 +97,9 @@ beforeEach(async () => {
   clearedPreviews = []
   civitaiAnswers = new Map()
   openedUrls = []
+  browseUrls = []
+  browseAnswer = { items: [] }
+  browseStatus = 200
   exportPath = null
   exportNames = []
   selectedImagesDir = null
@@ -117,6 +123,12 @@ beforeEach(async () => {
         clearCustom: (_kind: string, file: string) => { clearedPreviews.push(file) },
       },
       civitaiGapMs: 1,
+      civitaiFetch: (async (input: RequestInfo | URL) => {
+        const url = String(input)
+        browseUrls.push(url)
+        if (url.includes('/api/v1/models?')) return new Response(JSON.stringify(browseAnswer), { status: browseStatus })
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/jpeg' } })
+      }) as typeof fetch,
       capabilities: createCapabilities({ client: forge.client, emit: (c) => send('forge:capabilities', c) }),
       lock,
       chooseExportPath: async (name) => { exportNames.push(name); return exportPath },
@@ -1265,6 +1277,37 @@ describe('civitai lookup', () => {
     await call('civitai:open', 'lora', LORA_PATH)
     expect(openedUrls).toEqual(['https://civitai.com/models/7?modelVersionId=70'])
     await expect(call('civitai:open', 'lora', 'C:\nope')).rejects.toThrow('error.notFound')
+  })
+
+  test('the Civitai browser needs consent, validates filters, marks what the library has and opens a version', async () => {
+    const query = { kind: 'lora', period: 'week', sort: 'downloads', baseModels: ['SDXL 1.0'], text: 'detail' }
+    await expect(call('civitai:browse', query)).rejects.toThrow('error.invalidParams')
+    await call('civitai:setEnabled', true)
+    await expect(call('civitai:browse', { ...query, period: 'year' })).rejects.toThrow('error.invalidParams')
+    await expect(call('civitai:browse', { ...query, baseModels: [1] })).rejects.toThrow('error.invalidParams')
+    const now = Date.now()
+    browseAnswer = { items: [
+      { id: 7, name: 'Detail Tweaker', creator: { username: 'maker' }, modelVersions: [
+        { id: 70, name: 'v1', baseModel: 'SDXL 1.0', publishedAt: new Date(now - 1000).toISOString(), stats: { downloadCount: 1200 }, images: [{ url: 'https://image.civitai.com/a/b/width=450/x.jpeg', type: 'image' }] },
+      ] },
+      { id: 8, name: 'Other', modelVersions: [{ id: 80, name: 'v3', baseModel: 'SDXL 1.0', publishedAt: new Date(now - 1000).toISOString(), images: [] }] },
+    ], metadata: { nextCursor: 'abc' } }
+    mock.respond('/sdapi/v1/loras', { json: [{ name: 'detail_tweaker', alias: 'detail_tweaker', path: LORA_PATH, metadata: { sshs_model_hash: LORA_HASH } }] })
+    civitaiAnswers.set(LORA_HASH, answer)
+    await call('catalog:get', true)
+    await call('civitai:updateOne', 'lora', LORA_PATH)
+    const page = (await call('civitai:browse', query)) as { items: { modelId: number; inLibrary: string | null; thumb: string | null; downloads: number }[]; next: string | null }
+    expect(page.next).toBe('abc')
+    expect(page.items.map((i) => [i.modelId, i.inLibrary, i.thumb === null])).toEqual([[7, 'have', false], [8, null, true]])
+    expect(page.items[0]!.downloads).toBe(1200)
+    expect(browseUrls[0]).toContain('types=LORA')
+    expect(browseUrls[0]).toContain('nsfw=false')
+    expect(browseUrls.some((u) => u.includes('width=320'))).toBe(true)
+    browseStatus = 429
+    await expect(call('civitai:browse', query)).rejects.toThrow('error.civitaiBusy')
+    await call('civitai:openModel', 7, 70)
+    expect(openedUrls.at(-1)).toBe('https://civitai.com/models/7?modelVersionId=70')
+    await expect(call('civitai:openModel', '7', 70)).rejects.toThrow('error.invalidParams')
   })
 
   test('one file can be updated on its own: needs consent, reports found / unknown / no hash', async () => {

@@ -39,6 +39,8 @@ const api: Api = {
     cancel: () => invoke('civitai:cancel'),
     state: () => invoke('civitai:state'),
     open: (kind, id, which) => invoke('civitai:open', kind, id, which),
+    browse: (query) => invoke('civitai:browse', query),
+    openModel: (modelId, versionId) => invoke('civitai:openModel', modelId, versionId),
     updateOne: (kind, id) => invoke('civitai:updateOne', kind, id),
   },
   tags: {

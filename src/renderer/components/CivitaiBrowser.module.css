@@ -1,0 +1,223 @@
+.overlay {
+  composes: fadeIn from '../styles/motion.module.css';
+  position: fixed;
+  z-index: var(--z-dialog);
+  inset: 0;
+  background: var(--scrim);
+}
+
+.content {
+  composes: fadeIn from '../styles/motion.module.css';
+  position: fixed;
+  z-index: var(--z-dialog);
+  top: var(--dialog-top);
+  left: 50%;
+  display: flex;
+  width: min(1180px, calc(100vw - var(--sp-8)));
+  height: min(760px, var(--dialog-max-h));
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  border-radius: var(--r-panel);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-float);
+}
+
+.layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-4) var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--signal);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.consent p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.consentActions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-3);
+}
+
+.search {
+  flex: 1;
+  min-width: 140px;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.error {
+  margin: 0 var(--sp-4) var(--sp-2);
+  color: var(--blocked);
+}
+
+.empty,
+.hint {
+  margin: 0 var(--sp-4);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  align-content: start;
+  gap: var(--sp-3);
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--line-strong);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: var(--r-tile);
+  background: var(--surface-3);
+}
+
+.thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.noThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.mark {
+  position: absolute;
+  top: var(--sp-1);
+  left: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-tag);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.markHave {
+  color: var(--ok);
+}
+
+.markOlder {
+  color: var(--signal);
+}
+
+.open {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  display: inline-flex;
+  padding: var(--sp-1);
+  border-radius: var(--r-tag);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.name {
+  overflow: hidden;
+  padding: 0 var(--sp-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.meta {
+  overflow: hidden;
+  padding: 0 var(--sp-1);
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foot {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--sp-4) var(--sp-3);
+}

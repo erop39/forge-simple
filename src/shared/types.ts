@@ -187,3 +187,23 @@ export interface OplogQuery {
 }
 /** The session lock over hidden images: whether a password is set and whether hidden images are shown now. */
 export interface LockState { hasPassword: boolean; open: boolean }
+
+/** The filters of the Civitai browser; `period` limits to versions published within that time. */
+export interface CivitaiBrowseQuery {
+  kind: ModelKind
+  period: 'day' | 'week' | 'month'
+  sort: 'newest' | 'downloads' | 'rating'
+  /** Civitai's base-model names, e.g. "SDXL 1.0"; empty = any. */
+  baseModels: string[]
+  text: string
+  cursor?: string | null
+}
+export interface CivitaiBrowseItem {
+  modelId: number; versionId: number; name: string; versionName: string; baseModel: string; creator: string
+  publishedAt: number | null; downloads: number; url: string
+  /** A small preview as a data URL; null when none could be fetched. */
+  thumb: string | null
+  /** 'have' = this very version is in the library, 'older' = another version of the model is; null = not in the library. */
+  inLibrary: 'have' | 'older' | null
+}
+export interface CivitaiBrowsePage { items: CivitaiBrowseItem[]; next: string | null }

@@ -1,4 +1,4 @@
-import { CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseLatest, parseVersion } from './civitai'
+import { browseCivitai, CivitaiBusyError, createCivitaiClient, isCivitaiImage, parseLatest, parseVersion } from './civitai'
 import { createCivitaiUpdater, type UpdaterItem } from './civitai-updater'
 
 const HASH = 'a'.repeat(64)
@@ -110,4 +110,23 @@ test('a busy answer pauses and retries; a failing file is skipped; cancel stops 
   await run
   expect(cancelling.saved.length).toBeLessThan(2)
   expect(cancelling.updater.state().running).toBe(false)
+})
+
+test('browsing: the newest version of each model is kept, and a date sort stops at the first version outside the period', async () => {
+  const day = 86_400_000
+  const now = Date.parse('2026-10-16T12:00:00Z')
+  const model = (id: number, ago: number) => ({ id, name: `m${id}`, modelVersions: [
+    { id: id * 10, name: 'old', publishedAt: new Date(now - ago - 5 * day).toISOString(), images: [] },
+    { id: id * 10 + 1, name: 'new', publishedAt: new Date(now - ago).toISOString(), images: [] },
+  ] })
+  const fetchFn = (async () => new Response(JSON.stringify({ items: [model(1, day / 2), model(2, 2 * day), model(3, 1.5 * day)], metadata: { nextCursor: 'n' } }))) as typeof fetch
+  const q = { kind: 'checkpoint' as const, period: 'day' as const, sort: 'newest' as const, baseModels: [], text: '' }
+  const page = await browseCivitai(q, { fetch: fetchFn, now: () => now })
+  expect(page.entries.map((e) => [e.modelId, e.versionId, e.versionName])).toEqual([[1, 11, 'new']])
+  expect(page.next).toBeNull()
+  const popular = await browseCivitai({ ...q, sort: 'downloads' }, { fetch: fetchFn, now: () => now })
+  expect(popular.entries).toHaveLength(3)
+  expect(popular.next).toBe('n')
+  const busy = (async () => new Response('', { status: 429 })) as typeof fetch
+  await expect(browseCivitai(q, { fetch: busy, now: () => now })).rejects.toBeInstanceOf(CivitaiBusyError)
 })

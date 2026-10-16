@@ -1,5 +1,5 @@
 import type {
-  Catalog, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
+  Catalog, CivitaiBrowsePage, CivitaiBrowseQuery, CivitaiProgress, ConnectionStatus, Family, ForgeCapabilities, HiresPreset, HiresSettings, ModelKind, Preset, PresetParams, ForgeHealth, GenerationParams, OplogEntry, OplogQuery, ImageDetails, ImageQuery,
   ImageRecord, Job, JobProgress, LockState, NegativePreset, PartStatus,
   RestartOutcome, ResourceSnapshot, ServerInfo,
 } from './types'
@@ -11,7 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
-  'error.tooManyAttempts', 'error.storageUnavailable',
+  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -135,6 +135,10 @@ export interface Api {
     open(kind: ModelKind, id: string, which?: 'current' | 'newer'): Promise<void>
     /** Looks one file up now (needs the same consent): found, unknown to Civitai, no hash to ask with, or Civitai busy. */
     updateOne(kind: ModelKind, id: string): Promise<'found' | 'missing' | 'noHash' | 'busy'>
+    /** One page of Civitai's newest/popular models for the filters (needs the same consent); error.civitaiBusy when it is busy, error.network otherwise. */
+    browse(query: CivitaiBrowseQuery): Promise<CivitaiBrowsePage>
+    /** Opens a model version found by `browse` in the system browser. */
+    openModel(modelId: number, versionId: number): Promise<void>
   }
   /** Tags on saved images. Hidden images are left out while the lock is closed; changes push 'images:changed'. */
   tags: {
@@ -246,7 +250,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:setFamilyModules', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

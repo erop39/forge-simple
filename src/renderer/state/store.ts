@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  Catalog, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -150,6 +150,12 @@ export interface AppState {
   askRestart(): void
   openHires(id: number): void
   openModelGallery(kind: ModelKind): void
+  civitaiBrowser: ModelKind | null
+  openCivitaiBrowser(kind: ModelKind): void
+  closeCivitaiBrowser(): void
+  /** Rejects with the IPC error key (error.civitaiBusy, error.network). */
+  browseCivitai(query: CivitaiBrowseQuery): Promise<CivitaiBrowsePage>
+  openCivitaiModel(modelId: number, versionId: number): Promise<void>
   /** Records the user's consent (or its withdrawal); a lookup needs it. */
   setCivitaiEnabled(enabled: boolean): Promise<void>
   updateFromCivitai(force?: boolean): Promise<void>
@@ -609,6 +615,7 @@ export function createAppStore(api: Api): StoreApi<AppState> {
       restartAsked: false,
       hiresFor: null,
       modelGallery: null,
+      civitaiBrowser: null,
       civitai: { running: false, done: 0, total: 0, found: 0, paused: false },
       logOpen: false,
       logEntries: [],
@@ -1067,6 +1074,22 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         await attempt(() => api.hiresPresets.remove(id))
         const list = await attempt(() => api.hiresPresets.list())
         if (list) set({ hiresPresets: list })
+      },
+
+      openCivitaiBrowser(kind) {
+        set({ civitaiBrowser: kind, modelGallery: null })
+      },
+
+      closeCivitaiBrowser() {
+        set({ civitaiBrowser: null })
+      },
+
+      browseCivitai(query) {
+        return api.civitai.browse(query)
+      },
+
+      async openCivitaiModel(modelId, versionId) {
+        await attempt(() => api.civitai.openModel(modelId, versionId))
       },
 
       closeModelGallery() {

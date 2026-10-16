@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Civitai browser: the Browse Civitai button in the model library lists the newest, most downloaded or highest rated checkpoints and LoRA of the last day, week or month, filtered by base model and name. Cards show a preview, date, creator and downloads, mark models you already have (or an older version of them) and open the page in the system browser. It needs the same Civitai consent and sends no library data.
 - Default VAE and text encoders per family: in the parameters panel, Use as default for <family> saves the current modules; every checkpoint of that family then starts with them (while the files are on the server), and Back to Forge's choice returns to what Forge lists.
 - The LoRA gallery opens on the family of the selected model (LoRA of unknown family included); the Family filter's All shows everything.
 - The side panel of the model galleries appears only when a card is selected and has its own close button.

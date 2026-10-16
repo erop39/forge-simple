@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { CloudArrowDown, MagnifyingGlassPlus, Star, X } from '@phosphor-icons/react'
+import { CloudArrowDown, Compass, MagnifyingGlassPlus, Star, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PROFILES } from '@shared/profiles'
 import type { CivitaiLink, Family, ImageRecord, ModelKind } from '@shared/types'
@@ -99,6 +99,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
   const updateFromCivitai = useAppStore((s) => s.updateFromCivitai)
   const cancelCivitai = useAppStore((s) => s.cancelCivitai)
   const openOnCivitai = useAppStore((s) => s.openOnCivitai)
+  const openBrowser = useAppStore((s) => s.openCivitaiBrowser)
   const [asking, setAsking] = useState(false)
   const [askFor, setAskFor] = useState<{ kind: ModelKind; id: string } | null>(null)
   const updateOne = useAppStore((s) => s.updateModelFromCivitai)
@@ -229,6 +230,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
               {t('civitai.update')}
             </Button>
           )}
+          <Button icon={<Compass size={16} />} onClick={() => openBrowser(kind)}>{t('browser.button')}</Button>
           <IconButton label={t('models.close')} icon={<X size={20} />} onClick={onClose} />
         </div>
         {(asking || askFor !== null) && (
