@@ -100,6 +100,9 @@ export const en = {
   'focus.empty.title': 'Nothing from the latest generation yet',
   'focus.empty.body': 'This view shows only the results of your latest generation request. Generate something, or show the whole gallery.',
   'focus.showAll': 'Show the whole gallery',
+  'crash.title': 'Something broke in this window',
+  'crash.body': 'The app hit an unexpected error. Your images and settings are safe. Reload the window to continue.',
+  'crash.reload': 'Reload',
   'empty.gallery.title': 'Your first image starts here',
   'empty.gallery.body': 'Write a prompt below and press Ctrl+Enter.',
 

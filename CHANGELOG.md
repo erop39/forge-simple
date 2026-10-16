@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Send to hires no longer crashes the window when Forge is offline or the model list has not loaded (a selector returned a new empty list on every render); the form being edited is no longer reset when the model list is replaced under it; and a crash while rendering now shows a message with a Reload button instead of a blank window.
+- Deleting or archiving many images no longer re-lays out the gallery once per image: an image-removed event for an image that is not loaded changes nothing.
 - Start-up no longer hangs on a slow LoRA list: Forge can take minutes to list LoRA (it reads new files), so the catalog is now handed out after at most 8 s without them, the prompt bar becomes usable, the LoRA gallery says Forge is still listing, and the LoRA appear by themselves when the list arrives (the wait for it is 10 minutes instead of 3).
 - A generation that Forge silently dropped no longer runs forever: when Forge has been seen running the job and then reports nothing running for 45 s while the answer never arrives, the job fails as stalled (Retry is offered). The running tile also says "no progress for N s" once neither the step nor the pass has moved for 30 s.
 - Archiving and Delete all generations write one log entry for the whole operation instead of one "Image N deleted" line per image.

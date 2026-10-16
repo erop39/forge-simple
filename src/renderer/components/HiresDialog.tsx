@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GenerationParams, HiresSettings } from '@shared/types'
 import { PROFILES, hiresUpscaler } from '@shared/profiles'
 import { t } from '../i18n/t'
@@ -12,6 +12,8 @@ import { Slider } from './ui/Slider'
 import styles from './HiresDialog.module.css'
 
 const SCALES = [1.5, 2, 4] as const
+/** One shared empty list: a selector returning a fresh `[]` makes React re-render without end. */
+const NO_UPSCALERS: string[] = []
 const options = (values: string[]) => values.map((value) => ({ value, label: value }))
 
 /**
@@ -35,8 +37,11 @@ export function HiresDialog() {
 }
 
 function HiresForm({ id, onClose }: { id: number; onClose: () => void }) {
-  const upscalers = useAppStore((s) => s.catalog?.upscalers ?? [])
+  const upscalers = useAppStore((s) => s.catalog?.upscalers ?? NO_UPSCALERS)
   const preferred = useAppStore((s) => s.settings?.upscalers?.hires)
+  // The details are read once per image; a catalog or setting that changes meanwhile must not reset the form being edited.
+  const latest = useRef({ upscalers, preferred })
+  latest.current = { upscalers, preferred }
   const queueHires = useAppStore((s) => s.queueHires)
   const [source, setSource] = useState<GenerationParams | 'notTxt2img' | 'failed' | null>(null)
   const [hires, setHires] = useState<HiresSettings | null>(null)
@@ -48,8 +53,9 @@ function HiresForm({ id, onClose }: { id: number; onClose: () => void }) {
     window.api.images.details(id).then((details) => {
       if (!current) return
       if (details.jobType !== 'txt2img') { setSource('notTxt2img'); return }
-      const upscaler = [preferred, details.params.hires?.upscaler].find((name) => name && upscalers.includes(name))
-        ?? hiresUpscaler(upscalers)
+      const { upscalers: offered, preferred: wanted } = latest.current
+      const upscaler = [wanted, details.params.hires?.upscaler].find((name) => name && offered.includes(name))
+        ?? hiresUpscaler(offered)
       const scale = SCALES.find((value) => details.params.width * value <= 4096 && details.params.height * value <= 4096)
       setSource(details.params)
       setHires({ scale: scale ?? 1.5, upscaler, secondPassSteps: details.params.hires?.secondPassSteps ?? 12,
@@ -57,7 +63,7 @@ function HiresForm({ id, onClose }: { id: number; onClose: () => void }) {
         cfgScale: details.params.hires?.cfgScale ?? details.params.cfgScale })
     }).catch(() => { if (current) setSource('failed') })
     return () => { current = false }
-  }, [id, preferred, upscalers])
+  }, [id])
 
   if (source === null || hires === null && typeof source !== 'string') {
     return <p className={styles.note} role="status">{t('viewer.loading')}</p>

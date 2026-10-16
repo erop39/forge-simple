@@ -265,6 +265,18 @@ test('image:added prepends; image:removed deletes', async () => {
   expect(store.getState().images.map((i) => i.id)).toEqual([6, 4])
 })
 
+test('image:removed for an image that is not loaded changes nothing (no re-render per image of a big delete)', async () => {
+  const { store, emit } = await ready()
+  const before = store.getState()
+  let changes = 0
+  const off = store.subscribe(() => { changes++ })
+  emit('image:removed', { id: 99999 })
+  off()
+  expect(changes).toBe(0)
+  expect(store.getState().images).toBe(before.images)
+  expect(store.getState().selection).toBe(before.selection)
+})
+
 test('connection events replace the status', async () => {
   const { store, emit } = await ready()
   emit('connection', { state: 'reconnecting', latencyMs: null, attempts: 3, lastOkAt: 1 })

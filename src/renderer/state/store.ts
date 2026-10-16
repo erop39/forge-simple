@@ -475,7 +475,9 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         // While a search is on the new image is not known to match; it shows when the search is cleared.
         set((s) => (isSearching(s.query) || s.images.some((i) => i.id === image.id) ? s : { images: [image, ...s.images] })),
       )
-      api.on('image:removed', ({ id }) => set((s) => ({ images: s.images.filter((i) => i.id !== id), selection: s.selection.filter((x) => x !== id) })))
+      // An id that is neither loaded nor selected changes nothing: a delete of thousands must not re-lay out the gallery per image.
+      api.on('image:removed', ({ id }) => set((s) => (s.images.some((i) => i.id === id) || s.selection.includes(id)
+        ? { images: s.images.filter((i) => i.id !== id), selection: s.selection.filter((x) => x !== id) } : s)))
       api.on('connection', (connection) => set({ connection }))
       api.on('resources', (resources) => set({ resources }))
       api.on('job:removed', ({ id }) => forgetJob(id))
