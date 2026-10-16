@@ -184,7 +184,7 @@ export async function fetchThumb(url: string, doFetch: typeof fetch = fetch): Pr
   if (!isCivitaiImage(url)) return null
   const small = url.replace(/\/(?:width=\d+|original=true)\//, '/width=320/')
   try {
-    const res = await doFetch(small, { signal: AbortSignal.timeout(15_000) })
+    const res = await doFetch(small, { signal: AbortSignal.timeout(15_000), redirect: 'error' })
     const type = res.headers.get('content-type') ?? ''
     if (!res.ok || !/^image\/(jpeg|png|webp|avif)$/.test(type)) return null
     const bytes = Buffer.from(await res.arrayBuffer())

@@ -1238,6 +1238,11 @@ describe('model previews from generations', () => {
     await expect(call('models:setPreviewFromImage', 'checkpoint', CKPT_FILE, 'x')).rejects.toThrow('error.invalidParams')
     await call('models:clearPreview', 'checkpoint', CKPT_FILE)
     expect(clearedPreviews).toEqual([CKPT_FILE])
+    // Hiding the image the preview was made from takes the preview off the model, so the lock covers it.
+    clearedPreviews.length = 0
+    await call('lock:setPassword', null, 'secret-pass')
+    await call('images:setHidden', [row.id], true)
+    expect(clearedPreviews).toEqual([CKPT_FILE])
   })
 })
 

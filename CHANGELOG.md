@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.2.0] - 2026-10-16
 
+### Fixed
+
+- Hiding an image takes it off any model it was the preview of, so the lock covers that picture too.
+- Civitai previews are no longer fetched once Civitai is switched off; a lookup run is stopped on a server switch and its answers are stored under the server they belong to; preview downloads do not follow redirects.
+
 ### Added
 
 - Civitai browser: the Browse Civitai button in the model library lists the newest, most downloaded or highest rated checkpoints and LoRA of the last day, week or month, filtered by base model and name. Cards show a preview, date, creator and downloads, mark models you already have (or an older version of them) and open the page in the system browser. It needs the same Civitai consent and sends no library data.

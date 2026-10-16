@@ -151,6 +151,7 @@ async function boot(): Promise<void> {
     serverId: () => repos.servers.active()?.id ?? null,
     cacheDir: () => join(userData, 'model-previews'),
     remoteImage: (kind, filename) => {
+      if (repos.settings.get('civitai.enabled') !== '1') return null // no consent, no request to Civitai
       const serverId = repos.servers.active()?.id
       const found = serverId === undefined ? null : repos.modelMeta.get(serverId, kind, filename)?.civitai
       return found && !found.missing ? found.imageUrl : null

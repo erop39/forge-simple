@@ -1,7 +1,7 @@
 import type { CivitaiInfo, CivitaiProgress, ModelKind } from '@shared/types'
 import { CivitaiBusyError, type CivitaiClient } from './civitai'
 
-export interface UpdaterItem { kind: ModelKind; id: string; hash: string; checkedAt: number | null }
+export interface UpdaterItem { serverId: number; kind: ModelKind; id: string; hash: string; checkedAt: number | null }
 
 export interface UpdaterDeps {
   client: CivitaiClient

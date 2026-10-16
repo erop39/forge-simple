@@ -401,6 +401,7 @@ export function registerIpc(
     deps.onServerChanged?.()
     runner.resetHealth()
     deps.capabilities.reset()
+    civitaiUpdater.cancel() // the rest of a run would describe the other server's files
     runner.kick()
     if (next !== null) {
       void deps.monitor.sampleOnce()
@@ -713,14 +714,14 @@ export function registerIpc(
       const loras = stored('lora')
       return [
         ...lastCatalog.checkpoints.flatMap((c) => (c.sha256 ?? c.hash)
-          ? [{ kind: 'checkpoint' as const, id: c.filename, hash: (c.sha256 ?? c.hash)!, checkedAt: checkedAt(checkpoints.get(c.filename)) }] : []),
+          ? [{ serverId, kind: 'checkpoint' as const, id: c.filename, hash: (c.sha256 ?? c.hash)!, checkedAt: checkedAt(checkpoints.get(c.filename)) }] : []),
         ...lastCatalog.loras.flatMap((l) => l.hash
-          ? [{ kind: 'lora' as const, id: l.path, hash: l.hash, checkedAt: checkedAt(loras.get(l.path)) }] : []),
+          ? [{ serverId, kind: 'lora' as const, id: l.path, hash: l.hash, checkedAt: checkedAt(loras.get(l.path)) }] : []),
       ]
     },
     save: (item, info) => {
-      const serverId = repos.servers.active()?.id
-      if (serverId === undefined) return
+      // An answer belongs to the server its file was listed on, even when the user has switched since.
+      const serverId = item.serverId
       repos.modelMeta.setCivitai(serverId, item.kind, item.id, info ?? { missing: true, checkedAt: Date.now() })
       // A model Forge had no preview for may get one from Civitai now: look it up again.
       if (info?.imageUrl && repos.modelMeta.get(serverId, item.kind, item.id)?.preview === '') {
@@ -760,7 +761,7 @@ export function registerIpc(
       if (err instanceof CivitaiBusyError) return 'busy'
       throw err
     }
-    civitaiUpdater.record({ kind: target.kind, id: target.id, hash, checkedAt: null }, info)
+    civitaiUpdater.record({ serverId: target.serverId, kind: target.kind, id: target.id, hash, checkedAt: null }, info)
     return info ? 'found' : 'missing'
   })
 
@@ -867,6 +868,22 @@ export function registerIpc(
       ?? fail('error.notFound')
   }
 
+  const previewSourceKey = (imageId: number): string => `preview.source.${imageId}`
+  const previewSources = (imageId: number): { serverId: number; kind: ModelKind; id: string }[] => {
+    try {
+      const parsed: unknown = JSON.parse(repos.settings.get(previewSourceKey(imageId)) || '[]')
+      return Array.isArray(parsed) ? parsed.filter((s) => typeof s?.serverId === 'number' && (s.kind === 'checkpoint' || s.kind === 'lora') && typeof s.id === 'string') : []
+    } catch { return [] }
+  }
+  /** A model preview made from an image must not outlive hiding it: the lock would otherwise not cover that picture. */
+  function dropPreviewsMadeFrom(imageId: number): void {
+    for (const s of previewSources(imageId)) {
+      if (s.serverId === repos.servers.active()?.id) deps.previews?.clearCustom(s.kind, s.id)
+      else repos.modelMeta.setPreview(s.serverId, s.kind, s.id, '')
+    }
+    repos.settings.set(previewSourceKey(imageId), '')
+  }
+
   handle('models:generations', async (kind, id) => {
     const target = await modelTarget(kind, id)
     return toRecords(repos.images.forModel(target.serverId, target.kind, await modelKey(target.kind, target.id), 24))
@@ -885,6 +902,11 @@ export function registerIpc(
       return fail('error.notFound')
     }
     await deps.previews.setCustom(target.kind, target.id, bytes)
+    // Remember where the picture came from, so hiding that image takes it off the model again.
+    const sources = previewSources(imageId)
+    if (!sources.some((s) => s.serverId === target.serverId && s.kind === target.kind && s.id === target.id)) {
+      repos.settings.set(previewSourceKey(imageId), JSON.stringify([...sources, { serverId: target.serverId, kind: target.kind, id: target.id }]))
+    }
   })
 
   handle('models:clearPreview', async (kind, id) => {
@@ -1027,6 +1049,7 @@ export function registerIpc(
     if (!hidden && !lock.isOpen()) return fail('error.notFound')
     const existing = [...new Set(ids as number[])].filter((id) => repos.images.get(id) !== null)
     repos.images.setHidden(existing, hidden)
+    if (hidden) for (const id of existing) dropPreviewsMadeFrom(id)
     oplog.write({
       level: 'info', category: 'storage', messageKey: hidden ? 'log.storage.imagesHidden' : 'log.storage.imagesUnhidden',
       details: { ids: existing, count: existing.length },

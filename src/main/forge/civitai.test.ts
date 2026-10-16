@@ -72,9 +72,9 @@ function setup(items: UpdaterItem[], lookup: (hash: string) => Promise<unknown>)
 
 test('a run looks every stale file up once, counts the found ones and reports progress', async () => {
   const items: UpdaterItem[] = [
-    { kind: 'lora', id: 'a', hash: 'h1', checkedAt: null },
-    { kind: 'checkpoint', id: 'b', hash: 'h2', checkedAt: null },
-    { kind: 'lora', id: 'fresh', hash: 'h3', checkedAt: 1_000_000_000 - 10 },
+    { serverId: 1, kind: 'lora', id: 'a', hash: 'h1', checkedAt: null },
+    { serverId: 1, kind: 'checkpoint', id: 'b', hash: 'h2', checkedAt: null },
+    { serverId: 1, kind: 'lora', id: 'fresh', hash: 'h3', checkedAt: 1_000_000_000 - 10 },
   ]
   const { updater, saved, events } = setup(items, async (hash) => (hash === 'h1' ? { name: 'x' } : null))
   await updater.start()
@@ -88,7 +88,7 @@ test('a run looks every stale file up once, counts the found ones and reports pr
 test('a busy answer pauses and retries; a failing file is skipped; cancel stops between requests', async () => {
   let calls = 0
   const { updater, saved, slept } = setup(
-    [{ kind: 'lora', id: 'a', hash: 'h1', checkedAt: null }, { kind: 'lora', id: 'b', hash: 'h2', checkedAt: null }],
+    [{ serverId: 1, kind: 'lora', id: 'a', hash: 'h1', checkedAt: null }, { serverId: 1, kind: 'lora', id: 'b', hash: 'h2', checkedAt: null }],
     async (hash) => {
       calls++
       if (hash === 'h1' && calls === 1) throw new CivitaiBusyError(429, 5000)
@@ -102,7 +102,7 @@ test('a busy answer pauses and retries; a failing file is skipped; cancel stops 
   expect(updater.state().done).toBe(2)
 
   const cancelling = setup(
-    [{ kind: 'lora', id: 'a', hash: 'h1', checkedAt: null }, { kind: 'lora', id: 'b', hash: 'h2', checkedAt: null }],
+    [{ serverId: 1, kind: 'lora', id: 'a', hash: 'h1', checkedAt: null }, { serverId: 1, kind: 'lora', id: 'b', hash: 'h2', checkedAt: null }],
     async () => ({ name: 'ok' }),
   )
   const run = cancelling.updater.start()
