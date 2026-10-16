@@ -1,13 +1,14 @@
 import { appendFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { ArchiveError, createArchive, restoreArchive } from '../archive/archive'
 import { applyBackup, BackupError, buildBackup, MAX_BACKUP_BYTES, parseBackup, previewBackup, type BackupFile } from '../backup/settings-backup'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { defaultParams, PROFILES } from '@shared/profiles'
 import { eventChannel, type AppEvents, type Channel, type ConnectionCheck, type IpcErrorKey } from '@shared/ipc'
 import {
   OPLOG_CATEGORIES, OPLOG_LEVELS,
-  type Catalog, type ImportSummary, type PresetParams, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
+  type ArchiveCreated, type ArchiveRestored, type ArchiveState, type Catalog, type ImportSummary, type PresetParams, type CivitaiBrowseItem, type CivitaiBrowseQuery, type ConnectionStatus, type Family, type ForgeCapabilities, type GenerationParams, type ModelKind, type ImageQuery, type ImageRecord,
   type RestartOutcome, type ServerInfo,
 } from '@shared/types'
 import { checkParts, moduleValue, type createCatalog } from '../forge/catalog'
@@ -1107,6 +1108,91 @@ export function registerIpc(
     const failed: number[] = []
     for (const id of new Set(ids as number[])) (await removeImage(id) ? deleted : failed).push(id)
     return { deleted, failed }
+  })
+
+  // ---- archives (images moved out of the gallery into a folder) ------------------
+
+  const ARCHIVE_DIR_KEY = 'archive.dir'
+  const archiveDir = (): string => repos.settings.get(ARCHIVE_DIR_KEY) || join(dirname(deps.imagesDir()), 'fnc-archives')
+  let archiveBusy = false
+  const archiveKey = (err: ArchiveError): IpcErrorKey => {
+    if (err.code === 'nothing') return 'error.archiveNothing'
+    if (err.code === 'noSpace') return 'error.archiveNoSpace'
+    if (err.code === 'version') return 'error.archiveVersion'
+    if (err.code === 'noServer') return 'error.noServer'
+    return 'error.archiveUnreadable'
+  }
+  const exists = (p: string): Promise<boolean> => fs.access(p).then(() => true, () => false)
+
+  handle('archive:state', async (): Promise<ArchiveState> => ({
+    dir: archiveDir(),
+    archives: await Promise.all(repos.archives.list().map(async (a) => ({
+      id: a.id, name: a.name, createdAt: a.createdAt, imageCount: a.imageCount, bytes: a.bytes, available: await exists(join(a.path, 'manifest.json')),
+    }))),
+  }))
+
+  handle('archive:chooseDir', async () => {
+    const chosen = await deps.chooseImagesDir?.(archiveDir())
+    if (chosen == null) return null
+    if (typeof chosen !== 'string' || !isAbsolute(chosen)) return fail('error.invalidParams')
+    let canonical: string
+    try {
+      canonical = await fs.realpath(chosen)
+      if (!(await fs.stat(canonical)).isDirectory()) return fail('error.storageUnavailable')
+      const probe = join(canonical, `.forge-neo-client-${randomUUID()}`)
+      const handle = await fs.open(probe, 'wx')
+      try { await handle.close() }
+      finally { await fs.rm(probe, { force: true }) }
+    } catch { return fail('error.storageUnavailable') }
+    repos.settings.set(ARCHIVE_DIR_KEY, canonical)
+    oplog.write({ level: 'info', category: 'settings', messageKey: 'log.settings.archiveDirChanged' })
+    return canonical
+  })
+
+  handle('archive:create', async (ids, label): Promise<ArchiveCreated> => {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_IMAGE_BATCH || !ids.every((id: unknown) => isInt(id, 1, MAX_ID))
+      || typeof label !== 'string' || label.length > 200) return fail('error.invalidParams')
+    if (archiveBusy) return fail('error.archiveBusy')
+    archiveBusy = true
+    try {
+      const result = await createArchive({
+        repos, now: Date.now, resolveManaged: (file) => deps.images.resolveManaged(file), removeImage,
+      }, archiveDir(), [...new Set(ids as number[])], label)
+      for (const id of result.removedJobIds) send('job:removed', { id })
+      oplog.write({
+        level: 'info', category: 'storage', messageKey: 'log.storage.archived',
+        details: { name: result.archive.name, images: result.archived, skippedHidden: result.skippedHidden, unreadable: result.unreadable },
+      })
+      return { name: result.archive.name, archived: result.archived, skippedHidden: result.skippedHidden, unreadable: result.unreadable, notRemoved: result.notRemoved }
+    } catch (err) {
+      if (err instanceof ArchiveError) return fail(archiveKey(err))
+      throw err
+    } finally {
+      archiveBusy = false
+    }
+  })
+
+  handle('archive:restore', async (id): Promise<ArchiveRestored> => {
+    if (!isInt(id, 1, MAX_ID)) return fail('error.invalidParams')
+    const archive = repos.archives.get(id) ?? fail('error.notFound')
+    const serverId = repos.servers.active()?.id ?? fail('error.noServer')
+    if (!(await exists(join(archive.path, 'manifest.json')))) return fail('error.archiveUnavailable')
+    if (archiveBusy) return fail('error.archiveBusy')
+    archiveBusy = true
+    try {
+      const result = await restoreArchive({ repos, serverId, saveImage: (png, name) => deps.images.save(png, name) }, archive.path)
+      send('images:changed', { ids: [] })
+      oplog.write({
+        level: 'info', category: 'storage', messageKey: 'log.storage.restored',
+        details: { name: archive.name, images: result.restored, alreadyThere: result.alreadyThere, damaged: result.damaged },
+      })
+      return result
+    } catch (err) {
+      if (err instanceof ArchiveError) return fail(archiveKey(err))
+      throw err
+    } finally {
+      archiveBusy = false
+    }
   })
 
   handle('generations:count', () => repos.images.count())

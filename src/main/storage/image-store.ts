@@ -65,6 +65,8 @@ export function createImageStore(dir: () => string, makeThumb: MakeThumb, roots:
   readSource(filePath: string): Promise<string>
   /** A thumbnail's bytes, read only from inside an approved folder (no symlink out of it); SourceImageError otherwise. */
   readThumb(thumbPath: string): Promise<Buffer>
+  /** The real path of a file inside an approved folder (no symlink out of it); SourceImageError otherwise. */
+  resolveManaged(file: string): Promise<string>
 } {
   async function removeOne(file: string): Promise<void> {
     const resolved = path.resolve(file)
@@ -89,6 +91,19 @@ export function createImageStore(dir: () => string, makeThumb: MakeThumb, roots:
   }
 
   return {
+    async resolveManaged(file) {
+      const resolved = path.resolve(file)
+      try {
+        const realFile = await fs.realpath(resolved)
+        for (const root of roots()) {
+          if (inside(path.resolve(root), resolved) && inside(await fs.realpath(root), realFile)) return realFile
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new SourceImageError('missing')
+        throw err
+      }
+      throw new SourceImageError('corrupt')
+    },
     async readThumb(thumbPath) {
       const resolved = path.resolve(thumbPath)
       try {

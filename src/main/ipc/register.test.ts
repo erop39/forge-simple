@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultParams } from '@shared/profiles'
@@ -1412,6 +1412,43 @@ test('images:deleteMany removes what it can and reports the rest; hidden images 
   expect(sent.filter((s) => s.e === 'image:removed')).toHaveLength(2)
   await expect(call('images:deleteMany', [])).rejects.toThrow('error.invalidParams')
   await expect(call('images:deleteMany', ['a'])).rejects.toThrow('error.invalidParams')
+})
+
+test('archive: the folder is chosen and tested, create moves images out after a verified copy, hidden ones stay, restore needs the folder', async () => {
+  const server = repos.servers.setActiveUrl(mock.url)
+  const target = path.join(dir, 'archives-root')
+  mkdirSync(target)
+  selectedImagesDir = target
+  const canonical = (await call('archive:chooseDir')) as string
+  expect(canonical.toLowerCase()).toBe(realpathSync(target).toLowerCase())
+  const make = (name: string, hidden = false) => {
+    const job = repos.jobs.insert(server.id, 'txt2img', goodParams())
+    repos.jobs.setStatus(job.id, 'done')
+    mkdirSync(path.join(dir, 'thumbs'), { recursive: true })
+    const filePath = path.join(dir, name + '.png')
+    const thumbPath = path.join(dir, 'thumbs', name + '.jpg')
+    writeFileSync(filePath, 'png-' + name)
+    writeFileSync(thumbPath, 'jpg-' + name)
+    return repos.images.insert({ jobId: job.id, filePath, thumbPath, width: 64, height: 64, seed: 7, infotext: 'i', durationMs: 1, ...(hidden ? { hidden: true } : {}) })
+  }
+  const a = make('arch-a')
+  const b = make('arch-b')
+  const hidden = make('arch-h', true)
+  await expect(call('archive:create', [], 'x')).rejects.toThrow('error.invalidParams')
+  await expect(call('archive:create', [hidden.id], 'x')).rejects.toThrow('error.archiveNothing')
+  const created = (await call('archive:create', [a.id, b.id, hidden.id], 'Test set')) as { name: string; archived: number; skippedHidden: number }
+  expect(created).toMatchObject({ archived: 2, skippedHidden: 1 })
+  expect(created.name).toMatch(/^\d{4}-\d{2}-\d{2}-test-set$/)
+  expect(repos.images.get(a.id)).toBeNull()
+  expect(repos.images.get(hidden.id)).not.toBeNull()
+  expect(sent.filter((s) => s.e === 'image:removed')).toHaveLength(2)
+  const state = (await call('archive:state')) as { dir: string; archives: { id: number; name: string; imageCount: number; available: boolean }[] }
+  expect(state.archives).toMatchObject([{ name: created.name, imageCount: 2, available: true }])
+  expect(JSON.stringify(oplog.list())).not.toContain('arch-a')
+  rmSync(path.join(canonical, created.name), { recursive: true })
+  expect(((await call('archive:state')) as { archives: { available: boolean }[] }).archives[0]!.available).toBe(false)
+  await expect(call('archive:restore', state.archives[0]!.id)).rejects.toThrow('error.archiveUnavailable')
+  await expect(call('archive:restore', 9999)).rejects.toThrow('error.notFound')
 })
 
 test('generations:deleteAll empties the gallery and finished jobs, but not while hidden images are locked or a job runs', async () => {

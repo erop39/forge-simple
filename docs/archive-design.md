@@ -1,6 +1,6 @@
 # Archiving generations: design proposal
 
-Status: proposal, nothing is implemented. The red "Delete all generations" button in the server dialog exists and
+Status: phase 1 is implemented (archive the selection, list, restore a whole archive) with the choices below marked as decided; phases 2 and 3 are not. The red "Delete all generations" button in the server dialog exists and
 deletes for good; this is how archiving would give the same relief without losing anything.
 
 ## Goal
@@ -90,7 +90,7 @@ archive disk, and restore only what is wanted. This makes archiving feel safe, b
 2. Rules by age or tag, free-space check, selection restore, "Archive first" in the delete-all dialog.
 3. Archive viewer, optional zip export of an archive, optional encryption of hidden images, reminders.
 
-## Decisions needed from the user
+## Decisions (taken 2026-10-16: the proposals below were accepted)
 
 1. Where should archives go: an external disk, a NAS over the VPN, or a folder on the laptop? (Decides the default and whether slow or missing disks need special care.)
 2. Folder per archive (proposed) or a single zip file per archive?

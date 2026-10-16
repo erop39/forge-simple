@@ -1,9 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { CheckCircle, Desktop, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
-import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { ImportSummary, ServerInfo } from '@shared/types'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import type { ArchiveState, ImportSummary, ServerInfo } from '@shared/types'
 import { errorText } from '../i18n/error-text'
-import { t, type MessageKey } from '../i18n/t'
+import { formatBytes } from '../format'
+import { LOCALE, t, type MessageKey } from '../i18n/t'
 import { useAppStore } from '../state/StoreProvider'
 import { RestartConfirm } from './ForgeRestart'
 import { Button } from './ui/Button'
@@ -127,6 +128,7 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       <ForgeActions running={running} busyId={busyId} />
       <ImageStorage />
       <SettingsBackup />
+      <Archives />
       <DeleteGenerations />
       {error !== null && (
         <p role="alert" className={styles.error}>
@@ -141,6 +143,64 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       </div>
     </div>
   )
+}
+
+/** The archives made so far, the archive folder, and Restore for each archive. */
+function Archives() {
+  const archiveState = useAppStore((s) => s.archiveState)
+  const chooseDir = useAppStore((s) => s.chooseArchiveDir)
+  const restore = useAppStore((s) => s.restoreArchive)
+  const [state, setState] = useState<ArchiveState | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const reload = (): void => { void archiveState().then(setState, () => undefined) }
+  useEffect(reload, [archiveState])
+
+  async function pick(): Promise<void> {
+    setError(null)
+    try { if (await chooseDir()) reload() }
+    catch (e) { setError(errorText(e)) }
+  }
+
+  async function run(id: number): Promise<void> {
+    setBusyId(id)
+    setError(null)
+    setStatus(null)
+    try {
+      const r = await restore(id)
+      setStatus(t('archives.restored', { n: r.restored, there: r.alreadyThere, damaged: r.damaged }))
+    } catch (e) {
+      setError(errorText(e))
+    }
+    setBusyId(null)
+  }
+
+  const date = new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium' })
+  return <section className={styles.storage} aria-label={t('archives.title')}>
+    <h3 className={styles.forgeHeading}>{t('archives.title')}</h3>
+    <p className={styles.storagePath} title={state?.dir ?? ''}>{state?.dir ?? ''}</p>
+    <p className={styles.hint}>{t('archives.hint')}</p>
+    <Button disabled={busyId !== null} onClick={() => void pick()}>{t('archives.chooseFolder')}</Button>
+    {state && state.archives.length === 0 && <p className={styles.hint}>{t('archives.none')}</p>}
+    {state && state.archives.length > 0 && (
+      <ul className={styles.archiveList} aria-label={t('archives.title')}>
+        {state.archives.map((a) => (
+          <li key={a.id} className={styles.archiveRow}>
+            <span className={styles.archiveName} title={a.name}>{a.name}</span>
+            <span className={styles.hint}>{t('archives.meta', { n: a.imageCount, size: formatBytes(a.bytes), date: date.format(a.createdAt) })}</span>
+            {a.available ? (
+              <Button disabled={busyId !== null} onClick={() => void run(a.id)}>{busyId === a.id ? t('archives.restoring') : t('archives.restore')}</Button>
+            ) : (
+              <span className={styles.hint}>{t('archives.unavailable')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
+    {status && <p role="status" className={styles.hint}>{status}</p>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>
 }
 
 /** The red button: every generation is deleted for good after a second, explicit confirmation. */

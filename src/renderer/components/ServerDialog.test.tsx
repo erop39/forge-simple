@@ -295,3 +295,21 @@ test('a refused delete-all shows the reason', async () => {
   await userEvent.click(await screen.findByRole('button', { name: en['danger.confirmYes'] }))
   expect((await screen.findByRole('alert')).textContent).toBe(en['error.lockedImages'])
 })
+
+test('the archives list shows each archive, restores an available one and marks a missing folder', async () => {
+  const archiveState = vi.fn(async () => ({
+    dir: 'D:/fnc-archives',
+    archives: [
+      { id: 2, name: '2026-10-16-autumn', createdAt: Date.UTC(2026, 9, 16), imageCount: 40, bytes: 80 * 1024 * 1024, available: true },
+      { id: 1, name: '2026-09-01-old', createdAt: Date.UTC(2026, 8, 1), imageCount: 5, bytes: 1024 * 1024, available: false },
+    ],
+  }))
+  const restoreArchive = vi.fn(async () => ({ restored: 38, alreadyThere: 2, damaged: 0 }))
+  setup({ archiveState, restoreArchive })
+  const list = await screen.findByRole('list', { name: en['archives.title'] })
+  expect(within(list).getByText(/40 images · 80.0 MB/)).toBeDefined()
+  expect(within(list).getByText(en['archives.unavailable'])).toBeDefined()
+  await userEvent.click(within(list).getByRole('button', { name: en['archives.restore'] }))
+  expect(restoreArchive).toHaveBeenCalledWith(2)
+  expect(await screen.findByText('Restored 38 images (2 were already there, 0 damaged and skipped).')).toBeDefined()
+})

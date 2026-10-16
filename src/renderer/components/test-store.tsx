@@ -26,7 +26,7 @@ export const catalog: Catalog = {
 
 /** A store holding the given family's default parameters, rendered with `ui`. Actions can be replaced through `state`. */
 export function renderWithStore(ui: ReactNode, family: Family = 'sdxl', state: Partial<AppState> = {}) {
-  const api = { catalog: { parts: async () => [] } } as unknown as Api
+  const api = { catalog: { parts: async () => [] }, archive: { state: async () => ({ dir: '', archives: [] }) } } as unknown as Api
   const store = createAppStore(api)
   const params: GenerationParams = defaultParams(family, `${family}.safetensors`, catalog)
   store.setState({ catalog, params, ...state })

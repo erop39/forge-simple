@@ -9,7 +9,9 @@ export interface Server extends ServerInfo { lastConnectedAt: number | null }
 export interface ImageRow extends Omit<ImageRecord, 'url' | 'thumbUrl' | 'tags' | 'locked'> { filePath: string; thumbPath: string }
 
 type JobPatch = Partial<Pick<Job, 'error' | 'durationMs' | 'stepsPerSec' | 'peakVram'>>
-type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null; hidden?: boolean }
+type NewImage = Pick<ImageRow, 'jobId' | 'filePath' | 'thumbPath' | 'width' | 'height' | 'seed' | 'infotext' | 'durationMs'> & { sourceImageId?: number | null; hidden?: boolean; createdAt?: number }
+
+export interface ArchiveRow { id: number; name: string; path: string; createdAt: number; imageCount: number; bytes: number }
 
 /** Another saved (not removed) server already has that address. */
 export class DuplicateServerError extends Error {
@@ -299,6 +301,24 @@ export function createRepos(db: Db, now: () => number) {
       ).run(serverId, type, JSON.stringify(params), now())
       return getJob(Number(res.lastInsertRowid)) as Job
     },
+    /** A finished job restored from an archive, with its original times. */
+    insertFinished(serverId: number, type: JobType, params: GenerationParams, times: { createdAt: number; finishedAt: number | null; durationMs: number | null }): Job {
+      const res = db.prepare(
+        "INSERT INTO jobs (server_id, type, status, params, created_at, finished_at, duration_ms) VALUES (?, ?, 'done', ?, ?, ?, ?)",
+      ).run(serverId, type, JSON.stringify(params), times.createdAt, times.finishedAt, times.durationMs)
+      return getJob(Number(res.lastInsertRowid)) as Job
+    },
+    /** Deletes those of the given jobs that are done and have no image left; returns the ids deleted. */
+    deleteDoneWithoutImages(ids: number[]): number[] {
+      return db.transaction(() => {
+        const gone: number[] = []
+        const remove = db.prepare(
+          "DELETE FROM jobs WHERE id = ? AND status = 'done' AND NOT EXISTS (SELECT 1 FROM images WHERE images.job_id = jobs.id)",
+        )
+        for (const id of ids) if (remove.run(id).changes > 0) gone.push(id)
+        return gone
+      })()
+    },
     get: getJob,
     nextQueued(serverId: number): Job | null {
       const r = db.prepare("SELECT * FROM jobs WHERE server_id = ? AND status = 'queued' ORDER BY id LIMIT 1")
@@ -374,7 +394,7 @@ export function createRepos(db: Db, now: () => number) {
       const res = db.prepare(
         `INSERT INTO images (job_id, file_path, thumb_path, width, height, seed, infotext, created_at, duration_ms, source_image_id, hidden)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, now(), row.durationMs, row.sourceImageId ?? null, row.hidden ? 1 : 0)
+      ).run(row.jobId, row.filePath, row.thumbPath, row.width, row.height, row.seed, row.infotext, row.createdAt ?? now(), row.durationMs, row.sourceImageId ?? null, row.hidden ? 1 : 0)
       return toImage(imageById.get(Number(res.lastInsertRowid)) as ImageSql)
     },
     /** The newest visible images made with a checkpoint (by title) or an enabled LoRA (by name) on one server. */
@@ -413,6 +433,10 @@ export function createRepos(db: Db, now: () => number) {
       const rows = db.prepare('SELECT file_path, thumb_path FROM images WHERE hidden = 1').all() as
         { file_path: string; thumb_path: string }[]
       return rows.flatMap((r) => [r.file_path, r.thumb_path])
+    },
+    /** True when an image of this seed and creation time is already saved (a restored archive does not duplicate it). */
+    exists(seed: number, createdAt: number): boolean {
+      return db.prepare('SELECT 1 FROM images WHERE seed = ? AND created_at = ? LIMIT 1').get(seed, createdAt) !== undefined
     },
     /** How many saved images there are, and how many of them are hidden. */
     count(): { total: number; hidden: number } {
@@ -686,7 +710,20 @@ export function createRepos(db: Db, now: () => number) {
     },
   }
 
+  const archives = {
+    list(): ArchiveRow[] {
+      return (db.prepare('SELECT * FROM archives ORDER BY id DESC').all() as { id: number; name: string; path: string; created_at: number; image_count: number; bytes: number }[])
+        .map((r) => ({ id: r.id, name: r.name, path: r.path, createdAt: r.created_at, imageCount: r.image_count, bytes: r.bytes }))
+    },
+    get(id: number): ArchiveRow | null {
+      return this.list().find((a) => a.id === id) ?? null
+    },
+    add(name: string, path: string, imageCount: number, bytes: number): ArchiveRow {
+      const res = db.prepare('INSERT INTO archives (name, path, created_at, image_count, bytes) VALUES (?, ?, ?, ?, ?)').run(name, path, now(), imageCount, bytes)
+      return this.get(Number(res.lastInsertRowid)) as ArchiveRow
+    },
+  }
   /** Runs the function in one transaction: all its writes land, or none do. */
   const transaction = <T>(fn: () => T): T => db.transaction(fn)()
-  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta, transaction }
+  return { servers, jobs, images, tags, settings, negativePresets, hiresPresets, presets, modelMeta, archives, transaction }
 }

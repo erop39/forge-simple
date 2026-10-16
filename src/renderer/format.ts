@@ -2,6 +2,13 @@ import type { ImageRecord } from '@shared/types'
 import { LOCALE, t } from './i18n/t'
 
 /** The last path segment of a Windows or POSIX path. */
+/** A size in bytes as KB, MB or GB (one decimal from MB up). */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
 export const baseName = (value: string): string => value.split(/[\\/]/).pop() ?? value
 
 const clock = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })

@@ -188,6 +188,12 @@ export interface OplogQuery {
 /** The session lock over hidden images: whether a password is set and whether hidden images are shown now. */
 export interface LockState { hasPassword: boolean; open: boolean }
 
+/** An archive of generations moved out of the gallery; `available` is false while its folder cannot be found. */
+export interface ArchiveInfo { id: number; name: string; createdAt: number; imageCount: number; bytes: number; available: boolean }
+export interface ArchiveState { dir: string; archives: ArchiveInfo[] }
+export interface ArchiveCreated { name: string; archived: number; skippedHidden: number; unreadable: number; notRemoved: number }
+export interface ArchiveRestored { restored: number; alreadyThere: number; damaged: number }
+
 /** What an import of a settings file adds (or would add). `renamed`: names that got "(imported)"; `skipped`: what was already there. */
 export interface ImportSummary {
   servers: number; presets: number; hiresPresets: number; negativePresets: number; models: number; settings: number

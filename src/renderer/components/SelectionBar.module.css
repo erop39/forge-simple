@@ -96,4 +96,38 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+.path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.input {
+  width: 100%;
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--signal);
+}
+
+.error {
+  margin: 0;
+  color: var(--blocked);
 }

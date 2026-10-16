@@ -47,6 +47,9 @@ CREATE INDEX image_tags_tag ON image_tags(tag_id);`,
   // 9: named sets of generation settings (JSON without prompt, negative, seed and count).
   `CREATE TABLE presets (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   params TEXT NOT NULL, created_at INTEGER NOT NULL);`,
+  // 10: archives of generations moved out of the gallery (the folder holds the files and records; this row lists it).
+  `CREATE TABLE archives (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL, image_count INTEGER NOT NULL, bytes INTEGER NOT NULL);`,
 ]
 
 export function openDb(path: string): Db {

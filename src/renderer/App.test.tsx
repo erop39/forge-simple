@@ -31,6 +31,7 @@ function setup(
       addLocal: vi.fn(async () => false),
     },
     negativePresets: { list: vi.fn(async () => []), add: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    archive: { state: vi.fn(async () => ({ dir: '', archives: [] })) },
     catalog: {
       get: vi.fn(async () => served),
       defaults: vi.fn(async () => defaultParams('sdxl', 'a.safetensors', { samplers: [], schedulers: [] })),

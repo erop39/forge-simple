@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Api, AppSettings, ConnectionCheck, IpcErrorKey, ServerInput } from '@shared/ipc'
 import type {
-  Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
+  ArchiveCreated, ArchiveRestored, ArchiveState, Catalog, ImportSummary, CivitaiBrowsePage, CivitaiBrowseQuery, ConnectionStatus, Family, ForgeCapabilities, GenerationParams, ImageRecord, Job, JobProgress, HiresPreset, Preset, LockState, ModelKind, NegativePreset, CivitaiProgress, UpscaleSettings, HiresSettings,
   OplogCategory, OplogEntry, OplogLevel, OplogQuery, PartStatus, ResourceSnapshot, RestartOutcome, ServerInfo,
 } from '@shared/types'
 import { PROFILES } from '@shared/profiles'
@@ -117,6 +117,14 @@ export interface AppState {
   /** The VAE/text-encoder files a family starts with (null = Forge's own); needs the files on the server. */
   setFamilyModules(family: Family, modules: string[] | null): Promise<void>
   chooseImagesDir(): Promise<string | null>
+  /** The archive folder and the archives made so far. */
+  archiveState(): Promise<ArchiveState>
+  /** Picks the archive folder (null when cancelled); rejects with error.storageUnavailable for a folder that cannot be written. */
+  chooseArchiveDir(): Promise<string | null>
+  /** Moves the images into a new archive after a verified copy; hidden ones stay; rejects with error.archive*. */
+  createArchive(ids: number[], label: string): Promise<ArchiveCreated>
+  /** Puts an archive's images back into the gallery; rejects with error.archive*. */
+  restoreArchive(id: number): Promise<ArchiveRestored>
   /** How many images there are (and how many are hidden), for the delete-everything confirmation. */
   countGenerations(): Promise<{ total: number; hidden: number }>
   /** Deletes every image and finished job; rejects with error.jobRunning or error.lockedImages. */
@@ -802,6 +810,22 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         const selected = await api.settings.chooseImagesDir()
         if (selected !== null) set((s) => ({ settings: s.settings ? { ...s.settings, imagesDir: selected } : null }))
         return selected
+      },
+
+      archiveState() {
+        return api.archive.state()
+      },
+
+      chooseArchiveDir() {
+        return api.archive.chooseDir()
+      },
+
+      createArchive(ids, label) {
+        return api.archive.create(ids, label)
+      },
+
+      restoreArchive(id) {
+        return api.archive.restore(id)
       },
 
       countGenerations() {

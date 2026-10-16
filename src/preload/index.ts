@@ -106,6 +106,12 @@ const api: Api = {
     apply: () => invoke('backup:apply'),
     discard: () => invoke('backup:discard'),
   },
+  archive: {
+    state: () => invoke('archive:state'),
+    chooseDir: () => invoke('archive:chooseDir'),
+    create: (ids, label) => invoke('archive:create', ids, label),
+    restore: (id) => invoke('archive:restore', id),
+  },
   generations: {
     count: () => invoke('generations:count'),
     deleteAll: () => invoke('generations:deleteAll'),
