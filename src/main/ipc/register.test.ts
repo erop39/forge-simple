@@ -1414,6 +1414,28 @@ test('images:deleteMany removes what it can and reports the rest; hidden images 
   await expect(call('images:deleteMany', ['a'])).rejects.toThrow('error.invalidParams')
 })
 
+test('generations:deleteAll empties the gallery and finished jobs, but not while hidden images are locked or a job runs', async () => {
+  const a = seedImage()
+  const b = seedImage()
+  repos.images.setHidden([b.row.id], true)
+  for (const row of [a.row, b.row]) repos.jobs.setStatus(row.jobId, 'done')
+  expect(await call('generations:count')).toEqual({ total: 2, hidden: 1 })
+  await expect(call('generations:deleteAll')).rejects.toThrow('error.lockedImages')
+  expect(repos.images.count().total).toBe(2)
+  await call('lock:setPassword', null, 'secret-pass')
+  await call('lock:open', 'secret-pass')
+  const waiting = repos.jobs.insert(repos.servers.active()!.id, 'txt2img', goodParams())
+  await expect(call('generations:deleteAll')).rejects.toThrow('error.jobRunning')
+  repos.jobs.setStatus(waiting.id, 'cancelled')
+  expect(await call('generations:deleteAll')).toEqual({ deleted: 2, failed: 0 })
+  expect(repos.images.count()).toEqual({ total: 0, hidden: 0 })
+  expect(repos.jobs.get(a.row.jobId)).toBeNull()
+  expect(repos.jobs.get(waiting.id)).toBeNull()
+  expect(sent.filter((s) => s.e === 'image:removed')).toHaveLength(2)
+  expect(oplog.list().map((e) => e.messageKey)).toContain('log.storage.allDeleted')
+  expect(repos.servers.list().length).toBeGreaterThan(0)
+})
+
 test('settings presets: saved without prompt, negative, seed and count; names are unique; every change is logged by name', async () => {
   const saved = (await call('presets:save', ' My look ', goodParams({ prompt: 'a secret prompt', negativePrompt: 'secret negative', seed: 99, count: 4, steps: 31 }))) as {
     id: number; name: string; params: Record<string, unknown>

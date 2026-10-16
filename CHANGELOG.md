@@ -7,12 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A red Delete all generations button in the server dialog's Danger zone: after a count and a second confirmation it deletes every image with its files and every finished job (servers, presets and settings stay). It refuses while a job waits or runs, and while hidden images exist behind a closed lock.
 - Focused gallery view: a button in the top bar (remembered between runs) shows only the results of your latest generation request, that is its tiles while they wait or run and the images they made, so other previews do not distract. The whole gallery is one click away (also from the empty focused view); a search always looks through everything.
 - Settings backup in the server dialog: Export settings writes one versioned JSON file (servers, settings presets, hires and negative presets, hand-set families, own trigger words, family defaults, upscaler choices, log retention; never images, jobs, tags, the log, the lock password or Civitai consent). Import Settings checks the whole file, shows what it would add, and then adds it in one step: taken names get "(imported)", servers with a known address and anything you already set stay as they are. A damaged file or an unknown version is refused whole.
 - A Back button in the Civitai browser returns to the model library it was opened from.
 
 ### Fixed
 
+- Civitai browser previews: the image CDN redirects to its blob host, which the downloader refused; redirects are followed again, and the final address must still be on civitai.com.
 - Quick successive marks on models (favorite on, then off) can no longer be overwritten by a late answer; a model preview image is read through the managed-folder check; PromptBar's pill radius and loading duration use tokens; the viewer's Set as model preview result stays with the image it was made for.
 
 ## [0.2.0] - 2026-10-16

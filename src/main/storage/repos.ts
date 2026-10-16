@@ -350,6 +350,15 @@ export function createRepos(db: Db, now: () => number) {
         return ids
       })()
     },
+    /** Deletes every job that is not waiting or running (images must be gone first); returns their ids. */
+    deleteFinished(): number[] {
+      return db.transaction(() => {
+        const ids = (db.prepare("SELECT id FROM jobs WHERE status NOT IN ('queued', 'running') ORDER BY id").all() as { id: number }[]).map((r) => r.id)
+        const remove = db.prepare('DELETE FROM jobs WHERE id = ?')
+        for (const id of ids) remove.run(id)
+        return ids
+      })()
+    },
     markRunningInterrupted(): number {
       return db.prepare("UPDATE jobs SET status = 'interrupted', finished_at = ?, error = ? WHERE status = 'running'")
         .run(now(), JSON.stringify({ code: 'stopped' } satisfies JobError)).changes
@@ -404,6 +413,11 @@ export function createRepos(db: Db, now: () => number) {
       const rows = db.prepare('SELECT file_path, thumb_path FROM images WHERE hidden = 1').all() as
         { file_path: string; thumb_path: string }[]
       return rows.flatMap((r) => [r.file_path, r.thumb_path])
+    },
+    /** How many saved images there are, and how many of them are hidden. */
+    count(): { total: number; hidden: number } {
+      const r = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(hidden), 0) AS hidden FROM images').get() as { total: number; hidden: number }
+      return { total: r.total, hidden: r.hidden }
     },
     /** True when the job made an image that is hidden now. */
     jobHasHidden(jobId: number): boolean {

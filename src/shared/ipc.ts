@@ -11,7 +11,7 @@ import type {
 export const IPC_ERROR_KEYS = [
   'error.noServer', 'error.invalidParams', 'error.notFound', 'error.network', 'error.notForge', 'error.unexpected',
   'error.duplicateServer', 'error.jobRunning', 'error.presetNameTaken', 'error.wrongPassword', 'error.noPassword',
-  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy', 'error.backupNotBackup', 'error.backupVersion', 'error.backupMalformed', 'error.backupTooBig',
+  'error.tooManyAttempts', 'error.storageUnavailable', 'error.civitaiBusy', 'error.backupNotBackup', 'error.backupVersion', 'error.backupMalformed', 'error.backupTooBig', 'error.lockedImages',
 ] as const
 export type IpcErrorKey = (typeof IPC_ERROR_KEYS)[number]
 
@@ -230,6 +230,15 @@ export interface Api {
     apply(): Promise<ImportSummary>
     discard(): Promise<void>
   }
+  /**
+   * Deleting every generation: the images with their files, and every finished job. Servers, presets and settings stay.
+   * `count` says how many there are; `deleteAll` refuses while a job waits or runs (error.jobRunning) and while hidden
+   * images exist behind a closed lock (error.lockedImages).
+   */
+  generations: {
+    count(): Promise<{ total: number; hidden: number }>
+    deleteAll(): Promise<{ deleted: number; failed: number }>
+  }
   /** The operation log. */
   oplog: {
     list(query: OplogQuery): Promise<OplogEntry[]>
@@ -262,7 +271,7 @@ export const CHANNELS = [
   'settings:get', 'settings:setUpscalers', 'settings:setFamilyNegative', 'settings:setFamilyModules', 'settings:chooseImagesDir',
   'servers:list', 'servers:add', 'servers:update', 'servers:remove', 'servers:activate', 'servers:addLocal',
   'negativePresets:list', 'negativePresets:add', 'negativePresets:update', 'negativePresets:remove',
-  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'backup:export', 'backup:preview', 'backup:apply', 'backup:discard', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
+  'civitai:setEnabled', 'civitai:update', 'civitai:cancel', 'civitai:state', 'civitai:open', 'civitai:updateOne', 'generations:count', 'generations:deleteAll', 'backup:export', 'backup:preview', 'backup:apply', 'backup:discard', 'civitai:browse', 'civitai:openModel', 'tags:suggest', 'tags:add', 'tags:remove', 'presets:list', 'presets:save', 'presets:rename', 'presets:remove', 'presets:applied', 'hiresPresets:list', 'hiresPresets:add', 'hiresPresets:rename', 'hiresPresets:remove', 'models:setFavorite', 'models:setNote', 'models:setFamily', 'models:setTriggers', 'models:generations', 'models:setPreviewFromImage', 'models:clearPreview', 'catalog:get', 'catalog:defaults', 'catalog:parts',
   'jobs:enqueue', 'jobs:cancel', 'jobs:retry', 'jobs:listActive', 'jobs:clearUnfinished', 'jobs:get',
   'images:list', 'images:query', 'images:details', 'images:delete', 'images:deleteMany', 'images:reveal', 'images:setHidden', 'clipboard:writeText',
   'lock:state', 'lock:open', 'lock:close', 'lock:setPassword',

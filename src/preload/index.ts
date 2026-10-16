@@ -106,6 +106,10 @@ const api: Api = {
     apply: () => invoke('backup:apply'),
     discard: () => invoke('backup:discard'),
   },
+  generations: {
+    count: () => invoke('generations:count'),
+    deleteAll: () => invoke('generations:deleteAll'),
+  },
   oplog: {
     list: (query) => invoke('oplog:list', query),
     export: (query) => invoke('oplog:export', query),

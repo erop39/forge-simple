@@ -117,6 +117,10 @@ export interface AppState {
   /** The VAE/text-encoder files a family starts with (null = Forge's own); needs the files on the server. */
   setFamilyModules(family: Family, modules: string[] | null): Promise<void>
   chooseImagesDir(): Promise<string | null>
+  /** How many images there are (and how many are hidden), for the delete-everything confirmation. */
+  countGenerations(): Promise<{ total: number; hidden: number }>
+  /** Deletes every image and finished job; rejects with error.jobRunning or error.lockedImages. */
+  deleteAllGenerations(): Promise<{ deleted: number; failed: number }>
   /** Saves the settings to a file the user picks; false when cancelled. */
   exportSettings(): Promise<boolean>
   /** Asks for a settings file and says what importing it would add (null when cancelled); rejects with error.backup*. */
@@ -798,6 +802,14 @@ export function createAppStore(api: Api): StoreApi<AppState> {
         const selected = await api.settings.chooseImagesDir()
         if (selected !== null) set((s) => ({ settings: s.settings ? { ...s.settings, imagesDir: selected } : null }))
         return selected
+      },
+
+      countGenerations() {
+        return api.generations.count()
+      },
+
+      deleteAllGenerations() {
+        return api.generations.deleteAll()
       },
 
       exportSettings() {

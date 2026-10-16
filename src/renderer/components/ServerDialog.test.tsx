@@ -271,3 +271,27 @@ test('a refused settings file shows the reason and leaves the dialog usable', as
   expect((await screen.findByRole('alert')).textContent).toBe(en['error.backupVersion'])
   expect(screen.getByRole('button', { name: en['backup.import'] })).toBeDefined()
 })
+
+test('the red delete-all button counts first and deletes only after the second, explicit confirmation', async () => {
+  const countGenerations = vi.fn(async () => ({ total: 12, hidden: 0 }))
+  const deleteAllGenerations = vi.fn(async () => ({ deleted: 12, failed: 0 }))
+  setup({ countGenerations, deleteAllGenerations })
+  await userEvent.click(screen.getByRole('button', { name: en['danger.deleteAll'] }))
+  const confirm = await screen.findByRole('alertdialog', { name: en['danger.confirmTitle'] })
+  expect(within(confirm).getByText(/All 12 images/)).toBeDefined()
+  expect(deleteAllGenerations).not.toHaveBeenCalled()
+  await userEvent.click(within(confirm).getByRole('button', { name: en['danger.cancel'] }))
+  expect(deleteAllGenerations).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: en['danger.deleteAll'] }))
+  await userEvent.click(await screen.findByRole('button', { name: en['danger.confirmYes'] }))
+  expect(deleteAllGenerations).toHaveBeenCalledOnce()
+  expect(await screen.findByText('Deleted 12 images.')).toBeDefined()
+})
+
+test('a refused delete-all shows the reason', async () => {
+  const deleteAllGenerations = vi.fn(async () => { throw new Error('error.lockedImages') })
+  setup({ countGenerations: vi.fn(async () => ({ total: 3, hidden: 1 })), deleteAllGenerations })
+  await userEvent.click(screen.getByRole('button', { name: en['danger.deleteAll'] }))
+  await userEvent.click(await screen.findByRole('button', { name: en['danger.confirmYes'] }))
+  expect((await screen.findByRole('alert')).textContent).toBe(en['error.lockedImages'])
+})

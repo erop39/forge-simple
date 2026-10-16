@@ -1109,6 +1109,28 @@ export function registerIpc(
     return { deleted, failed }
   })
 
+  handle('generations:count', () => repos.images.count())
+
+  handle('generations:deleteAll', async () => {
+    if (repos.jobs.listActive().some((j) => j.status === 'queued' || j.status === 'running')) return fail('error.jobRunning')
+    if (!lock.isOpen() && repos.images.count().hidden > 0) return fail('error.lockedImages')
+    let deleted = 0
+    let failed = 0
+    for (;;) {
+      const page = repos.images.list({ limit: 200 })
+      if (page.length === 0) break
+      let progress = 0
+      for (const row of page) {
+        if (await removeImage(row.id)) { deleted++; progress++ } else failed++
+      }
+      if (progress === 0) break
+    }
+    const jobs = failed === 0 ? repos.jobs.deleteFinished() : []
+    for (const id of jobs) send('job:removed', { id })
+    oplog.write({ level: 'warn', category: 'storage', messageKey: 'log.storage.allDeleted', details: { images: deleted, failed, jobs: jobs.length } })
+    return { deleted, failed }
+  })
+
   handle('connection:get', () => deps.monitor.current())
 
   // ---- the lock over hidden images ----------------------------------------

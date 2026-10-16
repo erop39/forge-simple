@@ -127,6 +127,7 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       <ForgeActions running={running} busyId={busyId} />
       <ImageStorage />
       <SettingsBackup />
+      <DeleteGenerations />
       {error !== null && (
         <p role="alert" className={styles.error}>
           {error}
@@ -140,6 +141,56 @@ function ServerList({ head, servers, onAdd, onEdit }: ServerListProps) {
       </div>
     </div>
   )
+}
+
+/** The red button: every generation is deleted for good after a second, explicit confirmation. */
+function DeleteGenerations() {
+  const count = useAppStore((s) => s.countGenerations)
+  const deleteAll = useAppStore((s) => s.deleteAllGenerations)
+  const [total, setTotal] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+
+  async function ask(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    setStatus(null)
+    try { setTotal((await count()).total) }
+    catch (err) { setError(errorText(err)) }
+    setBusy(false)
+  }
+
+  async function confirm(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      const { deleted } = await deleteAll()
+      setStatus(t('danger.done', { n: deleted }))
+    } catch (err) {
+      setError(errorText(err))
+    }
+    setTotal(null)
+    setBusy(false)
+  }
+
+  return <section className={styles.danger} aria-label={t('danger.title')}>
+    <h3 className={styles.forgeHeading}>{t('danger.title')}</h3>
+    {total === null ? (
+      <Button variant="danger" disabled={busy} onClick={() => void ask()}>{t('danger.deleteAll')}</Button>
+    ) : (
+      <div role="alertdialog" aria-label={t('danger.confirmTitle')} className={styles.storage}>
+        <strong>{t('danger.confirmTitle')}</strong>
+        <p className={styles.hint}>{total === 0 ? t('danger.nothing') : t('danger.confirmBody', { n: total })}</p>
+        <div className={styles.forgeActions}>
+          <Button variant="danger" disabled={busy || total === 0} onClick={() => void confirm()}>{t('danger.confirmYes')}</Button>
+          <Button autoFocus disabled={busy} onClick={() => setTotal(null)}>{t('danger.cancel')}</Button>
+        </div>
+      </div>
+    )}
+    {status && <p role="status" className={styles.hint}>{status}</p>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+  </section>
 }
 
 /** Export and import of the settings in one file; an import shows what it would add before anything is written. */

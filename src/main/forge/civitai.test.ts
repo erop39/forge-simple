@@ -139,3 +139,13 @@ test('thumbnails ask Civitai for a small size, whether the URL carries a width o
   expect(asked).toEqual(['https://image.civitai.com/k/u/width=320/1.jpeg', 'https://image.civitai.com/k/u/width=320/1.jpeg'])
   expect(await fetchThumb('https://evil.example/x.jpeg', fetchFn)).toBeNull()
 })
+
+test('a thumbnail may come through a redirect inside civitai.com but not from another host', async () => {
+  const through = (finalUrl: string) => (async () => {
+    const res = new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })
+    Object.defineProperty(res, 'url', { value: finalUrl })
+    return res
+  }) as typeof fetch
+  expect(await fetchThumb('https://image.civitai.com/k/u/width=450/1.jpeg', through('https://blobs-b2.civitai.com/file/x.jpeg'))).toMatch(/^data:image\/jpeg/)
+  expect(await fetchThumb('https://image.civitai.com/k/u/width=450/1.jpeg', through('https://evil.example/x.jpeg'))).toBeNull()
+})
