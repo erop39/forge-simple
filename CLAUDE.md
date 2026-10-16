@@ -18,7 +18,9 @@ UI strings, README and CHANGELOG are English.
 ## Documents
 
 - Spec (approved, the binding authority): `docs/superpowers/specs/2026-10-13-forge-neo-client-design.md`
-- Plans: `docs/superpowers/plans/` — plan 1 (core) is done except its release step; plan 2 (gallery features) was approved and is paused after its Task 3 local commit; plan 3 (generation and server tools) is written and underway. Restart/Unload from plan 3 were already delivered as U4.
+- Plans: `docs/superpowers/plans/` — plans 1 (core), 2 (gallery and library) and 3 (generation and server tools) are done; plan 4 (local prompt assistant) is an outline, to be detailed after the user's answers.
+- Roadmap (versions after 0.2.0, exit criteria, backlog): `docs/ROADMAP.md`
+- Design proposals: `docs/archive-design.md` (phase 1 built), `docs/prompt-assistant-design.md` (not built)
 - Real-server facts from the probe: `docs/forge-api-notes.md`
 - Status, decisions, open items: `docs/STATUS.md`
 - Startup prompt delay and implementation handoff: `docs/prompt-startup-fix.md`

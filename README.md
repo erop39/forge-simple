@@ -36,6 +36,10 @@ Forge's HTTP API. One user, no login.
   default VAE and text encoders per family; settings presets; search and tags; selecting several images at once;
   a Hires on/off switch with presets; trigger words that go into the prompt with a LoRA.
 
+## What comes next
+
+The next release, 0.3.0, collects what was built after 0.2.0 (the Civitai browser with Download later, archives, delete all, the focused view, a choice of parts in the settings backup, long-job safety); it is listed under `[Unreleased]` in `CHANGELOG.md` and waits for a walk through the real window. After it: a local prompt assistant (0.4.0), archive phases 2–3 and a faster start (0.5.0), and a Windows installer (1.0.0). The plan with exit criteria is `docs/ROADMAP.md`; the proposals are `docs/prompt-assistant-design.md` and `docs/archive-design.md`.
+
 ## Requirements
 
 - Node.js and pnpm.
@@ -185,7 +189,12 @@ in place and use the picker only for new images.
 
 ## Known limitations
 
-Not in the app yet (planned, see `docs/superpowers/plans/` and `docs/STATUS.md`):
+Not in the app yet (planned, see `docs/ROADMAP.md`, `docs/superpowers/plans/` and `docs/STATUS.md`):
+
+- No installer yet: the app is started from the source checkout (`pnpm install`, then the start script); an installer is planned for 1.0.0.
+- No prompt assistant yet (writing prompts with a local language model): designed in `docs/prompt-assistant-design.md`, planned for 0.4.0.
+- Archives: age-based archiving, browsing an archive without restoring and restoring a selection are planned for 0.5.0.
+- The model list is not kept between starts: with a very slow Forge the checkpoint list is awaited in full (the LoRA list is not).
 
 - Img2img sources currently come from saved gallery images; dropping an external file into the app is not supported yet.
 - "Save as" for an image (Show in folder reveals the saved file), 

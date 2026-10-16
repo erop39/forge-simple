@@ -13,7 +13,7 @@ which holds the full commands, layout and code rules; read it too — this guide
 
 1. `docs/STATUS.md` — what is done, what is in progress, what waits on the user, every decision taken.
 2. `CLAUDE.md` — commands, source layout, code rules, the manual-check procedure.
-3. The plan you are executing, in `docs/superpowers/plans/` (plan 2 is in progress), and the spec
+3. `docs/ROADMAP.md` (the next versions), the plan you are executing in `docs/superpowers/plans/` (plans 1–3 are done; plan 4, the prompt assistant, is an outline), and the spec
    `docs/superpowers/specs/2026-10-13-forge-neo-client-design.md` (the binding authority).
 
 Talk to the user in Russian. Code, comments, commits, UI strings, README and CHANGELOG are English.
@@ -27,13 +27,17 @@ Talk to the user in Russian. Code, comments, commits, UI strings, README and CHA
   saved servers with one-click switching, local Forge auto-detection, negative-prompt presets,
   image viewer, recovery from Forge HTTP 500s, Restart Forge / Unload model, operation-log panel,
   generation timestamps, mouse-wheel value stepping.
-- Plan 2 (gallery and library): Tasks 1–3 (tags and filtered queries, hidden images behind a session
-  lock, virtualized gallery with keyboard navigation) and Task 11 (log panel) done; Tasks 4–10 and 12
-  paused — see `docs/STATUS.md`.
+- Plan 2 (gallery and library): done. Tags and search, selection and batch actions, hidden images behind a
+  session lock, virtualized gallery, model library (previews, marks, duplicates, Civitai lookup), settings
+  presets, family defaults. Released as 0.2.0.
 - Plan 3 (generation and server tools, `docs/superpowers/plans/2026-10-15-plan-3-generation-and-server-tools.md`):
   hires fix, img2img (viewer action, drag onto the prompt bar), upscale of a finished image with a
   before/after slider, resource monitor with the optional Forge stats extension (`forge-extension/`),
-  image storage folder — done; Task 8 (export/import) waits for plan 2; Task 10 (integration) next.
+  image storage folder, settings export/import with a choice of parts — all done.
+- After 0.2.0 (in `[Unreleased]`, version 0.3.0): Civitai browser (civitai.com/.red, several base models,
+  Download later), archives (phase 1) and Delete all generations, focused gallery view, stalled-job
+  detection, background LoRA list. Next: `docs/ROADMAP.md` (0.4.0 local prompt assistant, 0.5.0 archive
+  phases 2–3 and faster start, 1.0.0 installer).
 
 ## How work is done here
 

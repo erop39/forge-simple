@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Project documents brought up to date: `docs/ROADMAP.md` (versions after 0.2.0 with exit criteria), `docs/superpowers/plans/2026-10-16-plan-4-prompt-assistant.md` (outline), a rewritten `docs/STATUS.md`, `docs/archive-design.md` and `docs/prompt-assistant-design.md` (proposals).
 - The "Newer version" chip in the model library is lime (a new `--fresh` token), so it stands apart from the amber Duplicate and other-family chips.
 - The Civitai browser's base-model filter now lists the families of this app first (SDXL, Z-Image Turbo and Base, Krea 2 and Krea 2 Turbo, Qwen, Lumina, Anima) and then the other common ones (Illustrious, Pony, NoobAI, SD 1.5, Flux.1/2/3 variants, Chroma, HiDream); every name was checked against Civitai's own filter.
 - The Download later cards use icons (open on Civitai, mark as downloaded) instead of text buttons.
