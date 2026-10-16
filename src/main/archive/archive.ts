@@ -89,6 +89,8 @@ export async function createArchive(deps: CreateDeps, archiveDir: string, ids: n
   for (let n = 2; await exists(path.join(archiveDir, name)); n++) name = `${base}-${n}`
   const folder = path.join(archiveDir, name)
 
+  let archive: ArchiveRow
+  const jobKeys: number[] = []
   try {
     await mkdir(path.join(folder, 'images'), { recursive: true })
     await mkdir(path.join(folder, 'thumbs'), { recursive: true })
@@ -125,17 +127,28 @@ export async function createArchive(deps: CreateDeps, archiveDir: string, ids: n
     await writeFile(path.join(folder, 'manifest.json'), JSON.stringify({
       format: ARCHIVE_FORMAT, version: ARCHIVE_VERSION, createdAt: new Date(deps.now()).toISOString(), images: images.length, bytes,
     }, null, 2), 'utf8')
-    const archive = repos.archives.add(name, folder, images.length, bytes)
-
-    // The copy is complete and verified: now the gallery lets go of the images.
-    let notRemoved = 0
-    for (const s of sources) if (!(await deps.removeImage(s.row.id))) notRemoved++
-    const removedJobIds = repos.jobs.deleteDoneWithoutImages([...jobs.keys()])
-    return { archive, archived: images.length, skippedHidden, unreadable, notRemoved, removedJobIds }
+    archive = repos.archives.add(name, folder, images.length, bytes)
+    jobKeys.push(...jobs.keys())
   } catch (err) {
+    // Nothing has left the gallery yet: the half-written folder can go.
     await rm(folder, { recursive: true, force: true }).catch(() => undefined)
     throw err
   }
+
+  // The copy is complete and verified and listed. From here on the archive is never deleted: a failure while the
+  // gallery lets go of an image only means that image stays (counted as not removed).
+  let notRemoved = 0
+  for (const s of sources) {
+    const removed = await deps.removeImage(s.row.id).catch(() => false)
+    if (!removed) notRemoved++
+  }
+  let removedJobIds: number[] = []
+  try {
+    removedJobIds = repos.jobs.deleteDoneWithoutImages(jobKeys)
+  } catch {
+    // The finished jobs stay in the history: harmless, and the next delete-all clears them.
+  }
+  return { archive, archived: sources.length, skippedHidden, unreadable, notRemoved, removedJobIds }
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

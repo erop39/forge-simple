@@ -166,3 +166,39 @@ test('records with a path in a file name are refused', async () => {
   writeFileSync(recordsPath, JSON.stringify(records))
   await expect(readArchive(result.archive.path)).rejects.toMatchObject({ code: 'unreadable' })
 })
+
+test('a failure while the images leave the gallery never deletes the verified archive', async () => {
+  const a = seed(71)
+  const b = seed(72)
+  const c = seed(73)
+  const failing = deps({
+    removeImage: async (id) => {
+      if (id === b.id) throw new Error('SQLITE_BUSY')
+      const row = repos.images.delete(id)
+      if (!row) return false
+      rmSync(row.filePath, { force: true })
+      rmSync(row.thumbPath, { force: true })
+      return true
+    },
+  })
+  const result = await createArchive(failing, archiveDir(), [a.id, b.id, c.id], 'x')
+  expect(result).toMatchObject({ archived: 3, notRemoved: 1 })
+  expect(existsSync(path.join(result.archive.path, 'images', `${a.id}.png`))).toBe(true)
+  expect(existsSync(path.join(result.archive.path, 'images', `${b.id}.png`))).toBe(true)
+  expect(repos.archives.list()).toHaveLength(1)
+  expect(repos.images.get(b.id)).not.toBeNull()
+  expect(repos.images.get(a.id)).toBeNull()
+})
+
+test('a failure while tidying jobs after the removal leaves the archive and the result intact', async () => {
+  const a = seed(81)
+  const realDelete = repos.jobs.deleteDoneWithoutImages
+  repos.jobs.deleteDoneWithoutImages = () => { throw new Error('SQLITE_IOERR') }
+  try {
+    const result = await createArchive(deps(), archiveDir(), [a.id], 'x')
+    expect(result).toMatchObject({ archived: 1, notRemoved: 0, removedJobIds: [] })
+    expect(existsSync(path.join(result.archive.path, 'records.json'))).toBe(true)
+  } finally {
+    repos.jobs.deleteDoneWithoutImages = realDelete
+  }
+})
