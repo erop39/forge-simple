@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The "Newer version" chip in the model library is lime (a new `--fresh` token), so it stands apart from the amber Duplicate and other-family chips.
 - The Civitai browser's base-model filter now lists the families of this app first (SDXL, Z-Image Turbo and Base, Krea 2 and Krea 2 Turbo, Qwen, Lumina, Anima) and then the other common ones (Illustrious, Pony, NoobAI, SD 1.5, Flux.1/2/3 variants, Chroma, HiDream); every name was checked against Civitai's own filter.
 - The Download later cards use icons (open on Civitai, mark as downloaded) instead of text buttons.
 - Choose what goes into a settings backup: Export settings now shows a checklist (servers, settings presets, hires presets, negative presets, model marks, family defaults/upscalers/log retention, Download later list), and Import settings shows a checklist of the parts found in the file with how many each would add, so only the ticked parts are imported. The Download later list is now part of the backup (without previews).

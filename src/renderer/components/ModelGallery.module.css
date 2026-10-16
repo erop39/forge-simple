@@ -227,6 +227,10 @@
   color: var(--ok);
 }
 
+.chipNew {
+  color: var(--fresh);
+}
+
 .chipWarn {
   color: var(--signal);
 }

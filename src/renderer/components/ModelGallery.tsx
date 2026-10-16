@@ -285,7 +285,7 @@ function Gallery({ kind, onClose }: { kind: ModelKind; onClose: () => void }) {
                   <span className={styles.cardMeta}>
                     {item.family && <span className={styles.chip}>{t(`family.${item.family}`)}</span>}
                     {cardStat(item, sort) && <span className={styles.chip}>{cardStat(item, sort)}</span>}
-                    {item.civitai?.newer && <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.newer')}</span>}
+                    {item.civitai?.newer && <span className={`${styles.chip} ${styles.chipNew}`}>{t('models.newer')}</span>}
                     {item.duplicates.length > 0 && <span className={`${styles.chip} ${styles.chipWarn}`}>{t('models.duplicate', { n: item.duplicates.length + 1 })}</span>}
                     {item.loaded && <span className={`${styles.chip} ${styles.chipLoaded}`}>{t('models.loaded')}</span>}
                     {kind === 'lora' && item.family && params && item.family !== params.family && (
